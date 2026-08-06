@@ -1,5 +1,7 @@
-"""Stable kernel package namespace."""
+"""Technical runtime kernel.
 
-from .version import KERNEL_API_VERSION
-
-__all__ = ["KERNEL_API_VERSION"]
+Kernel packages own only mechanisms without business meaning (database,
+durable events, workflow/tasks runtime, boot registries, observability,
+errors, security primitives, time). Importing any kernel package must have
+no side effects.
+"""

@@ -24,7 +24,6 @@ COPY --chown=aiya:aiya inc ./inc
 COPY --chown=aiya:aiya tests ./tests
 COPY --chown=aiya:aiya alembic ./alembic
 COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md ./
-COPY --chown=aiya:aiya openapi.json openapi.sha256 ./
 RUN chown -R aiya:aiya /app
 USER aiya
 EXPOSE 8000

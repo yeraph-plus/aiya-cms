@@ -1,27 +1,5 @@
-"""Database component public API (see context/spec/kernel.md)."""
+"""Database primitives: Base, Repository/UoW contracts, pagination, JSONB.
 
-from .base import Base, TimestampMixin
-from .database import Database, create_database
-from .errors import DB_001, DB_002, DB_CODES, integrity_to_app_error
-from .jsonb import JsonBModel
-from .page import Page
-from .repository import Repository
-from .uow import AbstractUnitOfWork, UoWExecutor
-from .uuid import new_uuid7
-
-__all__ = [
-    "Base",
-    "Database",
-    "TimestampMixin",
-    "JsonBModel",
-    "Repository",
-    "AbstractUnitOfWork",
-    "UoWExecutor",
-    "create_database",
-    "Page",
-    "new_uuid7",
-    "DB_001",
-    "DB_002",
-    "DB_CODES",
-    "integrity_to_app_error",
-]
+Contract source: context/spec/kernel/database.md. Implementation lands in
+R3; importing this package must have no side effects.
+"""

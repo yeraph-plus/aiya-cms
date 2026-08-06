@@ -1,5 +1,6 @@
-"""HTTP composition root."""
+"""Composition root: manifest selection, container, HTTP adapters.
 
-from .app import create_app
-
-__all__ = ["create_app"]
+Contract source: context/spec/composition.md. Only manifest declarations
+exist in R2; boot wiring, routers and lifecycle land in R8. Importing this
+package must have no side effects.
+"""

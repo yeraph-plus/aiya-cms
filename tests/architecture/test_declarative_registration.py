@@ -54,7 +54,9 @@ def test_feature_definitions_are_immutable_and_keyed() -> None:
         assert isinstance(spec, FeatureSpec), f"{name}: missing FeatureSpec"
         assert spec.name == name, f"{name}: key does not match package name"
         assert spec.version, f"{name}: version must not be empty"
-        unknown = [capability for capability in spec.requires if capability not in INITIAL_CAPABILITIES]
+        unknown = [
+            capability for capability in spec.requires if capability not in INITIAL_CAPABILITIES
+        ]
         assert unknown == [], f"{name}: requires unknown capabilities {unknown}"
 
 

@@ -70,9 +70,7 @@ def test_jsonb_always_bound_to_pydantic_model() -> None:
     offenders: list[str] = []
     for layer in _BUSINESS_LAYERS:
         for path in iter_source_files(INC_ROOT / layer):
-            for lineno, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), start=1
-            ):
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
                 if "JSONB" in line and "JsonBModel" not in line:
                     offenders.append(f"{path}:{lineno}: JSONB without JsonBModel")
     assert offenders == []

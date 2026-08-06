@@ -1,23 +1,5 @@
-"""Request principal primitives shared by auth and RBAC.
+"""Business-agnostic cryptography, signing and key loading primitives.
 
-Token and password primitives are intentionally left for M1.4; RBAC only
-needs a stable, serialisable principal boundary.
+Contract source: context/spec/kernel/foundation.md. Implementation lands in
+R3; importing this package must have no side effects.
 """
-
-from .errors import AUTH_002, AUTH_003, AUTH_CODES
-from .passwords import hash_password, verify_password
-from .principal import Principal, get_current_principal
-from .tokens import PrincipalClaims, TokenService, hash_refresh
-
-__all__ = [
-    "Principal",
-    "PrincipalClaims",
-    "TokenService",
-    "get_current_principal",
-    "hash_password",
-    "verify_password",
-    "hash_refresh",
-    "AUTH_002",
-    "AUTH_003",
-    "AUTH_CODES",
-]

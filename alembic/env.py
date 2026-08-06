@@ -1,40 +1,47 @@
-"""Async Alembic environment for the M0 empty migration set."""
+"""Async Alembic environment driven by the explicit migration manifest.
 
+Contract source: context/spec/kernel/database.md §6.
+
+Model modules are imported exclusively from ``alembic/migration_manifest.py``
+(no package scanning, no side-effect registration). ``target_metadata`` is
+None until the R3 kernel Base exists; autogenerate then attaches the kernel
+Base metadata.
+"""
+
+from __future__ import annotations
+
+import importlib
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import inc.kernel.audit.models  # noqa: F401  (registers audit models on Base.metadata)
-import inc.kernel.auth.models  # noqa: F401  (registers auth models on Base.metadata)
-import inc.kernel.comment.models  # noqa: F401  (registers comment models on Base.metadata)
-import inc.kernel.content.models  # noqa: F401  (registers content models on Base.metadata)
-import inc.kernel.identity.models  # noqa: F401  (registers identity models on Base.metadata)
-import inc.kernel.mail.models  # noqa: F401  (registers mail models on Base.metadata)
-import inc.kernel.rbac.models  # noqa: F401  (registers RBAC models on Base.metadata)
-import inc.kernel.settings.models  # noqa: F401  (registers settings models on Base.metadata)
-import inc.kernel.tasks.models  # noqa: F401  (registers task models on Base.metadata)
-import inc.kernel.taxonomy.models  # noqa: F401  (registers taxonomy models on Base.metadata)
-import inc.modules.interaction.models  # noqa: F401  (registers interaction models on Base.metadata)
 from alembic import context
-from inc.kernel.config import get_settings
-from inc.kernel.db import Base
+
+_ENV_DIR = Path(__file__).resolve().parent
+if str(_ENV_DIR) not in sys.path:
+    sys.path.insert(0, str(_ENV_DIR))
+
+from migration_manifest import MIGRATION_OWNER_MODULES  # noqa: E402
+
+for _owner, _module in MIGRATION_OWNER_MODULES.items():
+    importlib.import_module(_module)
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
-target_metadata = Base.metadata
+target_metadata = None
 
 
 def run_migrations_offline() -> None:
     """Run migrations without creating a DB connection."""
 
     context.configure(
-        url=settings.database_url,
+        url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

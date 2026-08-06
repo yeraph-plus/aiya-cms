@@ -1,5 +1,5 @@
-"""ASGI entry point for local development and deployment."""
+"""ASGI entry point.
 
-from inc.api.app import create_app
-
-app = create_app()
+The composition root factory lives in ``inc.api.app`` and lands in R8; until
+then this module is intentionally inert and must stay importable.
+"""

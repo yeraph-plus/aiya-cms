@@ -11,7 +11,6 @@ and bindings must not silently return; the archive entry point is the
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from _graph import INC_ROOT, REPO_ROOT, iter_source_files
 

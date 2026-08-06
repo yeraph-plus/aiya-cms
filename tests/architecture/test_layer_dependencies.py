@@ -16,9 +16,6 @@ Rules enforced:
 from __future__ import annotations
 
 import re
-from pathlib import Path
-
-import pytest
 
 from _graph import INC_ROOT, REPO_ROOT, first_party_imports, iter_source_files
 

@@ -2,16 +2,19 @@
 
 Contract source: context/spec/kernel/boot.md.
 
-This module provides the immutable declaration types used by capability,
-feature and application manifests. It holds no registries and performs no
-validation; registries, validate/freeze and the boot sequence land in R3,
-which also extends these declarations with the registration metadata that
-real usage demands (no speculative fields).
+This package provides immutable declaration types (CapabilitySpec,
+FeatureSpec, AppManifest) and the typed build registry with
+validate/freeze/report semantics. Registries are container-local; importing
+this package mutates nothing.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from inc.kernel.boot.registry import Registry, RegistryEntry
+
+__all__ = ["AppManifest", "CapabilitySpec", "FeatureSpec", "Registry", "RegistryEntry"]
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,11 +7,16 @@ tables on the kernel Base metadata. ``alembic/env.py`` imports exactly these
 modules; directory scanning is forbidden. Owners are ``kernel:<component>``
 or ``capability:<name>``.
 
-During the rebuild the manifest is empty: kernel models land in R3,
-capability models land with their own phases, and everything is squashed
-into a single ``0001_initial`` revision at R9.
+Kernel technical tables (outbox, inbox receipts, workflow instances, step
+attempts, signals, task instances, cron state) land with R3. Capability
+models are added as their phases land, and everything is squashed into a
+single ``0001_initial`` revision at R9.
 """
 
 from __future__ import annotations
 
-MIGRATION_OWNER_MODULES: dict[str, str] = {}
+MIGRATION_OWNER_MODULES: dict[str, str] = {
+    "kernel:events": "inc.kernel.events.models",
+    "kernel:workflow": "inc.kernel.workflow.models",
+    "kernel:tasks": "inc.kernel.tasks.models",
+}

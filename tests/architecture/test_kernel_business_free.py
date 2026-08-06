@@ -76,7 +76,10 @@ def test_kernel_has_no_business_table_declarations() -> None:
             marker = "__tablename__"
             if marker not in line:
                 continue
-            name = line.split(marker, 1)[1].split("=", 1)[1].strip().strip("\"'")
+            tail = line.split(marker, 1)[1]
+            if "=" not in tail:
+                continue
+            name = tail.split("=", 1)[1].strip().strip("\"'")
             if any(name.startswith(prefix) for prefix in BUSINESS_PREFIXES):
                 offenders.append(f"{path}: business table {name!r}")
     assert offenders == []

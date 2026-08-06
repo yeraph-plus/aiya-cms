@@ -4,8 +4,7 @@ Contract source: context/spec/kernel/database.md §6.
 
 Model modules are imported exclusively from ``alembic/migration_manifest.py``
 (no package scanning, no side-effect registration). ``target_metadata`` is
-None until the R3 kernel Base exists; autogenerate then attaches the kernel
-Base metadata.
+the kernel Base metadata; capability tables attach to the same Base.
 """
 
 from __future__ import annotations
@@ -29,12 +28,14 @@ from migration_manifest import MIGRATION_OWNER_MODULES  # noqa: E402
 for _owner, _module in MIGRATION_OWNER_MODULES.items():
     importlib.import_module(_module)
 
+from inc.kernel.db import Base  # noqa: E402
+
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

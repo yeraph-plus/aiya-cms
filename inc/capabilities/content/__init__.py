@@ -3,13 +3,20 @@ scheduling, pinning and references.
 
 Contract source: context/spec/capabilities/content.md.
 
-Content type declarations belong to features; this capability validates
-and executes them. It imports neither taxonomy nor assets: dimensions are
-managed by the taxonomy capability, and asset ids are opaque references.
+Public surface for the composition root: type declarations, queries,
+diagnostics and the scheduled-publish scanner/workflow wiring.
 """
 
 from __future__ import annotations
 
+from inc.capabilities.content.commands import CommandContext
+from inc.capabilities.content.diagnostics import ContentDiagnostics
+from inc.capabilities.content.publish import (
+    ContentPublishScanner,
+    ScheduledPublishActivity,
+    register_publish_workflow,
+)
+from inc.capabilities.content.queries import ContentQueries
 from inc.capabilities.content.types import (
     DEFAULT_TRANSITIONS,
     STANDARD_STATES,
@@ -18,8 +25,14 @@ from inc.capabilities.content.types import (
 )
 
 __all__ = [
-    "DEFAULT_TRANSITIONS",
-    "STANDARD_STATES",
+    "CommandContext",
+    "ContentDiagnostics",
+    "ContentPublishScanner",
+    "ContentQueries",
     "ContentTypeRegistry",
     "ContentTypeSpec",
+    "DEFAULT_TRANSITIONS",
+    "STANDARD_STATES",
+    "ScheduledPublishActivity",
+    "register_publish_workflow",
 ]

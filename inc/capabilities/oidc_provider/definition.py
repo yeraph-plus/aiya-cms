@@ -16,8 +16,8 @@ spec = CapabilitySpec(
     name="oidc_provider",
     schema_version="1",
     access_keys=(
-        "oidc.clients.read",
-        "oidc.clients.manage",
-        "oidc.grants.revoke",
+        "oidc_provider.clients.read",
+        "oidc_provider.clients.manage",
+        "oidc_provider.grants.revoke",
     ),
 )

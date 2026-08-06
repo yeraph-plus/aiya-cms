@@ -15,7 +15,7 @@ import re
 
 from inc.kernel.errors import ErrorCategory, KernelError
 
-_KEY = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
+_KEY = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 
 
 def validate_permission_key(key: str) -> None:

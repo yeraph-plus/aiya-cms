@@ -1,0 +1,29 @@
+"""API-level settings for the composition root.
+
+Contract source: context/spec/composition.md §2.3, http-openapi.md §9.
+
+These are deployment/profile concerns (issuer, audiences, cookie
+security, CORS); kernel settings stay technical (database, workers).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ApiSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issuer: str = "http://localhost:8080"
+    api_audience: str = "aiya-admin"
+    secure_cookies: bool = False
+    cors_origins: tuple[str, ...] = ()
+    worker_sleep_seconds: float = 1.0
+
+
+def load_api_settings(overrides: dict[str, Any] | None = None) -> ApiSettings:
+    if overrides is None:
+        return ApiSettings()
+    return ApiSettings(**overrides)

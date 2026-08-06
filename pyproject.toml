@@ -53,6 +53,10 @@ exclude = ["context"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI routers declare Depends/Path/query dependencies in argument defaults
+"inc/api/http/*.py" = ["B008"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

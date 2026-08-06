@@ -6,36 +6,33 @@
 ## 当前状态
 
 - R0（归档）/ R1（规格）/ R2（骨架）/ R3（kernel）/ R4（identity/access/oidc/audit）/ R5（content/taxonomy/settings/assets + post/page 声明）已完成并提交。
+- R8 后端组合根已完成：manifest 装配/Port 绑定/容器 freeze/worker 生命周期、OIDC bearer 校验 + AppContext、admin routers（identity/access/content/taxonomy/settings/assets/audit/health/auth）、错误 DTO 归一化、`openapi.json`+`openapi.sha256` 快照与 `inc.main openapi-dump/check` CLI。R6/R7 已按指示跳过（notification/points/payments 不在首轮闭环）。
 - 已做一轮静态代码审查并修复（条件更新防并发丢失更新、事件/审计携带真实 id、kernel JsonBModel 去嵌套、publish 竞态条件更新、storage error 透传、finalize/delete 审计、DeleteReconciler 等）。
-- 本地绿态：`pytest` 221 passed、`ruff check/format` 通过、`mypy --strict inc`（137 文件）通过、`alembic upgrade head --sql` 可用（revision 待 R9 squash）。
+- 本地绿态：`pytest` 249 passed、`ruff check/format` 通过、`mypy --strict inc`（151 文件）通过、`alembic upgrade head --sql` 可用、`inc.main openapi-check` 通过。
 
 ## 未完成阶段
 
+- [ ] **R8 余项**：管理员 SPA 按新 OpenAPI 重接（OIDC Code+PKCE 登录、users/roles/content/taxonomy/settings/assets 页面、diagnostics 概览、生产 build 与静态部署容器）；OIDC client 静态注册入口（当前为 SQL/迁移直插）；生产签名密钥加载器（env/file/KMS，现用 InMemorySigningKeyStore）
 - [ ] **R6** Notification 与垂直工作流合同样例（待审→通知→异步处理→审核信号→发布）
 - [ ] **R7** Points 与 Payments（支付 SDK 厂商选型仍开放）
-- [ ] **R8** API 组合根（manifest 装配、Port 绑定、router 挂载、worker 启动）、管理员端重接、生产静态部署
 - [ ] **R9** squash 临时迁移为 `0001_initial`、空库升级验收、OpenAPI 快照/TS 类型、Compose 空卷全链路验收
 
 ## 待补测试
 
 - [ ] **OpenID conformance**：Basic OP / Config OP / RP-Initiated Logout 目标套件（需真实服务器 + Docker + 外网，本地不可跑）
 - [ ] **PostgreSQL 验收**：`FOR UPDATE SKIP LOCKED` 领取分支、outbox/workflow/task 并发、refresh 并发 rotation——当前全部只跑 SQLite
-- [ ] **R8 组合根**：空 manifest / 最小 manifest / 完整 manifest 启动差异测试（未启用项无路由/订阅/Cron/worker/连接）
-- [ ] **R5+ 能力合同**：content 定时发布重启/并发/取消、置顶分页、taxonomy 孤儿诊断、settings/assets
-- [ ] **R7 并发安全**：points 并发不超扣、幂等入账、webhook 重放/乱序/验签
+- [ ] **R8 组合根**：manifest 装配/Port 绑定/worker 已实现（outbox、workflow、content-publish-scan 循环）；**待补**：管理员端真实 API E2E、生产镜像（禁 Vite dev/preview 承载）、OIDC conformance 前置的客户端静态注册
 - [ ] **管理员端**：OIDC Code+PKCE 登录、权限可见性、真实 API E2E、生产 build（禁 Vite dev/preview 承载）
 - [ ] **PostgreSQL 迁移验收**：`alembic/versions/` 目前无 revision（R9 统一 squash 为 `0001_initial`）；空库 upgrade 会按 manifest 全量建表并校验 schema/metadata 一致
 
 ## 遗留事项
 
-- [ ] **R5 已覆盖**：content 定时发布（重启重扫/重复扫描/取消/重排失效）、置顶分页、taxonomy 规则与孤儿诊断、settings seo 组、assets 工作流幂等均已实现并有测试；**R5 待 Docker 环境补 PostgreSQL 专项**（SKIP LOCKED 分支、并发 worker 扫描）
 - [ ] 旧 PostgreSQL volume（compose project `aiya-cms`）删除——Docker daemon 当前未运行，R9 空库验收前必须做
-- [ ] Compose / Dockerfile 审计改写（plan §12）：`uvicorn inc.main:app`、`python -m inc.cli`、`openapi-check` 等入口在 R8 前不可用；Dockerfile 已移除旧 openapi COPY
-- [ ] `inc/main.py` 为占位模块，`create_app` 属 R8
-- [ ] `openapi.json` / `openapi.sha256` 待 R9 重新生成；admin 生成的 TS 类型待重接
+- [ ] Compose / Dockerfile 审计改写（plan §12）：入口改为 `uvicorn inc.main:get_app` / `python -m inc.main`，openapi-check 挂进 backend-quality 门禁
+- [ ] OIDC Port 绑定（identity/access → oidc）已在组合根完成；生产签名密钥加载器（env/file/KMS）未实现，现用 InMemorySigningKeyStore
+- [ ] `openapi.json` / `openapi.sha256` 已在 R8 生成并纳入版本库；admin 生成的 TS 类型待重接
+- [ ] 管理员 SPA 作为 first-party public client 接入（R8 余项）；长期会话需 BFF/httpOnly adapter 决策
 - [ ] kernel `cache` Port 未建（无真实消费者；出现第二个用例再抽象）
-- [ ] OIDC Port 绑定（identity/access → oidc）与生产签名密钥加载器（env/file/KMS）属 R8 组合根
-- [ ] 管理员 SPA 作为 first-party public client 接入（R8）；长期会话需 BFF/httpOnly adapter 决策
 - [ ] 宿主环境说明：本地跑 kernel/capability 测试需 `pip install` dev 依赖（aiosqlite/httpx/anyio≥4.9 等），完整门禁以 compose 为准
 
 ## 验证命令

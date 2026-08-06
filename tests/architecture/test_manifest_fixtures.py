@@ -19,15 +19,12 @@ ALL_CAPABILITIES = (
     "oidc_provider",
     "audit",
     "settings",
-    "notification",
     "content",
     "taxonomy",
     "assets",
-    "points",
-    "payments",
 )
 
-ALL_FEATURES = ("post", "page", "check_in", "point_purchase")
+ALL_FEATURES = ("post", "page")
 
 
 def test_manifest_fixtures_are_immutable_and_named() -> None:

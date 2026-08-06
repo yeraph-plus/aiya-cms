@@ -14,7 +14,14 @@ from dataclasses import dataclass
 
 from inc.kernel.boot.registry import Registry, RegistryEntry
 
-__all__ = ["AppManifest", "CapabilitySpec", "FeatureSpec", "Registry", "RegistryEntry"]
+__all__ = [
+    "AppManifest",
+    "CapabilitySpec",
+    "FeatureSpec",
+    "Registry",
+    "RegistryEntry",
+    "RouterSpec",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +40,22 @@ class FeatureSpec:
     name: str
     version: str
     requires: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RouterSpec:
+    """Declaration of an HTTP router surface.
+
+    Contract source: context/spec/composition.md §7, http-openapi.md §11.
+    Capabilities and features export RouterSpec declarations; only the
+    composition root mounts them with unified middleware and auth.
+    """
+
+    owner: str
+    prefix: str
+    name: str
+    requires_capabilities: tuple[str, ...] = ()
+    access_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

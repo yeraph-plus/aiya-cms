@@ -1,0 +1,219 @@
+"""Content admin router.
+
+Contract source: context/spec/http-openapi.md, capabilities/content.md.
+
+Content commands run with the principal's capability set; every write is
+permission-checked by the capability itself. Query listing follows the
+pin-stable ordering defined by the content spec.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, Path, Query
+from pydantic import BaseModel, ConfigDict
+
+from inc.api.container import Services
+from inc.api.http.context import AppContext, RequireCapability
+from inc.capabilities.content.commands import (
+    ArchiveContent,
+    CommandContext,
+    CreateContent,
+    PublishContent,
+    PurgeArchivedContent,
+    RejectContent,
+    ReplaceContentReferences,
+    RestoreContentToDraft,
+    ScheduleContent,
+    SetContentPin,
+    SubmitContent,
+    UnscheduleContent,
+    UpdateContent,
+)
+from inc.capabilities.content.schemas import (
+    ContentDTO,
+    ContentPageDTO,
+    CreateContentInput,
+    ReferenceDTO,
+    ReplaceReferencesInput,
+    SetContentPinInput,
+    UpdateContentInput,
+)
+
+
+class RejectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = None
+
+
+class ScheduleBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    publish_at: datetime
+
+
+class PinBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_pinned: bool
+    pin_rank: int = 0
+
+
+class ReferencesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    targets: list[uuid.UUID]
+    metadata: dict[str, Any] = {}
+
+
+def _ctx(ctx: AppContext, services: Services) -> CommandContext:
+    return CommandContext(
+        uow_factory=ctx.uow_factory,
+        clock=ctx.clock,
+        outbox=services.outbox,
+        types=services.content_types,
+        permissions=frozenset(ctx.principal.capabilities),
+        actor_id=ctx.principal.subject_id,
+        trace_id=ctx.trace_id,
+    )
+
+
+def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+    router = APIRouter(prefix="/api/v1/admin")
+
+    @router.get("/content", response_model=ContentPageDTO)
+    async def list_content(
+        page: int = Query(default=1, ge=1),
+        size: int = Query(default=20, ge=1, le=100),
+        type_name: str | None = None,
+        status: str | None = None,
+        ctx: AppContext = Depends(require_capability("content.read")),
+    ) -> ContentPageDTO:
+        return await services.content_queries.list_contents(
+            page=page, size=size, type_name=type_name, status=status
+        )
+
+    @router.get("/content/{content_id}", response_model=ContentDTO)
+    async def get_content(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.read")),
+    ) -> ContentDTO:
+        content = await services.content_queries.get(content_id)
+        if content is None:
+            from inc.kernel.errors import ErrorCategory, KernelError
+
+            raise KernelError(
+                code="content.not_found",
+                category=ErrorCategory.NOT_FOUND,
+                message=f"content {content_id}",
+            )
+        return content
+
+    @router.get("/content/{content_id}/references", response_model=list[ReferenceDTO])
+    async def list_references(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.read")),
+    ) -> list[ReferenceDTO]:
+        return await services.content_queries.list_outgoing(content_id)
+
+    @router.post("/content", response_model=ContentDTO)
+    async def create_content(
+        body: CreateContentInput,
+        ctx: AppContext = Depends(require_capability("content.write")),
+    ) -> ContentDTO:
+        return await CreateContent(_ctx(ctx, services))(body)
+
+    @router.patch("/content/{content_id}", response_model=ContentDTO)
+    async def update_content(
+        body: UpdateContentInput,
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.write")),
+    ) -> ContentDTO:
+        return await UpdateContent(_ctx(ctx, services))(content_id, body)
+
+    @router.post("/content/{content_id}/submit", response_model=ContentDTO)
+    async def submit_content(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.write")),
+    ) -> ContentDTO:
+        return await SubmitContent(_ctx(ctx, services))(content_id)
+
+    @router.post("/content/{content_id}/reject", response_model=ContentDTO)
+    async def reject_content(
+        body: RejectBody,
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.write")),
+    ) -> ContentDTO:
+        return await RejectContent(_ctx(ctx, services))(content_id, reason=body.reason)
+
+    @router.post("/content/{content_id}/schedule", response_model=ContentDTO)
+    async def schedule_content(
+        body: ScheduleBody,
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.schedule")),
+    ) -> ContentDTO:
+        return await ScheduleContent(_ctx(ctx, services))(content_id, body.publish_at)
+
+    @router.post("/content/{content_id}/unschedule", response_model=ContentDTO)
+    async def unschedule_content(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.schedule")),
+    ) -> ContentDTO:
+        return await UnscheduleContent(_ctx(ctx, services))(content_id)
+
+    @router.post("/content/{content_id}/publish", response_model=ContentDTO)
+    async def publish_content(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.publish")),
+    ) -> ContentDTO:
+        return await PublishContent(_ctx(ctx, services))(content_id)
+
+    @router.post("/content/{content_id}/archive", response_model=ContentDTO)
+    async def archive_content(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.archive")),
+    ) -> ContentDTO:
+        return await ArchiveContent(_ctx(ctx, services))(content_id)
+
+    @router.post("/content/{content_id}/restore", response_model=ContentDTO)
+    async def restore_content(
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.write")),
+    ) -> ContentDTO:
+        return await RestoreContentToDraft(_ctx(ctx, services))(content_id)
+
+    @router.post("/content/{content_id}/pin", response_model=ContentDTO)
+    async def set_pin(
+        body: PinBody,
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.pin")),
+    ) -> ContentDTO:
+        return await SetContentPin(_ctx(ctx, services))(
+            content_id, SetContentPinInput(is_pinned=body.is_pinned, pin_rank=body.pin_rank)
+        )
+
+    @router.put("/content/{content_id}/references", status_code=204)
+    async def replace_references(
+        body: ReferencesBody,
+        content_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("content.write")),
+    ) -> None:
+        await ReplaceContentReferences(_ctx(ctx, services))(
+            content_id,
+            ReplaceReferencesInput(kind=body.kind, targets=body.targets, metadata=body.metadata),
+        )
+
+    @router.post("/content/{content_id}/purge")
+    async def purge_content(
+        content_id: uuid.UUID = Path(...),
+        dry_run: bool = Query(default=False),
+        ctx: AppContext = Depends(require_capability("content.purge")),
+    ) -> dict[str, Any]:
+        return await PurgeArchivedContent(_ctx(ctx, services))(content_id, dry_run=dry_run)
+
+    return router

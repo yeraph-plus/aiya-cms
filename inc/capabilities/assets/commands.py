@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from datetime import UTC, timedelta
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
 from inc.capabilities.assets.models import (
     AssetMetadata,
     AssetObject,
@@ -22,6 +25,7 @@ from inc.capabilities.assets.models import (
 )
 from inc.capabilities.assets.ports import (
     ObjectStorageProvider,
+    StorageError,
     permanent_storage_error,
     storage_error,
 )
@@ -113,14 +117,16 @@ async def _append_audit(
     action: str,
     target_type: str,
     target_id: str,
+    occurred_at: Any | None = None,
     details: dict[str, Any] | None = None,
 ) -> None:
+    now = occurred_at if occurred_at is not None else ctx.clock.utc_now()
     await ctx.outbox.append(
         uow,
         EventEnvelope(
             event_id=uuid.uuid7(),
             event_key=AUDIT_EVENT_KEY,
-            occurred_at=ctx.clock.utc_now(),
+            occurred_at=now,
             producer="assets",
             aggregate_type="assets",
             aggregate_id=target_id,
@@ -128,7 +134,7 @@ async def _append_audit(
             payload={
                 "action": action,
                 "outcome": "success",
-                "occurred_at": ctx.clock.utc_now().isoformat(),
+                "occurred_at": now.isoformat(),
                 "actor_type": "user" if ctx.actor_id else None,
                 "actor_id": ctx.actor_id,
                 "target_type": target_type,
@@ -171,13 +177,18 @@ class CreateUploadIntent:
         provider = _provider(ctx, input_.provider_key)
         object_key = _new_object_key()
         expires_at = ctx.clock.utc_now() + timedelta(seconds=INTENT_TTL_SECONDS)
-        credentials = await provider.create_upload_intent(
-            object_key=object_key,
-            content_length_max=input_.content_length_max,
-            mime_types=input_.mime_types,
-            checksum_sha256=input_.checksum_sha256,
-            expires_at=expires_at,
-        )
+        try:
+            credentials = await provider.create_upload_intent(
+                object_key=object_key,
+                content_length_max=input_.content_length_max,
+                mime_types=input_.mime_types,
+                checksum_sha256=input_.checksum_sha256,
+                expires_at=expires_at,
+            )
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - adapter errors map to storage errors
+            raise storage_error(str(exc)) from exc
         async with ctx.uow_factory() as uow:
             intent = AssetUploadIntent(
                 provider_key=input_.provider_key,
@@ -188,6 +199,7 @@ class CreateUploadIntent:
                 expires_at=expires_at,
             )
             uow.session.add(intent)
+            await uow.session.flush()  # assign id before audit references it
             await _append_audit(
                 ctx,
                 uow,
@@ -229,12 +241,22 @@ class FinalizeAsset:
             raise _conflict("assets.intent_consumed", "upload intent already consumed")
         if _ensure_utc(intent.expires_at) < ctx.clock.utc_now():
             raise _conflict("assets.intent_expired", "upload intent expired")
-        await ctx.runner.start(
-            workflow_key=FINALIZE_WORKFLOW_KEY,
-            idempotency_key=f"intent:{intent_id}",
-            input_data={"intent_id": str(intent_id)},
-            trace_id=ctx.trace_id,
-        )
+        previous = await _workflow_status(ctx, FINALIZE_WORKFLOW_KEY, f"intent:{intent_id}")
+        if previous == "failed":
+            raise _conflict(
+                "assets.finalize_failed",
+                "finalize previously failed with a permanent error; create a new upload intent",
+            )
+        try:
+            await ctx.runner.start(
+                workflow_key=FINALIZE_WORKFLOW_KEY,
+                idempotency_key=f"intent:{intent_id}",
+                input_data={"intent_id": str(intent_id)},
+                trace_id=ctx.trace_id,
+            )
+        except IntegrityError:
+            # concurrent start: the workflow already exists, treat as started
+            pass
         return FinalizeResultDTO(intent_id=str(intent_id), object_key=intent.object_key)
 
 
@@ -250,6 +272,8 @@ class RegisterExternalAsset:
         provider = _provider(ctx, input_.provider_key)
         try:
             stat = await provider.stat(object_key=input_.object_key)
+        except StorageError:
+            raise
         except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors
             raise storage_error(str(exc)) from exc
         if input_.checksum_sha256 is not None and stat.checksum_sha256 is not None:
@@ -258,18 +282,36 @@ class RegisterExternalAsset:
                     "assets.checksum_mismatch", "checksum does not match remote object"
                 )
         async with ctx.uow_factory() as uow:
+            duplicate = (
+                (
+                    await uow.session.execute(
+                        select(AssetObject.id).where(
+                            AssetObject.provider_key == input_.provider_key,
+                            AssetObject.object_key == input_.object_key,
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if duplicate is not None:
+                raise _conflict(
+                    "assets.already_registered",
+                    f"object {input_.object_key!r} is already registered on {input_.provider_key}",
+                )
             row = AssetObject(
                 provider_key=input_.provider_key,
                 bucket=input_.bucket,
                 object_key=input_.object_key,
                 mime_type=stat.mime_type,
                 byte_size=stat.byte_size,
-                checksum_sha256=stat.checksum_sha256 or input_.checksum_sha256,
+                checksum_sha256=stat.checksum_sha256,
                 alt_text=input_.alt_text,
                 asset_metadata=AssetMetadata(values=input_.metadata),
                 state="ready",
             )
             uow.session.add(row)
+            await uow.session.flush()  # assign id before audit references it
             await _append_audit(
                 ctx,
                 uow,
@@ -278,7 +320,13 @@ class RegisterExternalAsset:
                 target_id=str(row.id),
                 details={"object_key": row.object_key},
             )
-            await uow.commit()
+            try:
+                await uow.commit()
+            except IntegrityError as exc:
+                raise _conflict(
+                    "assets.already_registered",
+                    f"object {input_.object_key!r} is already registered",
+                ) from exc
             return _to_ref(row)
 
 
@@ -342,7 +390,7 @@ class DeleteAsset:
             await _append_audit(
                 ctx,
                 uow,
-                action="assets.delete",
+                action="assets.delete.requested",
                 target_type="asset",
                 target_id=str(row.id),
                 details={"object_key": row.object_key},
@@ -354,6 +402,25 @@ class DeleteAsset:
             input_data={"asset_id": str(asset_id)},
             trace_id=ctx.trace_id,
         )
+
+
+async def _workflow_status(ctx: CommandContext, workflow_key: str, idempotency_key: str) -> str:  # type: ignore[return]
+    from inc.kernel.workflow.models import WorkflowInstance
+
+    async with ctx.uow_factory() as uow:
+        row = (
+            (
+                await uow.session.execute(
+                    select(WorkflowInstance).where(
+                        WorkflowInstance.workflow_key == workflow_key,
+                        WorkflowInstance.business_idempotency_key == idempotency_key,
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        return row.status if row is not None else "none"
 
 
 class FinalizeActivity:
@@ -373,14 +440,22 @@ class FinalizeActivity:
                 category=ErrorCategory.INTERNAL,
                 message="finalize workflow input is missing intent_id",
             )
-        intent: AssetUploadIntent | None = await uow.session.get(
-            AssetUploadIntent, uuid.UUID(intent_id)
-        )
+        try:
+            parsed_id = uuid.UUID(intent_id)
+        except ValueError as exc:
+            raise KernelError(
+                code="assets.finalize_invalid_input",
+                category=ErrorCategory.INTERNAL,
+                message="finalize workflow input carries an invalid intent_id",
+            ) from exc
+        intent: AssetUploadIntent | None = await uow.session.get(AssetUploadIntent, parsed_id)
         if intent is None or intent.consumed_at is not None:
             return {"skipped": True}
         provider = _provider(ctx, intent.provider_key)
         try:
             stat = await provider.stat(object_key=intent.object_key)
+        except StorageError:
+            raise
         except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors
             raise storage_error(str(exc)) from exc
         if stat.byte_size > intent.content_length_max:
@@ -390,10 +465,16 @@ class FinalizeActivity:
                 "assets.mime_not_allowed", f"mime {stat.mime_type!r} not allowed"
             )
         if intent.checksum_sha256 is not None:
-            if stat.checksum_sha256 is None or stat.checksum_sha256 != intent.checksum_sha256:
+            if stat.checksum_sha256 is None:
+                raise permanent_storage_error(
+                    "assets.checksum_unverifiable",
+                    "provider cannot verify the required checksum",
+                )
+            if stat.checksum_sha256 != intent.checksum_sha256:
                 raise permanent_storage_error(
                     "assets.checksum_mismatch", "checksum does not match intent"
                 )
+        now = ctx.clock.utc_now()
         row = AssetObject(
             provider_key=intent.provider_key,
             object_key=intent.object_key,
@@ -404,12 +485,27 @@ class FinalizeActivity:
             state="ready",
         )
         uow.session.add(row)
-        intent.consumed_at = ctx.clock.utc_now()
-        return {"skipped": False, "asset_state": "ready"}
+        await uow.session.flush()  # assign id before audit references it
+        intent.consumed_at = now
+        await _append_audit(
+            ctx,
+            uow,
+            action="assets.finalize",
+            target_type="asset",
+            target_id=str(row.id),
+            occurred_at=now,
+            details={"object_key": row.object_key},
+        )
+        return {"skipped": False, "asset_state": "ready", "asset_id": str(row.id)}
 
 
 class DeleteActivity:
-    """Provider delete + external_deleted_at in one step commit; idempotent."""
+    """Provider delete + external_deleted_at in one step commit; idempotent.
+
+    The provider Port contract requires delete to be idempotent (deleting
+    a missing object is success), so a retried step never double-executes
+    a side effect.
+    """
 
     def __init__(self, *, ctx: CommandContext) -> None:
         self._ctx = ctx
@@ -425,16 +521,80 @@ class DeleteActivity:
                 category=ErrorCategory.INTERNAL,
                 message="delete workflow input is missing asset_id",
             )
-        row: AssetObject | None = await uow.session.get(AssetObject, uuid.UUID(asset_id))
+        try:
+            parsed_id = uuid.UUID(asset_id)
+        except ValueError as exc:
+            raise KernelError(
+                code="assets.delete_invalid_input",
+                category=ErrorCategory.INTERNAL,
+                message="delete workflow input carries an invalid asset_id",
+            ) from exc
+        row: AssetObject | None = await uow.session.get(AssetObject, parsed_id)
         if row is None or row.external_deleted_at is not None:
             return {"skipped": True}
         provider = _provider(ctx, row.provider_key)
         try:
             await provider.delete(object_key=row.object_key)
+        except StorageError:
+            raise
         except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors
             raise storage_error(str(exc)) from exc
-        row.external_deleted_at = ctx.clock.utc_now()
+        now = ctx.clock.utc_now()
+        row.external_deleted_at = now
+        await _append_audit(
+            ctx,
+            uow,
+            action="assets.delete.external",
+            target_type="asset",
+            target_id=str(row.id),
+            occurred_at=now,
+            details={"object_key": row.object_key},
+        )
         return {"skipped": False}
+
+
+class AssetDeleteReconciler:
+    """Re-starts delete workflows for rows left deleted-but-unconfirmed.
+
+    Covers the crash window between DeleteAsset's local commit and the
+    workflow start; workflow start is idempotent by asset id.
+    """
+
+    def __init__(self, *, ctx: CommandContext, batch: int = 64) -> None:
+        self._ctx = ctx
+        self._batch = batch
+
+    async def scan(self) -> int:
+        ctx = self._ctx
+        async with ctx.uow_factory() as uow:
+            rows = (
+                (
+                    await uow.session.execute(
+                        select(AssetObject)
+                        .where(
+                            AssetObject.state == "deleted",
+                            AssetObject.external_deleted_at.is_(None),
+                        )
+                        .order_by(AssetObject.updated_at)
+                        .limit(self._batch)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        restarted = 0
+        for row in rows:
+            previous = await _workflow_status(ctx, DELETE_WORKFLOW_KEY, f"asset:{row.id}")
+            if previous != "none":
+                continue
+            await ctx.runner.start(
+                workflow_key=DELETE_WORKFLOW_KEY,
+                idempotency_key=f"asset:{row.id}",
+                input_data={"asset_id": str(row.id)},
+                trace_id=f"reconcile:{row.id}",
+            )
+            restarted += 1
+        return restarted
 
 
 def build_asset_workflow_specs(ctx: CommandContext) -> tuple[WorkflowSpec, ...]:
@@ -444,7 +604,7 @@ def build_asset_workflow_specs(ctx: CommandContext) -> tuple[WorkflowSpec, ...]:
         activities=(
             ActivitySpec(
                 key=FINALIZE_ACTIVITY_KEY,
-                timeout_seconds=60.0,
+                timeout_seconds=30.0,
                 retry=RetryPolicy(max_attempts=5, base_delay_seconds=1.0),
                 handler=FinalizeActivity(ctx=ctx),
             ),
@@ -456,7 +616,7 @@ def build_asset_workflow_specs(ctx: CommandContext) -> tuple[WorkflowSpec, ...]:
         activities=(
             ActivitySpec(
                 key=DELETE_ACTIVITY_KEY,
-                timeout_seconds=60.0,
+                timeout_seconds=30.0,
                 retry=RetryPolicy(max_attempts=5, base_delay_seconds=1.0),
                 handler=DeleteActivity(ctx=ctx),
             ),

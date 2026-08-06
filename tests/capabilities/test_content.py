@@ -303,6 +303,53 @@ async def test_create_duplicate_slug_conflicts(ctx: CommandContext) -> None:
     assert excinfo.value.code == "content.duplicate_slug"
 
 
+async def test_create_event_and_audit_carry_real_content_id(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    created = await create_post(ctx)
+    async with uow_factory() as uow:
+        rows = (
+            (
+                await uow.session.execute(
+                    select(OutboxMessage).where(OutboxMessage.event_key == "content.created.v1")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audits = (
+            (
+                await uow.session.execute(
+                    select(OutboxMessage).where(OutboxMessage.event_key == AUDIT_EVENT_KEY)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 1
+    payload = rows[0].envelope.payload
+    assert payload["content_id"] == created.id
+    assert rows[0].envelope.aggregate_id == created.id
+    assert audits[-1].envelope.payload["target_id"] == created.id
+    assert "None" not in str(payload)
+
+
+async def test_update_lost_update_rejected_by_conditional_write(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    created = await create_post(ctx, title="v1")
+    content_id = uuid.UUID(created.id)
+    # simulate a concurrent writer bumping the version between read and write
+    async with uow_factory() as uow:
+        row = await uow.session.get(Content, content_id)
+        assert row is not None
+        row.version = 2
+        await uow.commit()
+    with pytest.raises(KernelError) as excinfo:
+        await UpdateContent(ctx)(content_id, UpdateContentInput(expected_version=1, title="stale"))
+    assert excinfo.value.code == "content.version_conflict"
+
+
 async def test_update_optimistic_version_conflict(ctx: CommandContext) -> None:
     created = await create_post(ctx, title="v1")
     await UpdateContent(ctx)(
@@ -533,6 +580,26 @@ async def test_reschedule_makes_old_task_noop(
 
 
 # --- pin pagination ------------------------------------------------------
+
+
+async def test_scheduled_publish_then_archive_works(
+    publish_ctx: tuple[WorkflowRunner, ContentPublishScanner, CommandContext],
+    uow_factory: UoWFactory,
+    clock: Any,
+    queries: ContentQueries,
+) -> None:
+    runner, scanner, cmd_ctx = publish_ctx
+    created = await create_post(cmd_ctx)
+    content_id = uuid.UUID(created.id)
+    await ScheduleContent(cmd_ctx)(content_id, clock.utc_now() + timedelta(minutes=5))
+    clock.advance(timedelta(minutes=6))
+    await scanner.scan_once()
+    await runner.run_due(workflow_key=PUBLISH_WORKFLOW_KEY)
+    published = await queries.get(content_id)
+    assert published is not None and published.status == "published"
+    archived = await ArchiveContent(cmd_ctx)(content_id)
+    assert archived.status == "archived"
+    assert archived.publish_at is None
 
 
 async def test_pin_pagination_total_and_stable_order(

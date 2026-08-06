@@ -68,9 +68,11 @@ class SettingGroupSpec:
             raise ValueError(f"group {group_key} marks a field both public and sensitive")
         defaults = value_schema.model_construct()
         try:
-            value_schema.model_validate(defaults.model_dump())
+            value_schema.model_validate(defaults.model_dump(mode="json"))
         except Exception as exc:
-            raise ValueError(f"group {group_key} defaults are not serializable: {exc}") from exc
+            raise ValueError(
+                f"group {group_key} defaults are not JSON-serializable: {exc}"
+            ) from exc
 
         self.group_key = group_key
         self.version = version

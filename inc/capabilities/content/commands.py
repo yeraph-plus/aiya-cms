@@ -3,11 +3,12 @@
 Contract source: context/spec/capabilities/content.md §5/§8.
 
 Every command runs in one UoW: business state, outbox events and audit
-envelopes commit atomically in a single commit. Commands validate type,
-Pydantic data, transition, permission, owner and optimistic version.
-Sync-command idempotency is provided by the natural keys ((type, slug)
-uniqueness and the version counter); async scheduled publish is idempotent
-through the workflow business key content_id:schedule_version.
+envelopes commit atomically in a single commit. Writes are conditional
+updates (``WHERE version`` or ``WHERE status``) so concurrent callers
+cannot lose updates or double-apply transitions; the command fails with a
+conflict instead. Commands validate type, Pydantic data, transition,
+permission, owner and optimistic version. Async scheduled publish is
+idempotent through the workflow business key content_id:schedule_version.
 """
 
 from __future__ import annotations
@@ -15,9 +16,10 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from inc.capabilities.content.dto import to_dto
@@ -127,6 +129,7 @@ async def _emit(
     *,
     key: str,
     content_id: str,
+    occurred_at: datetime,
     **values: Any,
 ) -> None:
     await ctx.outbox.append(
@@ -134,7 +137,7 @@ async def _emit(
         EventEnvelope(
             event_id=uuid.uuid7(),
             event_key=key,
-            occurred_at=ctx.clock.utc_now(),
+            occurred_at=occurred_at,
             producer="content",
             aggregate_type="content",
             aggregate_id=content_id,
@@ -150,6 +153,7 @@ async def _append_audit(
     *,
     action: str,
     content: Content,
+    occurred_at: datetime,
     details: dict[str, Any] | None = None,
 ) -> None:
     await ctx.outbox.append(
@@ -157,7 +161,7 @@ async def _append_audit(
         EventEnvelope(
             event_id=uuid.uuid7(),
             event_key=AUDIT_EVENT_KEY,
-            occurred_at=ctx.clock.utc_now(),
+            occurred_at=occurred_at,
             producer="content",
             aggregate_type="content",
             aggregate_id=str(content.id),
@@ -165,7 +169,7 @@ async def _append_audit(
             payload={
                 "action": action,
                 "outcome": "success",
-                "occurred_at": ctx.clock.utc_now().isoformat(),
+                "occurred_at": occurred_at.isoformat(),
                 "actor_type": "user" if ctx.actor_id else None,
                 "actor_id": ctx.actor_id,
                 "target_type": content.type_name,
@@ -198,11 +202,11 @@ async def _load_and_check(
     return row, spec
 
 
-async def _finish(ctx: CommandContext, uow: UnitOfWork, *, conflict_code: str) -> None:
-    try:
-        await uow.commit()
-    except IntegrityError as exc:
-        raise _conflict(conflict_code, "slug already exists for this type") from exc
+async def _reload(uow: UnitOfWork, row: Content) -> Content:
+    """Re-read the row after a Core-level conditional update."""
+
+    await uow.session.refresh(row)
+    return row
 
 
 def _transition(ctx: CommandContext, row: Content, spec: ContentTypeSpec, target: str) -> None:
@@ -211,6 +215,37 @@ def _transition(ctx: CommandContext, row: Content, spec: ContentTypeSpec, target
             "content.invalid_transition",
             f"cannot move content from {row.status!r} to {target!r}",
         )
+
+
+async def _transition_row(
+    uow: UnitOfWork,
+    row: Content,
+    target: str,
+    *,
+    now: datetime,
+    set_values: dict[str, Any],
+) -> Content:
+    """Atomic conditional transition; raises when the row moved concurrently."""
+
+    result = await uow.session.execute(
+        update(Content)
+        .where(Content.id == row.id, Content.status == row.status)
+        .values(status=target, version=Content.version + 1, updated_at=now, **set_values)
+    )
+    if result.rowcount == 0:
+        raise _conflict(
+            "content.invalid_transition",
+            f"content moved concurrently from {row.status!r}; retry with fresh state",
+        )
+    return await _reload(uow, row)
+
+
+async def _commit(uow: UnitOfWork, *, conflict_code: str | None = None) -> None:
+    try:
+        await uow.commit()
+    except IntegrityError as exc:
+        code = conflict_code or "content.state_conflict"
+        raise _conflict(code, "content state changed or constraint violated") from exc
 
 
 class CreateContent:
@@ -234,6 +269,7 @@ class CreateContent:
             raise _validation(
                 "content.owner_not_allowed", f"type {spec.type_name} does not support owners"
             )
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row = Content(
                 type_name=spec.type_name,
@@ -249,56 +285,56 @@ class CreateContent:
                 data=ContentDataEnvelope(schema_version=spec.data_schema_version, payload=payload),
             )
             uow.session.add(row)
+            try:
+                await uow.session.flush()  # assign id before events reference it
+            except IntegrityError as exc:
+                raise _conflict(
+                    "content.duplicate_slug", f"slug {row.slug!r} already exists for this type"
+                ) from exc
             await _emit(
                 ctx,
                 uow,
                 key="content.created.v1",
                 content_id=str(row.id),
+                occurred_at=now,
                 type_name=row.type_name,
                 slug=row.slug,
                 status=row.status,
                 version=row.version,
                 title=row.title,
             )
-            await _append_audit(ctx, uow, action="content.create", content=row)
-            await _finish(ctx, uow, conflict_code="content.duplicate_slug")
+            await _append_audit(ctx, uow, action="content.create", content=row, occurred_at=now)
+            await _commit(uow, conflict_code="content.duplicate_slug")
             return to_dto(row)
 
 
 class UpdateContent:
-    """Update editable fields with optimistic version check."""
+    """Update editable fields with an atomic version-guarded write."""
 
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
 
     async def __call__(self, content_id: Any, input_: UpdateContentInput) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_WRITE)
-            if row.version != input_.expected_version:
-                raise _conflict(
-                    "content.version_conflict",
-                    f"expected version {input_.expected_version}, found {row.version}",
-                )
-            changed: list[str] = []
+            values: dict[str, Any] = {}
             if input_.title is not None:
                 if len(input_.title) > spec.title_max_length:
                     raise _validation(
                         "content.invalid_title", f"title longer than {spec.title_max_length}"
                     )
-                row.title = input_.title
-                changed.append("title")
+                values["title"] = input_.title
             if input_.slug is not None:
                 _validate_slug(spec, input_.slug)
-                row.slug = input_.slug
-                changed.append("slug")
+                values["slug"] = input_.slug
             if input_.body is not None:
                 if spec.body_max_length is not None and len(input_.body) > spec.body_max_length:
                     raise _validation(
                         "content.invalid_body", f"body longer than {spec.body_max_length}"
                     )
-                row.body = input_.body
-                changed.append("body")
+                values["body"] = input_.body
             if input_.excerpt is not None:
                 if (
                     spec.excerpt_max_length is not None
@@ -308,33 +344,47 @@ class UpdateContent:
                         "content.invalid_excerpt",
                         f"excerpt longer than {spec.excerpt_max_length}",
                     )
-                row.excerpt = input_.excerpt
-                changed.append("excerpt")
+                values["excerpt"] = input_.excerpt
             if input_.data is not None:
-                row.data = ContentDataEnvelope(
+                values["data"] = ContentDataEnvelope(
                     schema_version=spec.data_schema_version,
                     payload=_validate_data(spec, input_.data),
                 )
-                changed.append("data")
-            if not changed:
+            if not values:
                 raise _validation("content.empty_update", "nothing to update")
-            row.version += 1
+            result = await uow.session.execute(
+                update(Content)
+                .where(Content.id == row.id, Content.version == input_.expected_version)
+                .values(**values, version=Content.version + 1, updated_at=now)
+            )
+            if result.rowcount == 0:
+                raise _conflict(
+                    "content.version_conflict",
+                    f"expected version {input_.expected_version}, found {row.version}",
+                )
+            refreshed = await _reload(uow, row)
             await _emit(
                 ctx,
                 uow,
                 key="content.updated.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
-                changed=tuple(changed),
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
+                changed=tuple(sorted(values)),
             )
             await _append_audit(
-                ctx, uow, action="content.update", content=row, details={"changed": changed}
+                ctx,
+                uow,
+                action="content.update",
+                content=refreshed,
+                occurred_at=now,
+                details={"changed": sorted(values)},
             )
-            await _finish(ctx, uow, conflict_code="content.duplicate_slug")
-            return to_dto(row)
+            await _commit(uow, conflict_code="content.duplicate_slug")
+            return to_dto(refreshed)
 
 
 class SubmitContent:
@@ -345,24 +395,27 @@ class SubmitContent:
 
     async def __call__(self, content_id: Any) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_WRITE)
             _transition(ctx, row, spec, "pending")
-            row.status = "pending"
-            row.version += 1
+            refreshed = await _transition_row(uow, row, "pending", now=now, set_values={})
             await _emit(
                 ctx,
                 uow,
                 key="content.submitted.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
             )
-            await _append_audit(ctx, uow, action="content.submit", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(
+                ctx, uow, action="content.submit", content=refreshed, occurred_at=now
+            )
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class RejectContent:
@@ -373,31 +426,33 @@ class RejectContent:
 
     async def __call__(self, content_id: Any, reason: str | None = None) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_WRITE)
             _transition(ctx, row, spec, "rejected")
-            row.status = "rejected"
-            row.version += 1
+            refreshed = await _transition_row(uow, row, "rejected", now=now, set_values={})
             await _emit(
                 ctx,
                 uow,
                 key="content.updated.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
                 changed=("status",),
             )
             await _append_audit(
                 ctx,
                 uow,
                 action="content.reject",
-                content=row,
+                content=refreshed,
+                occurred_at=now,
                 details={"reason": reason} if reason else None,
             )
-            await uow.commit()
-            return to_dto(row)
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class ScheduleContent:
@@ -410,6 +465,10 @@ class ScheduleContent:
         ctx = self._ctx
         if publish_at.tzinfo is None:
             raise _validation("content.invalid_schedule", "publish_at must be tz-aware UTC")
+        normalized = publish_at.astimezone(UTC)
+        if normalized <= ctx.clock.utc_now():
+            raise _validation("content.schedule_in_past", "publish_at must be in the future")
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_SCHEDULE)
             if not spec.allows_schedule:
@@ -418,27 +477,34 @@ class ScheduleContent:
                     f"type {spec.type_name} does not support scheduling",
                 )
             _transition(ctx, row, spec, "scheduled")
-            if publish_at <= ctx.clock.utc_now():
-                raise _validation("content.schedule_in_past", "publish_at must be in the future")
-            row.status = "scheduled"
-            row.publish_at = publish_at
-            row.schedule_version += 1
-            row.version += 1
+            refreshed = await _transition_row(
+                uow,
+                row,
+                "scheduled",
+                now=now,
+                set_values={
+                    "publish_at": normalized,
+                    "schedule_version": row.schedule_version + 1,
+                },
+            )
             await _emit(
                 ctx,
                 uow,
                 key="content.scheduled.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
-                publish_at=row.publish_at,
-                schedule_version=row.schedule_version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
+                publish_at=refreshed.publish_at,
+                schedule_version=refreshed.schedule_version,
             )
-            await _append_audit(ctx, uow, action="content.schedule", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(
+                ctx, uow, action="content.schedule", content=refreshed, occurred_at=now
+            )
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class UnscheduleContent:
@@ -449,27 +515,37 @@ class UnscheduleContent:
 
     async def __call__(self, content_id: Any) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_SCHEDULE)
             _transition(ctx, row, spec, "draft")
-            row.status = "draft"
-            row.publish_at = None
-            row.schedule_version += 1
-            row.version += 1
+            refreshed = await _transition_row(
+                uow,
+                row,
+                "draft",
+                now=now,
+                set_values={
+                    "publish_at": None,
+                    "schedule_version": row.schedule_version + 1,
+                },
+            )
             await _emit(
                 ctx,
                 uow,
                 key="content.schedule_cancelled.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
-                schedule_version=row.schedule_version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
+                schedule_version=refreshed.schedule_version,
             )
-            await _append_audit(ctx, uow, action="content.unschedule", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(
+                ctx, uow, action="content.unschedule", content=refreshed, occurred_at=now
+            )
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class PublishContent:
@@ -480,59 +556,72 @@ class PublishContent:
 
     async def __call__(self, content_id: Any) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_PUBLISH)
             _transition(ctx, row, spec, "published")
-            now = ctx.clock.utc_now()
-            row.status = "published"
-            row.published_at = now
-            row.lease_owner = None
-            row.lease_expires_at = None
-            row.version += 1
+            refreshed = await _transition_row(
+                uow,
+                row,
+                "published",
+                now=now,
+                set_values={"published_at": now, "lease_owner": None, "lease_expires_at": None},
+            )
             await _emit(
                 ctx,
                 uow,
                 key="content.published.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
-                published_at=row.published_at,
-                schedule_version=row.schedule_version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
+                published_at=refreshed.published_at,
+                schedule_version=refreshed.schedule_version,
             )
-            await _append_audit(ctx, uow, action="content.publish", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(
+                ctx, uow, action="content.publish", content=refreshed, occurred_at=now
+            )
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class ArchiveContent:
-    """published -> archived."""
+    """published -> archived; clears the schedule reference."""
 
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
 
     async def __call__(self, content_id: Any) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_ARCHIVE)
             _transition(ctx, row, spec, "archived")
-            row.status = "archived"
-            row.archived_at = ctx.clock.utc_now()
-            row.version += 1
+            refreshed = await _transition_row(
+                uow,
+                row,
+                "archived",
+                now=now,
+                set_values={"archived_at": now, "publish_at": None},
+            )
             await _emit(
                 ctx,
                 uow,
                 key="content.archived.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
             )
-            await _append_audit(ctx, uow, action="content.archive", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(
+                ctx, uow, action="content.archive", content=refreshed, occurred_at=now
+            )
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class RestoreContentToDraft:
@@ -543,26 +632,34 @@ class RestoreContentToDraft:
 
     async def __call__(self, content_id: Any) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_WRITE)
             _transition(ctx, row, spec, "draft")
-            row.status = "draft"
-            row.archived_at = None
-            row.version += 1
+            refreshed = await _transition_row(
+                uow,
+                row,
+                "draft",
+                now=now,
+                set_values={"archived_at": None, "publish_at": None},
+            )
             await _emit(
                 ctx,
                 uow,
                 key="content.updated.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
                 changed=("status",),
             )
-            await _append_audit(ctx, uow, action="content.restore", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(
+                ctx, uow, action="content.restore", content=refreshed, occurred_at=now
+            )
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class SetContentPin:
@@ -577,30 +674,35 @@ class SetContentPin:
             raise _validation(
                 "content.invalid_pin_rank", f"pin_rank must be within 0..{PIN_RANK_MAX}"
             )
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_PIN)
             if not spec.allows_pin:
                 raise _validation(
                     "content.pin_not_allowed", f"type {spec.type_name} does not support pinning"
                 )
-            row.is_pinned = input_.is_pinned
-            row.pin_rank = input_.pin_rank if input_.is_pinned else 0
-            row.version += 1
+            set_values: dict[str, Any] = {"is_pinned": input_.is_pinned}
+            if input_.is_pinned:
+                set_values["pin_rank"] = input_.pin_rank
+            else:
+                set_values["pin_rank"] = 0
+            refreshed = await _transition_row(uow, row, row.status, now=now, set_values=set_values)
             await _emit(
                 ctx,
                 uow,
                 key="content.pin_changed.v1",
-                content_id=str(row.id),
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
-                is_pinned=row.is_pinned,
-                pin_rank=row.pin_rank,
+                content_id=str(refreshed.id),
+                occurred_at=now,
+                type_name=refreshed.type_name,
+                slug=refreshed.slug,
+                status=refreshed.status,
+                version=refreshed.version,
+                is_pinned=refreshed.is_pinned,
+                pin_rank=refreshed.pin_rank,
             )
-            await _append_audit(ctx, uow, action="content.pin", content=row)
-            await uow.commit()
-            return to_dto(row)
+            await _append_audit(ctx, uow, action="content.pin", content=refreshed, occurred_at=now)
+            await _commit(uow)
+            return to_dto(refreshed)
 
 
 class ReplaceContentReferences:
@@ -612,6 +714,7 @@ class ReplaceContentReferences:
     async def __call__(self, content_id: Any, input_: ReplaceReferencesInput) -> None:
         ctx = self._ctx
         metadata = ReferenceMetadata.model_validate(input_.metadata)
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_WRITE)
             if not spec.allows_references:
@@ -670,9 +773,10 @@ class ReplaceContentReferences:
                 uow,
                 action="content.references",
                 content=row,
+                occurred_at=now,
                 details={"kind": input_.kind, "targets": [str(t) for t in input_.targets]},
             )
-            await uow.commit()
+            await _commit(uow)
 
 
 class PurgeArchivedContent:
@@ -687,6 +791,7 @@ class PurgeArchivedContent:
 
     async def __call__(self, content_id: Any, *, dry_run: bool = False) -> dict[str, Any]:  # type: ignore[return]
         ctx = self._ctx
+        now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_PURGE)
             if row.status != "archived":
@@ -730,6 +835,13 @@ class PurgeArchivedContent:
             for ref in outgoing:
                 await uow.session.delete(ref)
             await uow.session.delete(row)
-            await _append_audit(ctx, uow, action="content.purge", content=row, details=report)
-            await uow.commit()
+            await _append_audit(
+                ctx,
+                uow,
+                action="content.purge",
+                content=row,
+                occurred_at=now,
+                details=report,
+            )
+            await _commit(uow)
             return report

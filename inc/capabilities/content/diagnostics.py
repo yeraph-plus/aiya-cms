@@ -95,6 +95,56 @@ class ContentDiagnostics:
                 )
             )
 
+            illegal_schedule = (
+                await uow.session.execute(
+                    select(func.count(Content.id)).where(
+                        Content.status.in_(("draft", "pending", "rejected", "archived")),
+                        Content.publish_at.is_not(None),
+                    )
+                )
+            ).scalar_one()
+            results.append(
+                DiagnosticResult(
+                    code="content.illegal_schedule_state",
+                    status=(
+                        DiagnosticStatus.OK if illegal_schedule == 0 else DiagnosticStatus.DEGRADED
+                    ),
+                    summary=f"{illegal_schedule} rows with publish_at in non-schedule states",
+                )
+            )
+
+            schema_mismatch = 0
+            sample = (
+                (
+                    await uow.session.execute(
+                        select(Content).order_by(Content.updated_at.desc()).limit(100)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in sample:
+                try:
+                    spec = self._types.require(row.type_name)
+                    if row.schema_version != spec.data_schema_version:
+                        schema_mismatch += 1
+                        continue
+                    spec.data_schema.model_validate(dict(row.data.payload))
+                except Exception:  # noqa: BLE001 - diagnostics only report
+                    schema_mismatch += 1
+            results.append(
+                DiagnosticResult(
+                    code="content.data_schema_mismatch",
+                    status=(
+                        DiagnosticStatus.OK if schema_mismatch == 0 else DiagnosticStatus.DEGRADED
+                    ),
+                    summary=(
+                        f"{schema_mismatch}/{len(sample)} recent rows fail "
+                        "registered schema validation (sampled 100)"
+                    ),
+                )
+            )
+
             orphan_refs = (
                 await uow.session.execute(
                     select(func.count(ContentReference.id)).where(

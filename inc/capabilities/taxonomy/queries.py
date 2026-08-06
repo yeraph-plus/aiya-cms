@@ -18,6 +18,7 @@ from inc.capabilities.taxonomy.dimensions import DimensionRegistry
 from inc.capabilities.taxonomy.models import TaxonomyAssignment, TaxonomyTerm
 from inc.capabilities.taxonomy.schemas import DimensionDTO, TermDTO
 from inc.kernel.db import UoWFactory
+from inc.kernel.errors import ErrorCategory, KernelError
 
 
 class TaxonomyQueries:
@@ -85,10 +86,26 @@ class TaxonomyQueries:
 
         candidates: set[str] | None = None
         for dimension_key, term_ids in dimensions.items():
-            self._dimensions.require(dimension_key)
+            try:
+                self._dimensions.require(dimension_key)
+            except KernelError as exc:
+                if exc.code == "taxonomy.unknown_dimension":
+                    raise KernelError(
+                        code="taxonomy.unknown_dimension",
+                        category=ErrorCategory.VALIDATION,
+                        message=exc.message,
+                    ) from exc
+                raise
             if not term_ids:
                 continue
-            term_uuids = [uuid.UUID(term_id) for term_id in term_ids]
+            try:
+                term_uuids = [uuid.UUID(term_id) for term_id in term_ids]
+            except ValueError as exc:
+                raise KernelError(
+                    code="taxonomy.invalid_uuid",
+                    category=ErrorCategory.VALIDATION,
+                    message="one or more term ids are not valid uuids",
+                ) from exc
             async with self._uow_factory() as uow:
                 rows = (
                     await uow.session.execute(

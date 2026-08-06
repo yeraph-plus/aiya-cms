@@ -6,7 +6,8 @@
 ## 当前状态
 
 - R0（归档）/ R1（规格）/ R2（骨架）/ R3（kernel）/ R4（identity/access/oidc/audit）/ R5（content/taxonomy/settings/assets + post/page 声明）已完成并提交。
-- 本地绿态：`pytest` 206 passed、`ruff check/format` 通过、`mypy --strict inc`（137 文件）通过、`alembic upgrade head --sql` 可用（revision 待 R9 squash）。
+- 已做一轮静态代码审查并修复（条件更新防并发丢失更新、事件/审计携带真实 id、kernel JsonBModel 去嵌套、publish 竞态条件更新、storage error 透传、finalize/delete 审计、DeleteReconciler 等）。
+- 本地绿态：`pytest` 221 passed、`ruff check/format` 通过、`mypy --strict inc`（137 文件）通过、`alembic upgrade head --sql` 可用（revision 待 R9 squash）。
 
 ## 未完成阶段
 

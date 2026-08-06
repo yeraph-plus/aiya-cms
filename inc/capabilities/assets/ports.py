@@ -71,4 +71,10 @@ class ObjectStorageProvider(Protocol):
 
     async def read_url(self, *, object_key: str, expires_in_seconds: int) -> str: ...
 
-    async def delete(self, *, object_key: str) -> None: ...
+    async def delete(self, *, object_key: str) -> None:
+        """Idempotent delete: deleting a missing object must succeed.
+
+        The delete workflow retries its step after provider timeouts, so
+        adapters must treat "object already gone" as success (like S3) and
+        never surface a raw 404.
+        """

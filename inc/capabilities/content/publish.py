@@ -39,10 +39,12 @@ PUBLISH_ACTIVITY_KEY = "content.publish.scheduled.step.v1"
 class ScheduledPublishActivity:
     """Idempotent publish step; runs inside the workflow runner UoW.
 
-    The workflow runner commits this UoW atomically with the step attempt,
-    so the status change, the outbox event and the audit envelope commit
-    together. Replays see status != scheduled (or a bumped schedule
-    version) and become no-ops.
+    The publish itself is an atomic conditional update
+    (``status='scheduled' AND schedule_version=expected``), so a
+    concurrently cancelled or rescheduled content loses the race and the
+    step becomes a no-op. The workflow runner commits this UoW atomically
+    with the step attempt, so the status change, the outbox event and the
+    audit envelope commit together; replays are no-ops.
     """
 
     def __init__(self, *, clock: Clock, outbox: OutboxWriter, actor_id: str | None = None) -> None:
@@ -66,11 +68,26 @@ class ScheduledPublishActivity:
         if row is None or row.status != "scheduled" or row.schedule_version != expected_version:
             return {"skipped": True, "reason": "not_scheduled_anymore"}
         now = self._clock.utc_now()
-        row.status = "published"
-        row.published_at = now
-        row.lease_owner = None
-        row.lease_expires_at = None
-        row.version += 1
+        result = await uow.session.execute(
+            update(Content)
+            .where(
+                Content.id == row.id,
+                Content.status == "scheduled",
+                Content.schedule_version == expected_version,
+            )
+            .values(
+                status="published",
+                published_at=now,
+                lease_owner=None,
+                lease_expires_at=None,
+                version=Content.version + 1,
+                updated_at=now,
+            )
+        )
+        if result.rowcount == 0:
+            return {"skipped": True, "reason": "concurrent_state_change"}
+        await uow.session.refresh(row)
+        refreshed: Content = row
         await self._outbox.append(
             uow,
             EventEnvelope(
@@ -79,16 +96,16 @@ class ScheduledPublishActivity:
                 occurred_at=now,
                 producer="content",
                 aggregate_type="content",
-                aggregate_id=str(row.id),
+                aggregate_id=str(refreshed.id),
                 trace_id=ctx.trace_id,
                 payload={
-                    "content_id": str(row.id),
-                    "type_name": row.type_name,
-                    "slug": row.slug,
-                    "status": row.status,
-                    "version": row.version,
+                    "content_id": str(refreshed.id),
+                    "type_name": refreshed.type_name,
+                    "slug": refreshed.slug,
+                    "status": refreshed.status,
+                    "version": refreshed.version,
                     "published_at": now.isoformat(),
-                    "schedule_version": row.schedule_version,
+                    "schedule_version": refreshed.schedule_version,
                 },
             ),
         )
@@ -100,7 +117,7 @@ class ScheduledPublishActivity:
                 occurred_at=now,
                 producer="content",
                 aggregate_type="content",
-                aggregate_id=str(row.id),
+                aggregate_id=str(refreshed.id),
                 trace_id=ctx.trace_id,
                 payload={
                     "action": "content.publish_scheduled",
@@ -108,14 +125,14 @@ class ScheduledPublishActivity:
                     "occurred_at": now.isoformat(),
                     "actor_type": "system",
                     "actor_id": self._actor_id,
-                    "target_type": row.type_name,
-                    "target_id": str(row.id),
+                    "target_type": refreshed.type_name,
+                    "target_id": str(refreshed.id),
                     "trace_id": ctx.trace_id,
-                    "details": {"schedule_version": row.schedule_version},
+                    "details": {"schedule_version": refreshed.schedule_version},
                 },
             ),
         )
-        return {"skipped": False, "version": row.version}
+        return {"skipped": False, "version": refreshed.version}
 
 
 def build_publish_workflow_spec(activity: ScheduledPublishActivity) -> WorkflowSpec:

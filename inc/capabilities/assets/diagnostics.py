@@ -36,7 +36,7 @@ class AssetDiagnostics:
         self._providers = providers
         self._probe_remote = probe_remote
 
-    async def run(self) -> list[DiagnosticResult]:  # type: ignore[return]
+    async def run(self) -> list[DiagnosticResult]:
         results: list[DiagnosticResult] = []
         async with self._uow_factory() as uow:
             pending = (
@@ -87,24 +87,26 @@ class AssetDiagnostics:
                 .scalars()
                 .all()
             )
-            missing = 0
-            for row in ready:
-                provider = self._providers.get(row.provider_key)
-                if provider is None:
-                    missing += 1
-                    continue
-                try:
-                    await provider.stat(object_key=row.object_key)
-                except Exception:  # noqa: BLE001 - remote probe is best effort
-                    missing += 1
-            results.append(
-                DiagnosticResult(
-                    code="assets.ready_but_remote_missing",
-                    status=DiagnosticStatus.OK if missing == 0 else DiagnosticStatus.DEGRADED,
-                    summary=(
-                        f"{missing}/{len(ready)} recently ready assets unreachable on remote "
-                        f"(probed {REMOTE_PROBE_LIMIT} latest)"
-                    ),
-                )
+        # Remote probes run outside the database session so a slow provider
+        # never holds a transaction open.
+        missing = 0
+        for row in ready:
+            provider = self._providers.get(row.provider_key)
+            if provider is None:
+                missing += 1
+                continue
+            try:
+                await provider.stat(object_key=row.object_key)
+            except Exception:  # noqa: BLE001 - remote probe is best effort
+                missing += 1
+        results.append(
+            DiagnosticResult(
+                code="assets.ready_but_remote_missing",
+                status=DiagnosticStatus.OK if missing == 0 else DiagnosticStatus.DEGRADED,
+                summary=(
+                    f"{missing}/{len(ready)} recently ready assets unreachable on remote "
+                    f"(probed {REMOTE_PROBE_LIMIT} latest)"
+                ),
             )
-            return results
+        )
+        return results

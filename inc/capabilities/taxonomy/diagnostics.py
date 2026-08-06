@@ -38,12 +38,12 @@ class TaxonomyDiagnostics:
                     ).distinct()
                 )
             ).all()
-        by_type: dict[str, list[str]] = defaultdict(list)
+        by_type: dict[str, dict[str, str]] = defaultdict(dict)
         for target_type, target_id, _dimension in rows:
-            by_type[target_type].append(str(target_id))
+            by_type[target_type][str(target_id)] = str(target_id)
         orphan_count = 0
         for target_type, target_ids in by_type.items():
-            exists = await self._batch_target_exists(target_type, target_ids)
+            exists = await self._batch_target_exists(target_type, list(target_ids))
             orphan_count += sum(1 for target_id in target_ids if not exists.get(target_id, False))
         return [
             DiagnosticResult(

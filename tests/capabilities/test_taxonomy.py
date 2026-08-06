@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select
 
+from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY
 from inc.capabilities.taxonomy.commands import (
     ArchiveTerm,
     AssignTerms,
@@ -33,7 +34,7 @@ from inc.capabilities.taxonomy.queries import TaxonomyQueries
 from inc.capabilities.taxonomy.schemas import AssignTermsInput, CreateTermInput, UpdateTermInput
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import KernelError
-from inc.kernel.events import EventSchemaRegistry, OutboxWriter
+from inc.kernel.events import EventSchemaRegistry, OutboxMessage, OutboxWriter
 
 
 def make_category() -> DimensionSpec:
@@ -214,6 +215,79 @@ async def test_term_requires_manage_permission(
     with pytest.raises(KernelError) as excinfo:
         await create_term(restricted, "tag", "No")
     assert excinfo.value.code == "taxonomy.forbidden"
+
+
+async def test_remove_target_assignments_requires_manage_permission(
+    ctx: CommandContext,
+    uow_factory: UoWFactory,
+    clock: Any,
+    dimensions: DimensionRegistry,
+    target_exists: TargetExistsPort,
+    schema_registry: EventSchemaRegistry,
+) -> None:
+    restricted = CommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        outbox=OutboxWriter(schema_registry, clock),
+        dimensions=dimensions,
+        target_exists=target_exists,
+        permissions=frozenset({"taxonomy.read"}),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        await RemoveTargetAssignments(restricted)("post", TARGET.split(":")[1])
+    assert excinfo.value.code == "taxonomy.forbidden"
+    with pytest.raises(KernelError) as excinfo:
+        await RemoveTargetAssignments(ctx)("post", "not-a-uuid")
+    assert excinfo.value.code == "taxonomy.invalid_uuid"
+
+
+async def test_unknown_dimension_is_validation_error(ctx: CommandContext) -> None:
+    with pytest.raises(KernelError) as excinfo:
+        await create_term(ctx, "ghost", "X")
+    assert excinfo.value.code == "taxonomy.unknown_dimension"
+    assert excinfo.value.category.value == "validation"
+
+
+async def test_assign_terms_unknown_dimension_is_validation_error(ctx: CommandContext) -> None:
+    tag = await create_term(ctx, "tag", "G")
+    with pytest.raises(KernelError) as excinfo:
+        await AssignTerms(ctx)(
+            "ghost",
+            AssignTermsInput(
+                target_type="post",
+                target_id=uuid.UUID(TARGET.split(":")[1]),
+                term_ids=[uuid.UUID(tag.id)],
+            ),
+        )
+    assert excinfo.value.category.value == "validation"
+
+
+async def test_update_archived_term_single_commit_events(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    term = await create_term(ctx, "tag", "Single")
+    async with uow_factory() as uow:
+        before = (await uow.session.execute(select(OutboxMessage))).scalars().all()
+    term_id = uuid.UUID(term.id)
+    await UpdateTerm(ctx)(term_id, UpdateTermInput(name="Single2"))
+    await ArchiveTerm(ctx)(term_id)
+    async with uow_factory() as uow:
+        after = (await uow.session.execute(select(OutboxMessage))).scalars().all()
+    keys = [row.envelope.event_key for row in after[len(before) :]]
+    assert keys.count("taxonomy.term_updated.v1") == 1
+    assert keys.count("taxonomy.term_archived.v1") == 1
+    assert keys.count(AUDIT_EVENT_KEY) == 2
+
+    # idempotent archive: already archived -> no event
+    await ArchiveTerm(ctx)(term_id)
+    async with uow_factory() as uow:
+        final = (await uow.session.execute(select(OutboxMessage))).scalars().all()
+    assert len(final) == len(after)
+
+    # empty update rejected
+    with pytest.raises(KernelError) as excinfo:
+        await UpdateTerm(ctx)(term_id, UpdateTermInput())
+    assert excinfo.value.code == "taxonomy.empty_update"
 
 
 # --- assignments ---------------------------------------------------------

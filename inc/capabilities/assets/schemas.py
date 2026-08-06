@@ -8,7 +8,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _validated_checksum(value: str | None) -> str | None:
+    if value is not None and (len(value) != 64 or any(c not in "0123456789abcdef" for c in value)):
+        raise ValueError("checksum_sha256 must be 64 lowercase hex characters")
+    return value
 
 
 class AssetRefDTO(BaseModel):
@@ -29,6 +35,11 @@ class AssetRefDTO(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("checksum_sha256")
+    @classmethod
+    def _checksum(cls, value: str | None) -> str | None:
+        return _validated_checksum(value)
+
 
 class CreateUploadIntentInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -37,6 +48,18 @@ class CreateUploadIntentInput(BaseModel):
     mime_types: tuple[str, ...] = Field(min_length=1)
     content_length_max: int = Field(gt=0, le=100 * 1024 * 1024)
     checksum_sha256: str | None = None
+
+    @field_validator("checksum_sha256")
+    @classmethod
+    def _checksum(cls, value: str | None) -> str | None:
+        return _validated_checksum(value)
+
+    @field_validator("mime_types")
+    @classmethod
+    def _mime_lengths(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(len(m) > 200 for m in value):
+            raise ValueError("each mime type must be at most 200 characters")
+        return value
 
 
 class CreateUploadIntentResult(BaseModel):
@@ -53,13 +76,18 @@ class RegisterExternalAssetInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider_key: str
-    bucket: str | None = None
-    object_key: str
-    mime_type: str
+    bucket: str | None = Field(default=None, max_length=200)
+    object_key: str = Field(max_length=500)
+    mime_type: str = Field(max_length=200)
     byte_size: int = Field(ge=0)
     checksum_sha256: str | None = None
-    alt_text: str | None = None
+    alt_text: str | None = Field(default=None, max_length=500)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("checksum_sha256")
+    @classmethod
+    def _checksum(cls, value: str | None) -> str | None:
+        return _validated_checksum(value)
 
 
 class UpdateAssetMetadataInput(BaseModel):

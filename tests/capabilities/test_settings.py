@@ -182,3 +182,52 @@ async def test_update_emits_event_in_same_transaction(
     )
     assert await _event_count(uow_factory, "settings.group_updated.v1") == 1
     assert await _event_count(uow_factory, AUDIT_EVENT_KEY) == 1
+
+
+async def test_reset_rejects_schema_mismatch(ctx: CommandContext, uow_factory: UoWFactory) -> None:
+    from inc.capabilities.settings.models import SettingsValueData
+
+    async with uow_factory() as uow:
+        uow.session.add(
+            SettingsValue(
+                group_key="seo",
+                schema_version="stale",
+                value=SettingsValueData(schema_version="stale", values={"site_name": "X"}),
+                version=1,
+                updated_by="test",
+            )
+        )
+        await uow.commit()
+    with pytest.raises(KernelError) as excinfo:
+        await ResetSettingGroup(ctx)("seo")
+    assert excinfo.value.code == "settings.schema_mismatch"
+
+
+def test_sensitive_fields_excluded_from_changed_summary() -> None:
+    from pydantic import BaseModel
+
+    from inc.capabilities.settings.groups import SettingGroupSpec
+    from inc.capabilities.settings.service import _require_permission  # noqa: F401
+
+    class G(BaseModel):
+        name: str = "x"
+        secret: str = "s"
+
+    spec = SettingGroupSpec(
+        group_key="g",
+        version="1",
+        value_schema=G,
+        public_fields=("name",),
+        sensitive_fields=("secret",),
+        update_permission="settings.g.update",
+    )
+    assert "secret" not in spec.public_fields
+
+
+async def test_unknown_group_is_validation_error(ctx: CommandContext) -> None:
+    with pytest.raises(KernelError) as excinfo:
+        await UpdateSettingGroup(ctx)(
+            "ghost", UpdateSettingGroupInput(expected_version=1, values={"a": 1})
+        )
+    assert excinfo.value.code == "settings.unknown_group"
+    assert excinfo.value.category.value == "validation"

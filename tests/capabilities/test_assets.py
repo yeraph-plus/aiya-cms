@@ -183,12 +183,12 @@ async def test_finalize_verifies_stat_and_marks_ready(
             provider_key="fake",
             mime_types=("image/png",),
             content_length_max=10_000_000,
-            checksum_sha256="abc123",
+            checksum_sha256="a" * 64,
         )
     )
     provider = ctx.providers["fake"]
     provider.objects[intent.object_key] = ObjectStat(
-        byte_size=1024, mime_type="image/png", checksum_sha256="abc123"
+        byte_size=1024, mime_type="image/png", checksum_sha256="a" * 64
     )
     result = await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
     assert result.state == "pending"
@@ -225,12 +225,12 @@ async def test_finalize_rejects_size_mime_checksum_mismatch(
             provider_key="fake",
             mime_types=("image/png",),
             content_length_max=1_000,
-            checksum_sha256="abc",
+            checksum_sha256="c" * 64,
         )
     )
     provider = ctx.providers["fake"]
     provider.objects[intent.object_key] = ObjectStat(
-        byte_size=5000, mime_type="application/pdf", checksum_sha256="other"
+        byte_size=5000, mime_type="application/pdf", checksum_sha256="d" * 64
     )
     await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
     await _run_due(ctx)
@@ -281,7 +281,7 @@ async def test_provider_failure_recovers_after_retry(
 async def test_register_external_asset(ctx: CommandContext, uow_factory: UoWFactory) -> None:
     provider = ctx.providers["fake"]
     provider.objects["existing/logo.png"] = ObjectStat(
-        byte_size=2048, mime_type="image/png", checksum_sha256="sha"
+        byte_size=2048, mime_type="image/png", checksum_sha256="b" * 64
     )
     ref = await RegisterExternalAsset(ctx)(
         RegisterExternalAssetInput(
@@ -290,7 +290,7 @@ async def test_register_external_asset(ctx: CommandContext, uow_factory: UoWFact
             object_key="existing/logo.png",
             mime_type="image/png",
             byte_size=2048,
-            checksum_sha256="sha",
+            checksum_sha256="b" * 64,
             alt_text="Logo",
         )
     )
@@ -379,3 +379,118 @@ async def test_diagnostics_report_only(
     assert codes["assets.expired_pending_intents"] == "ok"
     assert codes["assets.unresolved_objects"] == "ok"
     assert codes["assets.ready_but_remote_missing"] == "ok"
+
+
+async def test_duplicate_register_external_conflicts(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    provider = ctx.providers["fake"]
+    provider.objects["dup.png"] = ObjectStat(byte_size=10, mime_type="image/png")
+    payload = RegisterExternalAssetInput(
+        provider_key="fake", object_key="dup.png", mime_type="image/png", byte_size=10
+    )
+    await RegisterExternalAsset(ctx)(payload)
+    with pytest.raises(KernelError) as excinfo:
+        await RegisterExternalAsset(ctx)(payload)
+    assert excinfo.value.code == "assets.already_registered"
+
+
+async def test_failed_finalize_reports_explicitly_and_blocks_retry(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    intent = await CreateUploadIntent(ctx)(
+        CreateUploadIntentInput(
+            provider_key="fake",
+            mime_types=("image/png",),
+            content_length_max=100,
+        )
+    )
+    provider = ctx.providers["fake"]
+    provider.objects[intent.object_key] = ObjectStat(
+        byte_size=9999,
+        mime_type="image/png",  # exceeds content_length_max
+    )
+    await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
+    await _run_due(ctx)
+    async with uow_factory() as uow:
+        assets = (await uow.session.execute(select(AssetObject))).scalars().all()
+    assert assets == []
+    with pytest.raises(KernelError) as excinfo:
+        await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
+    assert excinfo.value.code == "assets.finalize_failed"
+
+
+async def test_permanent_provider_error_fails_fast_without_retries(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    intent = await CreateUploadIntent(ctx)(
+        CreateUploadIntentInput(
+            provider_key="fake",
+            mime_types=("image/png",),
+            content_length_max=1_000_000,
+        )
+    )
+    # object never uploaded: provider stat reports NOT_FOUND (permanent)
+    await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
+    await _run_due(ctx)
+    workflow_state = await _due_workflow_state(ctx)
+    assert workflow_state == "failed"
+    with pytest.raises(KernelError) as excinfo:
+        await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
+    assert excinfo.value.code == "assets.finalize_failed"
+
+
+async def test_reconciler_restarts_orphaned_delete(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    from inc.capabilities.assets.commands import AssetDeleteReconciler
+
+    provider = ctx.providers["fake"]
+    provider.objects["reconcile.png"] = ObjectStat(byte_size=10, mime_type="image/png")
+    ref = await RegisterExternalAsset(ctx)(
+        RegisterExternalAssetInput(
+            provider_key="fake", object_key="reconcile.png", mime_type="image/png", byte_size=10
+        )
+    )
+    # simulate the crash window: mark deleted locally without starting workflow
+    async with uow_factory() as uow:
+        row = await uow.session.get(AssetObject, uuid.UUID(ref.id))
+        assert row is not None
+        row.state = "deleted"
+        await uow.commit()
+    reconciler = AssetDeleteReconciler(ctx=ctx)
+    assert await reconciler.scan() == 1
+    assert await reconciler.scan() == 0  # already started; idempotent
+    await _run_due(ctx)
+    async with uow_factory() as uow:
+        row = await uow.session.get(AssetObject, uuid.UUID(ref.id))
+    assert row is not None and row.external_deleted_at is not None
+    assert provider.deleted == ["reconcile.png"]
+
+
+async def test_delete_audits_requested_then_external(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    from sqlalchemy import select as sa_select
+
+    from inc.kernel.events import OutboxMessage
+
+    provider = ctx.providers["fake"]
+    provider.objects["audit.png"] = ObjectStat(byte_size=10, mime_type="image/png")
+    ref = await RegisterExternalAsset(ctx)(
+        RegisterExternalAssetInput(
+            provider_key="fake", object_key="audit.png", mime_type="image/png", byte_size=10
+        )
+    )
+    await DeleteAsset(ctx)(uuid.UUID(ref.id))
+    async with uow_factory() as uow:
+        actions = (await uow.session.execute(sa_select(OutboxMessage))).scalars().all()
+    actions_before = [row.envelope.payload["action"] for row in actions]
+    assert "assets.delete.requested" in actions_before
+    assert "assets.delete.external" not in actions_before
+    await _run_due(ctx)
+    async with uow_factory() as uow:
+        actions = (await uow.session.execute(sa_select(OutboxMessage))).scalars().all()
+    actions_after = [row.envelope.payload["action"] for row in actions]
+    assert "assets.delete.external" in actions_after
+    assert "assets.register_external" in actions_after

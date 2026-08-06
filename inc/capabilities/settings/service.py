@@ -60,6 +60,21 @@ def _require_permission(ctx: CommandContext, key: str) -> None:
         raise _forbidden("settings.forbidden", f"requires permission {key}")
 
 
+def _require_group(ctx: CommandContext, group_key: str) -> SettingGroupSpec:
+    """Client-supplied group keys are validation errors, not internal ones."""
+
+    try:
+        return ctx.groups.require(group_key)
+    except KernelError as exc:
+        if exc.code == "settings.unknown_group":
+            raise KernelError(
+                code="settings.unknown_group",
+                category=ErrorCategory.VALIDATION,
+                message=exc.message,
+            ) from exc
+        raise
+
+
 def _ensure_utc(value: Any) -> Any:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
@@ -153,7 +168,7 @@ class UpdateSettingGroup:
 
     async def __call__(self, group_key: str, input_: UpdateSettingGroupInput) -> SettingGroupDTO:  # type: ignore[return]
         ctx = self._ctx
-        spec = ctx.groups.require(group_key)
+        spec = _require_group(ctx, group_key)
         _require_permission(ctx, spec.update_permission)
         values = _validate_values(spec, input_.values)
         async with ctx.uow_factory() as uow:
@@ -199,7 +214,8 @@ class UpdateSettingGroup:
                 changed = tuple(
                     field
                     for field in sorted(values)
-                    if values[field] != row.value.values.get(field)
+                    if field not in spec.sensitive_fields
+                    and values[field] != row.value.values.get(field)
                 )
                 row.value = SettingsValueData(schema_version=spec.version, values=values)
                 row.version += 1
@@ -224,7 +240,7 @@ class ResetSettingGroup:
 
     async def __call__(self, group_key: str) -> SettingGroupDTO:  # type: ignore[return]
         ctx = self._ctx
-        spec = ctx.groups.require(group_key)
+        spec = _require_group(ctx, group_key)
         _require_permission(ctx, spec.update_permission)
         async with ctx.uow_factory() as uow:
             row: SettingsValue | None = (
@@ -248,6 +264,15 @@ class ResetSettingGroup:
                 uow.session.add(row)
                 changed: tuple[str, ...] = tuple(sorted(defaults))
             else:
+                if row.schema_version != spec.version:
+                    raise KernelError(
+                        code="settings.schema_mismatch",
+                        category=ErrorCategory.CONFLICT,
+                        message=(
+                            f"stored schema version {row.schema_version} "
+                            f"!= registered {spec.version}"
+                        ),
+                    )
                 changed = tuple(
                     field
                     for field in sorted(defaults)
@@ -276,7 +301,16 @@ class SettingsQueries:
         self._groups = groups
 
     async def get_group(self, group_key: str) -> SettingGroupDTO:
-        spec = self._groups.require(group_key)
+        try:
+            spec = self._groups.require(group_key)
+        except KernelError as exc:
+            if exc.code == "settings.unknown_group":
+                raise KernelError(
+                    code="settings.unknown_group",
+                    category=ErrorCategory.VALIDATION,
+                    message=exc.message,
+                ) from exc
+            raise
         async with self._uow_factory() as uow:
             row: SettingsValue | None = (
                 (

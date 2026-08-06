@@ -12,6 +12,7 @@ from typing import Any
 
 from inc.capabilities.assets.commands import PERMISSION_READ, CommandContext, _provider, _to_ref
 from inc.capabilities.assets.models import AssetObject
+from inc.capabilities.assets.ports import StorageError, storage_error
 from inc.capabilities.assets.schemas import AssetRefDTO, ResolvedAssetUrlDTO
 from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.time import Clock
@@ -65,9 +66,14 @@ class AssetQueries:
                 message=f"asset is {row.state}",
             )
         provider = _provider(self._ctx, row.provider_key)
-        url = await provider.read_url(
-            object_key=row.object_key, expires_in_seconds=expires_in_seconds
-        )
+        try:
+            url = await provider.read_url(
+                object_key=row.object_key, expires_in_seconds=expires_in_seconds
+            )
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors
+            raise storage_error(str(exc)) from exc
         return ResolvedAssetUrlDTO(
             asset_id=str(row.id),
             url=url,

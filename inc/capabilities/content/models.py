@@ -97,6 +97,7 @@ class Content(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="ck_contents_schedule_consistent",
         ),
         Index("ix_contents_pin_order", "is_pinned", "pin_rank", "published_at"),
+        Index("ix_contents_due_scheduled", "status", "publish_at"),
     )
 
 

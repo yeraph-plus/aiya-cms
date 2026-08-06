@@ -47,13 +47,13 @@ class JsonBModel(TypeDecorator[dict[str, Any]]):
             return None
         if not isinstance(value, self.model):
             raise TypeError(f"expected {self.model.__name__}, got {type(value).__name__}")
-        return {
-            "schema_version": self.schema_version,
-            "payload": value.model_dump(mode="json"),
-        }
+        # The model itself is the self-describing envelope; store its dump
+        # directly (no second wrapping layer).
+        return value.model_dump(mode="json")
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:
         if value is None:
             return None
-        payload = value.get("payload") if isinstance(value, dict) and "payload" in value else value
-        return self.model.model_validate(payload)
+        if isinstance(value, self.model):
+            return value
+        return self.model.model_validate(value)

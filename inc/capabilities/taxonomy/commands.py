@@ -72,6 +72,21 @@ def _require_permission(ctx: CommandContext, key: str) -> None:
         raise _forbidden("taxonomy.forbidden", f"requires permission {key}")
 
 
+def _require_dimension(ctx: CommandContext, dimension_key: str) -> DimensionSpec:
+    """Client-supplied dimensions are validation errors, not internal ones."""
+
+    try:
+        return ctx.dimensions.require(dimension_key)
+    except KernelError as exc:
+        if exc.code == "taxonomy.unknown_dimension":
+            raise KernelError(
+                code="taxonomy.unknown_dimension",
+                category=ErrorCategory.VALIDATION,
+                message=exc.message,
+            ) from exc
+        raise
+
+
 def _require_manage_permission(ctx: CommandContext, spec: DimensionSpec) -> None:
     if spec.manage_permission is not None:
         _require_permission(ctx, spec.manage_permission)
@@ -166,7 +181,7 @@ class CreateTerm:
 
     async def __call__(self, dimension_key: str, input_: CreateTermInput) -> TermDTO:  # type: ignore[return]
         ctx = self._ctx
-        spec = ctx.dimensions.require(dimension_key)
+        spec = _require_dimension(ctx, dimension_key)
         _require_manage_permission(ctx, spec)
         _validate_slug(spec, input_.slug)
         payload = _validate_term_schema(spec, input_.metadata)
@@ -179,6 +194,13 @@ class CreateTerm:
                 term_metadata=TermData(values=payload),
             )
             uow.session.add(row)
+            try:
+                await uow.session.flush()  # assign id before events reference it
+            except IntegrityError as exc:
+                raise _conflict(
+                    "taxonomy.duplicate_slug",
+                    f"slug {input_.slug!r} already exists for dimension {dimension_key}",
+                ) from exc
             await _emit(
                 ctx,
                 uow,
@@ -191,13 +213,7 @@ class CreateTerm:
             await _append_audit(
                 ctx, uow, action="taxonomy.create_term", dimension_key=dimension_key
             )
-            try:
-                await uow.commit()
-            except IntegrityError as exc:
-                raise _conflict(
-                    "taxonomy.duplicate_slug",
-                    f"slug {input_.slug!r} already exists for dimension {dimension_key}",
-                ) from exc
+            await uow.commit()
             return _to_dto(row)
 
 
@@ -217,13 +233,26 @@ class UpdateTerm:
                 )
             spec = ctx.dimensions.require(row.dimension_key)
             _require_manage_permission(ctx, spec)
+            changed = False
             if input_.name is not None:
-                row.name = input_.name
+                if input_.name != row.name:
+                    row.name = input_.name
+                    changed = True
             if input_.description is not None:
-                row.description = input_.description
+                if input_.description != row.description:
+                    row.description = input_.description
+                    changed = True
             if input_.metadata is not None:
-                row.term_metadata = TermData(values=_validate_term_schema(spec, input_.metadata))
-            await uow.commit()
+                payload = _validate_term_schema(spec, input_.metadata)
+                if payload != row.term_metadata.values:
+                    row.term_metadata = TermData(values=payload)
+                    changed = True
+            if not changed:
+                raise KernelError(
+                    code="taxonomy.empty_update",
+                    category=ErrorCategory.VALIDATION,
+                    message="nothing to update",
+                )
             await _emit(
                 ctx,
                 uow,
@@ -258,7 +287,8 @@ class ArchiveTerm:
             if row.status != "archived":
                 row.status = "archived"
                 row.archived_at = ctx.clock.utc_now()
-            await uow.commit()
+            else:
+                return _to_dto(row)
             await _emit(
                 ctx,
                 uow,
@@ -282,7 +312,7 @@ class AssignTerms:
 
     async def __call__(self, dimension_key: str, input_: AssignTermsInput) -> None:
         ctx = self._ctx
-        spec = ctx.dimensions.require(dimension_key)
+        spec = _require_dimension(ctx, dimension_key)
         _require_manage_permission(ctx, spec)
         if not spec.accepts_target(input_.target_type):
             raise _validation(
@@ -382,13 +412,22 @@ class RemoveTargetAssignments:
 
     async def __call__(self, target_type: str, target_id: str) -> None:
         ctx = self._ctx
+        _require_permission(ctx, PERMISSION_MANAGE)
+        try:
+            parsed = uuid.UUID(target_id)
+        except ValueError as exc:
+            raise KernelError(
+                code="taxonomy.invalid_uuid",
+                category=ErrorCategory.VALIDATION,
+                message=f"invalid target_id {target_id!r}",
+            ) from exc
         async with ctx.uow_factory() as uow:
             rows = (
                 (
                     await uow.session.execute(
                         select(TaxonomyAssignment).where(
                             TaxonomyAssignment.target_type == target_type,
-                            TaxonomyAssignment.target_id == uuid.UUID(target_id),
+                            TaxonomyAssignment.target_id == parsed,
                         )
                     )
                 )
@@ -437,7 +476,5 @@ class SyncDimensionDefinitions:
                         row.spec_version = spec.version
                         row.selection_mode = spec.selection_mode
             if not dry_run:
-                await uow.commit()
-            else:
                 await uow.commit()
             return {"dry_run": dry_run, "changes": changes}

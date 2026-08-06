@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools==83.0.0", "wheel==0.47.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiya-cms"
+version = "0.1.0"
+description = "A modular headless CMS foundation with an integrated admin SPA"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "aiosmtplib==5.1.2",
+  "alembic==1.18.5",
+  "apscheduler==3.11.3",
+  "asyncpg==0.31.0",
+  "fastapi==0.141.1",
+  "pydantic==2.13.4",
+  "pydantic-settings==2.14.2",
+  "PyJWT==2.13.0",
+  "pwdlib[argon2]==0.3.0",
+  "redis==8.1.0",
+  "sqlalchemy[asyncio]==2.0.51",
+  "structlog==26.1.0",
+  "uvicorn[standard]==0.41.0",
+  "uuid-utils==0.17.0",
+]
+
+[project.scripts]
+aiya-cms = "inc.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.16.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inc*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = [".", "tests"]
+exclude = ["context"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["inc/kernel"]
+plugins = []

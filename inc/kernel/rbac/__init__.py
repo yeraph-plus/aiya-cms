@@ -1,4 +1,4 @@
-"""Minimal RBAC public API (ADR-0008/0019)."""
+"""Minimal RBAC public API (see context/spec/kernel.md)."""
 
 from inc.kernel.security import Principal
 

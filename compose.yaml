@@ -115,8 +115,10 @@ services:
   admin-dev:
     image: node:24.4.1-alpine
     profiles: [dev]
+    environment:
+      AIYA_API_URL: http://api-dev:8000
     working_dir: /app/admin
-    command: ["sh", "-c", "npm ci --ignore-scripts && npm run dev -- --host 0.0.0.0"]
+    command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0"]
     ports:
       - "${ADMIN_HOST_PORT:-7000}:7000"
     volumes:
@@ -132,7 +134,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
     profiles: [test]
-    command: ["sh", "-c", "ruff check . && ruff format --check . && mypy inc"]
+    command: ["sh", "-c", "ruff check . && ruff format --check . && mypy inc && pip check"]
 
   backend-test:
     build:
@@ -150,11 +152,31 @@ services:
       redis:
         condition: service_healthy
 
+  openapi-check:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    profiles: [test, ops]
+    command: ["python", "-m", "inc.api.openapi", "check"]
+
+  migration-check:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    profiles: [test, ops]
+    env_file: [.env]
+    command: ["sh", "-c", "alembic downgrade base && alembic upgrade head"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   admin-quality:
     image: node:24.4.1-alpine
     profiles: [test]
     working_dir: /app/admin
-    command: ["sh", "-c", "npm ci --ignore-scripts && npm run check && npm run typecheck && npm run test:unit && npm run build"]
+    command: ["sh", "-c", "npm ci && npm run check && npm run typecheck && npm run test:unit && npm run build && npm audit --audit-level=high"]
     volumes:
       - ./admin:/app/admin
       - admin-quality-node-modules:/app/admin/node_modules
@@ -166,7 +188,7 @@ services:
     environment:
       AIYA_E2E_BASE_URL: http://admin
       AIYA_E2E_WEB_SERVER: "false"
-    command: ["sh", "-c", "npm ci --ignore-scripts && npm run test:e2e"]
+    command: ["sh", "-c", "npm ci && npm run test:e2e"]
     volumes:
       - ./admin:/app/admin:ro
       - admin-e2e-node-modules:/app/admin/node_modules
@@ -182,7 +204,7 @@ services:
       OCR_MODEL: ${OCR_MODEL:-}
       OCR_API_KEY: ${OCR_API_KEY:-}
       OCR_BASE_URL: ${OCR_BASE_URL:-}
-    command: ["sh", "-c", "npm install --global --ignore-scripts @alibaba-group/open-code-review@1.8.9 && ocr scan"]
+    command: ["sh", "-c", "npm install --global @alibaba-group/open-code-review@1.8.9 && ocr scan"]
     volumes:
       - .:/workspace:ro
       - .git:/workspace/.git:ro

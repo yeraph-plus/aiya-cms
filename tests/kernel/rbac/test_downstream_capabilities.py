@@ -1,4 +1,4 @@
-"""Contracts for explicit downstream Capability registration (ADR-0033)."""
+"""Contracts for explicit downstream Capability registration."""
 
 from typing import Any
 from uuid import uuid4

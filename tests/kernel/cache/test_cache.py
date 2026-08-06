@@ -1,4 +1,4 @@
-"""Cache contract tests (M1.3 / ADR-0019)."""
+"""Cache contract tests (see context/spec/kernel.md)."""
 
 import asyncio
 

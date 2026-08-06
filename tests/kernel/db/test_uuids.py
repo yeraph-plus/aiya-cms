@@ -1,6 +1,6 @@
 """Red tests locking the UUIDv7 primitive (M1.2 db).
 
-Contract source: context/kernel/db-uow-repository.md §6/§11
+Contract source: context/spec/kernel.md
 """
 
 import uuid

@@ -1,6 +1,6 @@
 """Identity domain models: user profile, login identities, org placeholder.
 
-Contract source: context/kernel/identity.md §3/§5, ADR-0017.
+Contract source: context/spec/kernel.md.
 """
 
 import uuid

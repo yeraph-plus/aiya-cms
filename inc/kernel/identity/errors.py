@@ -1,4 +1,4 @@
-"""Identity error codes (ADR-0017 §4.4)."""
+"""Identity error codes (see context/spec/kernel.md)."""
 
 from inc.kernel.errors import ErrorCode
 

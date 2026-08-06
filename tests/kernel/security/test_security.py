@@ -1,4 +1,4 @@
-"""Security primitive contract tests (M1.4 / ADR-0020)."""
+"""Security primitive contract tests (see context/spec/kernel.md)."""
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4

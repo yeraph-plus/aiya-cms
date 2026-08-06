@@ -1,6 +1,6 @@
 """Red tests locking the Page DTO (M1.2 db).
 
-Contract source: context/kernel/db-uow-repository.md §3/§6
+Contract source: context/spec/kernel.md
 """
 
 import pytest

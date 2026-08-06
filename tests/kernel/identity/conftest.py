@@ -1,8 +1,8 @@
 """PG-backed fixtures for the identity component tests (M1.5).
 
-Requires the docker-compose PostgreSQL (postgres:16-alpine) on localhost:5432
-with credentials aiya/aiya. The dedicated ``aiya_test`` database is created on
-demand; identity models register on the app ``Base.metadata`` so ``create_all``
+Requires the Compose PostgreSQL service with credentials aiya/aiya. The
+dedicated ``aiya_test`` database is created on demand; identity models register
+on the app ``Base.metadata`` so ``create_all``
 uses the real schema (the same tables Alembic migration 0002 builds).
 """
 

@@ -1,6 +1,6 @@
 """Architecture guards for the identity component (M1.5).
 
-Contract source: context/kernel/identity.md §11, ADR-0017 §6.
+Contract source: context/spec/kernel.md.
 """
 
 from pathlib import Path
@@ -8,7 +8,7 @@ from pathlib import Path
 
 def test_modules_never_import_identity_models() -> None:
     # modules may only consume UserRead/IdentityService via the identity public
-    # API; touching the ORM models bypasses the DTO boundary (ADR-0003)
+    # API; touching ORM models bypasses the DTO boundary.
     modules_root = Path(__file__).parents[2] / "inc" / "modules"
     offenders: list[str] = []
     for path in modules_root.rglob("*.py"):

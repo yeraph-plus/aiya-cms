@@ -1,4 +1,4 @@
-"""errors component public API (see context/kernel/errors.md)."""
+"""Errors component public API (see context/spec/kernel.md)."""
 
 from .codes import (
     COMMON_001,

@@ -1,6 +1,6 @@
 """Red tests locking the errors component contract (M1.1).
 
-Contract source: context/kernel/errors.md
+Contract source: context/spec/kernel.md
 """
 
 import pytest

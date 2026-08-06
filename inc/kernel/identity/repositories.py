@@ -1,4 +1,4 @@
-"""Repositories for the identity aggregates (ADR-0017/0018)."""
+"""Repositories for identity aggregates (see context/spec/kernel.md)."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """Red tests locking the Alembic async migration chain (M1.2-M1.10).
 
-Contract source: context/kernel/db-uow-repository.md §5/§11, identity.md §5
+Contract source: context/spec/quality-release.md and context/spec/kernel.md
 
 Runs the real async Alembic environment against a dedicated database to prove
 upgrade/downgrade idempotency across the M1.2 empty boundary and the M1.5

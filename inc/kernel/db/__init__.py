@@ -1,4 +1,4 @@
-"""Database component public API (see context/kernel/db-uow-repository.md)."""
+"""Database component public API (see context/spec/kernel.md)."""
 
 from .base import Base, TimestampMixin
 from .database import Database, create_database

@@ -1,6 +1,6 @@
 """Red tests locking the config component contract (M1.1).
 
-Contract source: context/kernel/config.md
+Contract source: context/spec/kernel.md
 """
 
 from inc.kernel.config import Settings, get_settings

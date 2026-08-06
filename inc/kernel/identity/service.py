@@ -1,4 +1,4 @@
-"""Identity service: user CRUD and the status state machine (ADR-0017 §3/§6).
+"""Identity service: user CRUD and the status state machine.
 
 Consumers depend on this service (via UserRead DTOs), never on the ORM models.
 """

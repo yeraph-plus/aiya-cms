@@ -1,4 +1,4 @@
-"""Identity DTOs crossing the module boundary (ADR-0003 DTO red-line).
+"""Identity DTOs crossing the module boundary.
 
 Consumers (api, modules) touch only these, never the ORM models.
 """

@@ -2,7 +2,7 @@ FROM node:24.4.1-alpine AS build
 
 WORKDIR /app/admin
 COPY admin/.npmrc admin/package.json admin/package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 COPY admin ./
 RUN npm run build
 

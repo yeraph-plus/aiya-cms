@@ -1,4 +1,4 @@
-"""Freeze and verify the FastAPI OpenAPI contract (ADR-0016)."""
+"""Freeze and verify the FastAPI OpenAPI contract (see context/spec/http-openapi.md)."""
 
 from __future__ import annotations
 

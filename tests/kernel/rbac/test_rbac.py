@@ -1,4 +1,4 @@
-"""RBAC contract tests (M1.6 / ADR-0019)."""
+"""RBAC contract tests (see context/spec/kernel.md)."""
 
 from uuid import uuid4
 

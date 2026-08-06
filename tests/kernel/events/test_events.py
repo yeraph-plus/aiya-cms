@@ -1,4 +1,4 @@
-"""EventBus contract tests (M1.7 / ADR-0021)."""
+"""EventBus contract tests (see context/spec/kernel.md)."""
 
 import asyncio
 from uuid import uuid4

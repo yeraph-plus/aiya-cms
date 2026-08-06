@@ -1,4 +1,4 @@
-"""JSONB column type backed by a Pydantic model (ADR-0009, spec §3)."""
+"""JSONB column type backed by a Pydantic model (see context/spec/architecture.md)."""
 
 from typing import Any
 

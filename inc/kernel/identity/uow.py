@@ -1,4 +1,4 @@
-"""Identity unit of work: one transaction boundary per operation (ADR-0017 §6).
+"""Identity unit of work: one transaction boundary per operation.
 
 Session handling lives entirely in :class:`inc.kernel.db.AbstractUnitOfWork`;
 this subclass only wires the identity aggregates to it.

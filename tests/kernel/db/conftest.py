@@ -1,7 +1,7 @@
 """Shared PG-backed fixtures for the kernel db component tests (M1.2).
 
-Requires the docker-compose PostgreSQL (postgres:16-alpine) on localhost:5432
-with credentials aiya/aiya. The dedicated ``aiya_test`` database is created on
+Requires the Compose PostgreSQL service with credentials aiya/aiya. The
+dedicated ``aiya_test`` database is created on
 demand; sample models live on a private metadata (see :mod:`_samples`) so they
 never leak into the app ``Base.metadata`` that Alembic targets.
 """

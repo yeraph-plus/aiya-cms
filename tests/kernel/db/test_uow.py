@@ -1,6 +1,6 @@
 """Red tests locking the AbstractUnitOfWork transaction boundary (M1.2 db).
 
-Contract source: context/kernel/db-uow-repository.md §3/§11
+Contract source: context/spec/architecture.md
 """
 
 import asyncio

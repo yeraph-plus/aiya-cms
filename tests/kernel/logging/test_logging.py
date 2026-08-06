@@ -1,6 +1,6 @@
 """Red tests locking the logging component contract (M1.1).
 
-Contract source: context/kernel/logging.md
+Contract source: context/spec/kernel.md
 """
 
 import json

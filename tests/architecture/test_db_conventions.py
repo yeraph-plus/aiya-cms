@@ -1,10 +1,10 @@
 """Architecture guards for the kernel db component (M1.2).
 
-Contract source: context/kernel/db-uow-repository.md §1/§5, ADR-0003.
+Contract source: context/spec/architecture.md and context/spec/kernel.md.
 
 Two enforceable rules:
 
-- **Session red-line** (ADR-0003 / dependency-rules §1.5): session/connection
+- **Session red-line**: session/connection
   creation (async_sessionmaker, create_async_engine, AsyncSession, AsyncEngine,
   asyncpg) is only allowed inside ``inc/kernel/db``, never in kernel
   siblings, api, or modules. Declaring models with sqlalchemy types is fine.
@@ -63,7 +63,7 @@ def _metadata_violations(metadata: object) -> list[str]:
     special_tables = {"audit_logs", "settings"}
     for table_name, table in metadata.tables.items():  # type: ignore[attr-defined]
         # RBAC association tables are the explicit composite-key exception in
-        # ADR-0019; they have no aggregate timestamps by design.
+        # Association tables have no aggregate timestamps by design.
         if table_name in association_tables:
             continue
         if table_name in special_tables:
@@ -146,7 +146,7 @@ _ASYNCPG_PATTERNS = (r"\basyncpg\.", r"\bimport asyncpg\b")
 
 
 def test_session_creation_confined_to_db_component() -> None:
-    # ADR-0003 / 01-dependency-rules §1.5: sessions/connections only ever exist
+    # Sessions/connections only ever exist
     # inside kernel/db. Components may import sqlalchemy types and select to
     # declare models and write queries, but must never open a session/engine.
     source_root = Path(__file__).parents[2] / "inc"
@@ -159,7 +159,7 @@ def test_session_creation_confined_to_db_component() -> None:
         for symbol in _SESSION_SYMBOLS:
             if re.search(rf"\b{symbol}\b", content):
                 offenders.append(f"{path.relative_to(source_root)}: {symbol}")
-        # ADR-0011 explicitly permits the tasks shell to own one independent
+        # The tasks shell may own one independent
         # asyncpg LISTEN connection; all other connection creation remains in db.
         allows_task_listener = path.parts[-2:] == ("tasks", "scheduler.py")
         for pattern in _ASYNCPG_PATTERNS:

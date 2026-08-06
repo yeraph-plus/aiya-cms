@@ -1,6 +1,6 @@
 """Red tests locking the identity service and user state machine (M1.5).
 
-Contract source: context/kernel/identity.md §4/§6/§11, ADR-0017.
+Contract source: context/spec/kernel.md.
 """
 
 import asyncio

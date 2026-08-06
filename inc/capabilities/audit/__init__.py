@@ -1,4 +1,3 @@
-"""Audit capability: immutable security facts and queries.
+"""Audit capability."""
 
-Contract source: context/spec/capabilities/audit.md.
-"""
+from __future__ import annotations

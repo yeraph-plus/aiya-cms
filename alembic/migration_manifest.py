@@ -19,4 +19,8 @@ MIGRATION_OWNER_MODULES: dict[str, str] = {
     "kernel:events": "inc.kernel.events.models",
     "kernel:workflow": "inc.kernel.workflow.models",
     "kernel:tasks": "inc.kernel.tasks.models",
+    "capability:audit": "inc.capabilities.audit.models",
+    "capability:identity": "inc.capabilities.identity.models",
+    "capability:access": "inc.capabilities.access.models",
+    "capability:oidc_provider": "inc.capabilities.oidc_provider.models",
 }

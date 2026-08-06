@@ -2,3 +2,5 @@
 
 Contract source: context/spec/capabilities/oidc-provider.md.
 """
+
+from __future__ import annotations

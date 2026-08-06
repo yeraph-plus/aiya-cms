@@ -1,0 +1,417 @@
+"""Access commands.
+
+Contract source: context/spec/capabilities/access.md §4.
+
+Role and grant changes commit atomically with their events and audit
+envelopes in one UoW. System roles are protected from deletion; capability
+replacement is transactional (no partial sets under concurrency).
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from inc.capabilities.access.models import AccessRole, AccessRoleCapability, AccessSubjectRole
+from inc.capabilities.access.registry import PermissionRegistry
+from inc.capabilities.access.schemas import RoleDTO, SubjectExists
+from inc.kernel.db import UnitOfWork, UoWFactory
+from inc.kernel.errors import ErrorCategory, KernelError
+from inc.kernel.events import EventEnvelope, OutboxWriter
+from inc.kernel.time import Clock
+
+AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class CommandContext:
+    uow_factory: UoWFactory
+    clock: Clock
+    outbox: OutboxWriter
+    permissions: PermissionRegistry
+    subject_exists: SubjectExists
+    audit_actor_id: str | None = None
+    audit_trace_id: str | None = None
+
+
+def _conflict(message: str) -> KernelError:
+    return KernelError(code="access.conflict", category=ErrorCategory.CONFLICT, message=message)
+
+
+def _not_found(message: str) -> KernelError:
+    return KernelError(code="access.not_found", category=ErrorCategory.NOT_FOUND, message=message)
+
+
+def _to_role(role: AccessRole, capability_keys: list[str]) -> RoleDTO:
+    return RoleDTO(
+        id=str(role.id),
+        name=role.name,
+        slug=role.slug,
+        description=role.description,
+        system=role.system,
+        capability_keys=capability_keys,
+    )
+
+
+async def _append_audit(
+    uow: UnitOfWork,
+    ctx: CommandContext,
+    *,
+    action: str,
+    target_type: str,
+    target_id: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    await ctx.outbox.append(
+        uow,
+        EventEnvelope(
+            event_id=uuid.uuid7(),
+            event_key=AUDIT_EVENT_KEY,
+            occurred_at=ctx.clock.utc_now(),
+            producer="access",
+            aggregate_type="access",
+            aggregate_id=target_id,
+            trace_id=ctx.audit_trace_id,
+            payload={
+                "action": action,
+                "outcome": "success",
+                "occurred_at": ctx.clock.utc_now().isoformat(),
+                "actor_type": "user" if ctx.audit_actor_id else None,
+                "actor_id": ctx.audit_actor_id,
+                "target_type": target_type,
+                "target_id": target_id,
+                "trace_id": ctx.audit_trace_id,
+                "details": details or {},
+            },
+        ),
+    )
+
+
+async def _append_event(
+    uow: UnitOfWork,
+    ctx: CommandContext,
+    *,
+    event_key: str,
+    payload: dict[str, Any],
+    aggregate_id: str,
+) -> None:
+    await ctx.outbox.append(
+        uow,
+        EventEnvelope(
+            event_id=uuid.uuid7(),
+            event_key=event_key,
+            occurred_at=ctx.clock.utc_now(),
+            producer="access",
+            aggregate_type="access",
+            aggregate_id=aggregate_id,
+            trace_id=ctx.audit_trace_id,
+            payload=payload,
+        ),
+    )
+
+
+class CreateRole:
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, name: str, slug: str, description: str | None = None) -> RoleDTO:  # type: ignore[return]
+        async with self._ctx.uow_factory() as uow:
+            role = AccessRole(name=name, slug=slug, description=description, system=False)
+            uow.session.add(role)
+            try:
+                await uow.session.flush()
+            except IntegrityError as exc:
+                await uow.rollback()
+                raise _conflict("role slug already exists") from exc
+            await _append_event(
+                uow,
+                self._ctx,
+                event_key="access.role_changed.v1",
+                payload={"role_id": str(role.id), "action": "created"},
+                aggregate_id=str(role.id),
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.role.created",
+                target_type="role",
+                target_id=str(role.id),
+                details={"slug": slug},
+            )
+            await uow.commit()
+            return _to_role(role, [])
+
+
+class DeleteRole:
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, role_id: str) -> None:
+        async with self._ctx.uow_factory() as uow:
+            role = await uow.session.get(AccessRole, uuid.UUID(role_id))
+            if role is None:
+                raise _not_found("role not found")
+            if role.system:
+                raise _conflict("system roles cannot be deleted")
+            await uow.session.delete(role)
+            await _append_event(
+                uow,
+                self._ctx,
+                event_key="access.role_changed.v1",
+                payload={"role_id": role_id, "action": "deleted"},
+                aggregate_id=role_id,
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.role.deleted",
+                target_type="role",
+                target_id=role_id,
+            )
+            await uow.commit()
+
+
+class ReplaceRoleCapabilities:
+    """Transactional, all-or-nothing capability replacement."""
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, role_id: str, capability_keys: list[str]) -> RoleDTO:  # type: ignore[return]
+        for key in capability_keys:
+            self._ctx.permissions.require(key)
+
+        async with self._ctx.uow_factory() as uow:
+            role = await uow.session.get(AccessRole, uuid.UUID(role_id))
+            if role is None:
+                raise _not_found("role not found")
+            existing = (
+                (
+                    await uow.session.execute(
+                        select(AccessRoleCapability).where(AccessRoleCapability.role_id == role.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in existing:
+                await uow.session.delete(row)
+            for key in capability_keys:
+                uow.session.add(AccessRoleCapability(role_id=role.id, capability_key=key))
+            await _append_event(
+                uow,
+                self._ctx,
+                event_key="access.role_changed.v1",
+                payload={"role_id": role_id, "action": "capabilities_replaced"},
+                aggregate_id=role_id,
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.role.capabilities_replaced",
+                target_type="role",
+                target_id=role_id,
+                details={"keys": capability_keys},
+            )
+            await uow.commit()
+            return _to_role(role, list(capability_keys))
+
+
+class AssignRoleToSubject:
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(
+        self,
+        *,
+        subject_type: str,
+        subject_id: str,
+        role_id: str,
+        scope: str = "global",
+    ) -> None:
+        if scope not in ("global", "own"):
+            raise KernelError(
+                code="access.invalid_scope",
+                category=ErrorCategory.VALIDATION,
+                message=f"unknown scope {scope!r}",
+            )
+        if not await self._ctx.subject_exists.exists(subject_type, subject_id):
+            raise KernelError(
+                code="access.subject_not_found",
+                category=ErrorCategory.VALIDATION,
+                message=f"subject {subject_type}:{subject_id} does not exist",
+            )
+        async with self._ctx.uow_factory() as uow:
+            role = await uow.session.get(AccessRole, uuid.UUID(role_id))
+            if role is None:
+                raise _not_found("role not found")
+            uow.session.add(
+                AccessSubjectRole(
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                    role_id=role.id,
+                    scope=scope,
+                )
+            )
+            try:
+                await uow.session.flush()
+            except IntegrityError as exc:
+                await uow.rollback()
+                raise _conflict("role already assigned to subject") from exc
+            await _append_event(
+                uow,
+                self._ctx,
+                event_key="access.subject_role_assigned.v1",
+                payload={
+                    "subject_type": subject_type,
+                    "subject_id": subject_id,
+                    "role_id": role_id,
+                    "scope": scope,
+                },
+                aggregate_id=subject_id,
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.subject.role_assigned",
+                target_type="subject",
+                target_id=subject_id,
+                details={"role_id": role_id, "scope": scope},
+            )
+            await uow.commit()
+
+
+class RevokeRoleFromSubject:
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, subject_type: str, subject_id: str, role_id: str) -> None:
+        async with self._ctx.uow_factory() as uow:
+            grant = (
+                (
+                    await uow.session.execute(
+                        select(AccessSubjectRole).where(
+                            AccessSubjectRole.subject_type == subject_type,
+                            AccessSubjectRole.subject_id == subject_id,
+                            AccessSubjectRole.role_id == uuid.UUID(role_id),
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if grant is None:
+                raise _not_found("role grant not found")
+            await uow.session.delete(grant)
+            await _append_event(
+                uow,
+                self._ctx,
+                event_key="access.subject_role_revoked.v1",
+                payload={
+                    "subject_type": subject_type,
+                    "subject_id": subject_id,
+                    "role_id": role_id,
+                },
+                aggregate_id=subject_id,
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.subject.role_revoked",
+                target_type="subject",
+                target_id=subject_id,
+                details={"role_id": role_id},
+            )
+            await uow.commit()
+
+
+class BootstrapAdministrator:
+    """Idempotent ops-only bootstrap of the system administrator role."""
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, subject_type: str, subject_id: str) -> RoleDTO:  # type: ignore[return]
+        if not await self._ctx.subject_exists.exists(subject_type, subject_id):
+            raise KernelError(
+                code="access.subject_not_found",
+                category=ErrorCategory.VALIDATION,
+                message=f"subject {subject_type}:{subject_id} does not exist",
+            )
+        async with self._ctx.uow_factory() as uow:
+            role = (
+                (
+                    await uow.session.execute(
+                        select(AccessRole).where(AccessRole.slug == "administrator")
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            created = role is None
+            if role is None:
+                role = AccessRole(
+                    name="Administrator",
+                    slug="administrator",
+                    description="System administrator role",
+                    system=True,
+                )
+                uow.session.add(role)
+                await uow.session.flush()
+
+            existing_keys = {
+                row.capability_key
+                for row in (
+                    (
+                        await uow.session.execute(
+                            select(AccessRoleCapability).where(
+                                AccessRoleCapability.role_id == role.id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            }
+            for key in self._ctx.permissions.keys():
+                if key not in existing_keys:
+                    uow.session.add(AccessRoleCapability(role_id=role.id, capability_key=key))
+
+            grant = (
+                (
+                    await uow.session.execute(
+                        select(AccessSubjectRole).where(
+                            AccessSubjectRole.subject_type == subject_type,
+                            AccessSubjectRole.subject_id == subject_id,
+                            AccessSubjectRole.role_id == role.id,
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if grant is None:
+                uow.session.add(
+                    AccessSubjectRole(
+                        subject_type=subject_type,
+                        subject_id=subject_id,
+                        role_id=role.id,
+                        scope="global",
+                    )
+                )
+
+            if created:
+                await _append_audit(
+                    uow,
+                    self._ctx,
+                    action="access.bootstrap.administrator",
+                    target_type="role",
+                    target_id=str(role.id),
+                    details={"subject": f"{subject_type}:{subject_id}"},
+                )
+            await uow.commit()
+            return _to_role(role, list(self._ctx.permissions.keys()))

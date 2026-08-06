@@ -2,3 +2,5 @@
 
 Contract source: context/spec/capabilities/access.md.
 """
+
+from __future__ import annotations

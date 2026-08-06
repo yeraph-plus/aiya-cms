@@ -23,6 +23,7 @@ class CapabilitySpec:
 
     name: str
     schema_version: str
+    access_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

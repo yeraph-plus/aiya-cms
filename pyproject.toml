@@ -12,6 +12,7 @@ dependencies = [
   "alembic==1.18.5",
   "apscheduler==3.11.3",
   "asyncpg==0.31.0",
+  "cryptography==50.0.0",
   "fastapi==0.141.1",
   "pydantic==2.13.4",
   "pydantic-settings==2.14.2",
@@ -59,5 +60,5 @@ indent-style = "space"
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["inc/kernel"]
+files = ["inc"]
 plugins = []

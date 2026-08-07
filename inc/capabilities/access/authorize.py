@@ -75,6 +75,7 @@ class AuthorizeService:
 
         if principal.status != "active":
             return set()
+        now = self._clock.utc_now()
         async with self._uow_factory() as uow:
             rows = (
                 (
@@ -85,6 +86,10 @@ class AuthorizeService:
                         .where(
                             AccessSubjectRole.subject_type == "identity",
                             AccessSubjectRole.subject_id == principal.subject_id,
+                            (AccessSubjectRole.valid_from.is_(None))
+                            | (AccessSubjectRole.valid_from <= now),
+                            (AccessSubjectRole.valid_until.is_(None))
+                            | (AccessSubjectRole.valid_until >= now),
                         )
                     )
                 )

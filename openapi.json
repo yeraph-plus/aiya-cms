@@ -234,38 +234,6 @@
         "title": "AuditEntryDTO",
         "type": "object"
       },
-      "AuditPageDTO": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AuditEntryDTO"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "size": {
-            "title": "Size",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "page",
-          "size"
-        ],
-        "title": "AuditPageDTO",
-        "type": "object"
-      },
       "BanInput": {
         "additionalProperties": false,
         "properties": {
@@ -907,6 +875,37 @@
         "title": "MeDTO",
         "type": "object"
       },
+      "Page_AuditEntryDTO_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
       "Page_SubjectDTO_": {
         "properties": {
           "items": {
@@ -938,23 +937,34 @@
         "title": "Page",
         "type": "object"
       },
-      "PinBody": {
+      "PurgeResultDTO": {
         "additionalProperties": false,
+        "description": "Result of the operations purge command (archive-only elsewhere).",
         "properties": {
-          "is_pinned": {
-            "title": "Is Pinned",
+          "content_id": {
+            "title": "Content Id",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
             "type": "boolean"
           },
-          "pin_rank": {
-            "default": 0,
-            "title": "Pin Rank",
+          "outgoing_references": {
+            "title": "Outgoing References",
             "type": "integer"
+          },
+          "type_name": {
+            "title": "Type Name",
+            "type": "string"
           }
         },
         "required": [
-          "is_pinned"
+          "content_id",
+          "type_name",
+          "outgoing_references",
+          "dry_run"
         ],
-        "title": "PinBody",
+        "title": "PurgeResultDTO",
         "type": "object"
       },
       "ReferenceDTO": {
@@ -990,35 +1000,6 @@
           "metadata"
         ],
         "title": "ReferenceDTO",
-        "type": "object"
-      },
-      "ReferencesBody": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Metadata",
-            "type": "object"
-          },
-          "targets": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "title": "Targets",
-            "type": "array"
-          }
-        },
-        "required": [
-          "kind",
-          "targets"
-        ],
-        "title": "ReferencesBody",
         "type": "object"
       },
       "RegisterExternalAssetInput": {
@@ -1111,6 +1092,33 @@
         "title": "RejectBody",
         "type": "object"
       },
+      "ReplaceReferencesInput": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "targets": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ReplaceReferencesInput",
+        "type": "object"
+      },
       "ResolvedAssetUrlDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1182,7 +1190,7 @@
         "title": "RoleDTO",
         "type": "object"
       },
-      "ScheduleBody": {
+      "ScheduleContentInput": {
         "additionalProperties": false,
         "properties": {
           "publish_at": {
@@ -1194,7 +1202,26 @@
         "required": [
           "publish_at"
         ],
-        "title": "ScheduleBody",
+        "title": "ScheduleContentInput",
+        "type": "object"
+      },
+      "SetContentPinInput": {
+        "additionalProperties": false,
+        "properties": {
+          "is_pinned": {
+            "title": "Is Pinned",
+            "type": "boolean"
+          },
+          "pin_rank": {
+            "default": 0,
+            "title": "Pin Rank",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "is_pinned"
+        ],
+        "title": "SetContentPinInput",
         "type": "object"
       },
       "SettingGroupDTO": {
@@ -1369,6 +1396,36 @@
         "title": "TermDTO",
         "type": "object"
       },
+      "UpdateAssetMetadataInput": {
+        "additionalProperties": false,
+        "properties": {
+          "alt_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Text"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "title": "UpdateAssetMetadataInput",
+        "type": "object"
+      },
       "UpdateContentInput": {
         "additionalProperties": false,
         "properties": {
@@ -1439,7 +1496,7 @@
         "title": "UpdateContentInput",
         "type": "object"
       },
-      "UpdateGroupBody": {
+      "UpdateSettingGroupInput": {
         "additionalProperties": false,
         "properties": {
           "expected_version": {
@@ -1462,37 +1519,7 @@
         "required": [
           "values"
         ],
-        "title": "UpdateGroupBody",
-        "type": "object"
-      },
-      "UpdateMetadataBody": {
-        "additionalProperties": false,
-        "properties": {
-          "alt_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alt Text"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          }
-        },
-        "title": "UpdateMetadataBody",
+        "title": "UpdateSettingGroupInput",
         "type": "object"
       },
       "UpdateTermInput": {
@@ -1835,7 +1862,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateMetadataBody"
+                "$ref": "#/components/schemas/UpdateAssetMetadataInput"
               }
             }
           },
@@ -2059,7 +2086,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuditPageDTO"
+                  "$ref": "#/components/schemas/Page_AuditEntryDTO_"
                 }
               }
             },
@@ -2082,49 +2109,6 @@
           }
         ],
         "summary": "List Entries"
-      }
-    },
-    "/api/v1/admin/bootstrap-admin": {
-      "post": {
-        "operationId": "bootstrap_admin_api_v1_admin_bootstrap_admin_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AssignRoleBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoleDTO"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Bootstrap Admin"
       }
     },
     "/api/v1/admin/capabilities": {
@@ -2443,7 +2427,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PinBody"
+                "$ref": "#/components/schemas/SetContentPinInput"
               }
             }
           },
@@ -2554,9 +2538,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Purge Content Api V1 Admin Content  Content Id  Purge Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PurgeResultDTO"
                 }
               }
             },
@@ -2647,7 +2629,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReferencesBody"
+                "$ref": "#/components/schemas/ReplaceReferencesInput"
               }
             }
           },
@@ -2795,7 +2777,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ScheduleBody"
+                "$ref": "#/components/schemas/ScheduleContentInput"
               }
             }
           },
@@ -2990,52 +2972,6 @@
       }
     },
     "/api/v1/admin/roles/{role_id}/assign": {
-      "delete": {
-        "operationId": "revoke_role_api_v1_admin_roles__role_id__assign_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "role_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Role Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AssignRoleBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Revoke Role"
-      },
       "post": {
         "operationId": "assign_role_api_v1_admin_roles__role_id__assign_post",
         "parameters": [
@@ -3088,6 +3024,54 @@
           }
         ],
         "summary": "Assign Role"
+      }
+    },
+    "/api/v1/admin/roles/{role_id}/revoke": {
+      "post": {
+        "operationId": "revoke_role_api_v1_admin_roles__role_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignRoleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Role"
       }
     },
     "/api/v1/admin/settings/groups": {
@@ -3177,7 +3161,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateGroupBody"
+                "$ref": "#/components/schemas/UpdateSettingGroupInput"
               }
             }
           },
@@ -3384,106 +3368,6 @@
         "summary": "Create Term"
       }
     },
-    "/api/v1/admin/taxonomy/dimensions/{dimension_key}/terms/{term_id}": {
-      "patch": {
-        "operationId": "update_term_api_v1_admin_taxonomy_dimensions__dimension_key__terms__term_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "term_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Term Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateTermInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TermDTO"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Update Term"
-      }
-    },
-    "/api/v1/admin/taxonomy/dimensions/{dimension_key}/terms/{term_id}/archive": {
-      "post": {
-        "operationId": "archive_term_api_v1_admin_taxonomy_dimensions__dimension_key__terms__term_id__archive_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "term_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Term Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TermDTO"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Archive Term"
-      }
-    },
     "/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms": {
       "delete": {
         "operationId": "remove_target_terms_api_v1_admin_taxonomy_targets__target_type___target_id__terms_delete",
@@ -3584,6 +3468,106 @@
           }
         ],
         "summary": "Assign Terms"
+      }
+    },
+    "/api/v1/admin/taxonomy/terms/{term_id}": {
+      "patch": {
+        "operationId": "update_term_api_v1_admin_taxonomy_terms__term_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Term Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTermInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Term"
+      }
+    },
+    "/api/v1/admin/taxonomy/terms/{term_id}/archive": {
+      "post": {
+        "operationId": "archive_term_api_v1_admin_taxonomy_terms__term_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Term Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Archive Term"
       }
     },
     "/api/v1/admin/users": {

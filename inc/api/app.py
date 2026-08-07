@@ -10,6 +10,8 @@ module creates nothing; only ``create_app`` does.
 
 from __future__ import annotations
 
+import importlib
+import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -22,44 +24,45 @@ from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inc.api.container import ApplicationContainer, Services, build_container
-from inc.api.http.context import BearerVerifier, make_require_capability
+from inc.api.http.context import (
+    BearerVerifier,
+    make_authenticated,
+    make_require_capability,
+)
 from inc.api.http.errors import (
     internal_error_response,
     kernel_error_response,
     pydantic_validation_response,
     validation_error_response,
 )
-from inc.api.http.routers_access import build_router as build_access_router
-from inc.api.http.routers_assets import build_router as build_assets_router
-from inc.api.http.routers_audit import build_router as build_audit_router
-from inc.api.http.routers_auth import build_router as build_auth_router
-from inc.api.http.routers_content import build_router as build_content_router
 from inc.api.http.routers_health import build_router as build_health_router
-from inc.api.http.routers_identity import build_router as build_identity_router
-from inc.api.http.routers_settings import build_router as build_settings_router
-from inc.api.http.routers_taxonomy import build_router as build_taxonomy_router
 from inc.kernel.boot import AppManifest
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import KernelError
 from inc.kernel.time import Clock
 
 _ROUTER_FACTORIES: dict[str, Any] = {
-    "health": build_health_router,
-    "identity": build_identity_router,
-    "access": build_access_router,
-    "content": build_content_router,
-    "taxonomy": build_taxonomy_router,
-    "settings": build_settings_router,
-    "assets": build_assets_router,
-    "audit": build_audit_router,
-    "auth": build_auth_router,
+    "identity": importlib.import_module("inc.api.http.routers_identity"),
+    "access": importlib.import_module("inc.api.http.routers_access"),
+    "content": importlib.import_module("inc.api.http.routers_content"),
+    "taxonomy": importlib.import_module("inc.api.http.routers_taxonomy"),
+    "settings": importlib.import_module("inc.api.http.routers_settings"),
+    "assets": importlib.import_module("inc.api.http.routers_assets"),
+    "audit": importlib.import_module("inc.api.http.routers_audit"),
+    "auth": importlib.import_module("inc.api.http.routers_auth"),
 }
 
 _REQUEST_ID_HEADER = "x-request-id"
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._\-]{1,64}$")
 
 
 class _RequestIdMiddleware:
-    """Assigns and echoes X-Request-ID."""
+    """Assigns and echoes X-Request-ID.
+
+    Client values are accepted only when they match a safe charset; the
+    echoed value is exactly what propagates as the trace id, so control
+    characters or oversized values are replaced with a generated id.
+    """
 
     def __init__(self, app: Any) -> None:
         self._app = app
@@ -73,7 +76,7 @@ class _RequestIdMiddleware:
 
         headers = Headers(raw=scope.get("headers", []))
         raw = headers.get(_REQUEST_ID_HEADER)
-        request_id = raw if raw and len(raw) <= 128 else uuid.uuid4().hex
+        request_id = raw if raw and _REQUEST_ID_PATTERN.match(raw) else uuid.uuid4().hex
         scope["state"] = dict(scope.get("state", {}))
         scope["state"]["request_id"] = request_id
 
@@ -87,15 +90,31 @@ class _RequestIdMiddleware:
         await self._app(scope, receive, send_wrapper)
 
 
+_DEFAULT_HTTP_MESSAGES = {
+    400: "bad request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not found",
+    405: "method not allowed",
+    409: "conflict",
+    429: "too many requests",
+    500: "internal error",
+}
+
+
 def _http_exception_response(request: Request, exc: Any) -> Any:
     from inc.api.http.errors import error_body
 
     code = f"http.{exc.status_code}"
+    detail = getattr(exc, "detail", None)
+    message = (
+        str(detail) if detail else _DEFAULT_HTTP_MESSAGES.get(exc.status_code, "request failed")
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content=error_body(
             code=code,
-            message=str(exc.detail) if getattr(exc, "detail", None) else "not found",
+            message=message,
             request_id=getattr(request.state, "request_id", None),
         ),
     )
@@ -113,13 +132,13 @@ def create_app(
         manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings
     )
     services: Services = container.services  # type: ignore[assignment]
-    require_capability = make_require_capability(
-        verifier=BearerVerifier(
-            services=services,
-            issuer=getattr(settings, "issuer", "http://localhost:8080"),
-            api_audience=getattr(settings, "api_audience", "aiya-admin"),
-        )
+    verifier = BearerVerifier(
+        services=services,
+        issuer=getattr(settings, "issuer", "http://localhost:8080"),
+        api_audience=getattr(settings, "api_audience", "aiya-admin"),
     )
+    require_capability = make_require_capability(verifier=verifier)
+    require_authenticated = make_authenticated(verifier=verifier)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
@@ -161,16 +180,20 @@ def create_app(
         )
     )
 
+    # fail-fast: every permission key used by a mounted router must be
+    # registered by the enabled capabilities (boot.md §5)
     for router_name in manifest.routers:
-        if router_name == "health":
+        if router_name in ("health", "oidc"):
             continue
-        factory = _ROUTER_FACTORIES.get(router_name)
-        if factory is None:
+        router_module = _ROUTER_FACTORIES.get(router_name)
+        if router_module is None:
             continue
-        router = factory(services, require_capability)
+        for permission_key in getattr(router_module, "REQUIRED_PERMISSIONS", ()):
+            services.permission_registry.require(permission_key)
+        router = router_module.build_router(services, require_capability, require_authenticated)
         app.include_router(router)
 
-    if "oidc_provider" in manifest.capabilities and services.oidc is not None:
+    if "oidc" in manifest.routers and services.oidc is not None:
         from inc.capabilities.oidc_provider.api import OidcHttpServices, build_router
 
         oidc_services = OidcHttpServices(

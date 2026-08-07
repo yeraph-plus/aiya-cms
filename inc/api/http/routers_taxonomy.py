@@ -66,7 +66,17 @@ def _target_exists(ctx: AppContext, services: Any) -> Any:
     return _exists
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "taxonomy.read",
+    "taxonomy.manage",
+)
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin")
 
     @router.get("/taxonomy/dimensions", response_model=list[DimensionDTO])
@@ -90,7 +100,7 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
     ) -> TermDTO:
         return await CreateTerm(_ctx(ctx, services))(dimension_key, body)
 
-    @router.patch("/taxonomy/dimensions/{dimension_key}/terms/{term_id}", response_model=TermDTO)
+    @router.patch("/taxonomy/terms/{term_id}", response_model=TermDTO)
     async def update_term(
         body: UpdateTermInput,
         term_id: uuid.UUID = Path(...),
@@ -98,9 +108,7 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
     ) -> TermDTO:
         return await UpdateTerm(_ctx(ctx, services))(term_id, body)
 
-    @router.post(
-        "/taxonomy/dimensions/{dimension_key}/terms/{term_id}/archive", response_model=TermDTO
-    )
+    @router.post("/taxonomy/terms/{term_id}/archive", response_model=TermDTO)
     async def archive_term(
         term_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("taxonomy.manage")),

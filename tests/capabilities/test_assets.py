@@ -194,6 +194,7 @@ async def test_finalize_verifies_stat_and_marks_ready(
     assert result.state == "pending"
     await _run_due(ctx)
     queries = AssetQueries(ctx=ctx, clock=clock)
+    ALL = frozenset({"assets.read"})
     from sqlalchemy import select as sa_select
 
     async with uow_factory() as uow:
@@ -207,7 +208,7 @@ async def test_finalize_verifies_stat_and_marks_ready(
             .first()
         )
     assert asset_row is not None
-    ref = await queries.get(asset_row.id)
+    ref = await queries.get(asset_row.id, permissions=ALL)
     assert ref is not None and ref.state == "ready"
     assert ref.mime_type == "image/png" and ref.byte_size == 1024
     async with uow_factory() as uow:
@@ -356,7 +357,7 @@ async def test_resolve_url_not_persisted_and_has_expiry(
         )
     )
     resolved = await AssetQueries(ctx=ctx, clock=clock).resolve_url(
-        uuid.UUID(ref.id), expires_in_seconds=120
+        uuid.UUID(ref.id), expires_in_seconds=120, permissions=frozenset({"assets.read"})
     )
     assert "x-expires=120" in resolved.url
     async with uow_factory() as uow:

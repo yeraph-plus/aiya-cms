@@ -51,7 +51,7 @@ def _request_id(request: Request) -> str | None:
 
 def kernel_error_response(request: Request, exc: KernelError) -> JSONResponse:
     status = _CATEGORY_STATUS.get(exc.category, 500)
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status,
         content=error_body(
             code=exc.code,
@@ -60,6 +60,9 @@ def kernel_error_response(request: Request, exc: KernelError) -> JSONResponse:
             details=exc.details or None,
         ),
     )
+    if status == 401:
+        response.headers["WWW-Authenticate"] = "Bearer"
+    return response
 
 
 def validation_error_response(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -95,7 +98,11 @@ def pydantic_validation_response(request: Request, exc: ValidationError) -> JSON
 def internal_error_response(request: Request, exc: Exception) -> JSONResponse:
     from inc.kernel.observability import get_logger  # noqa: PLC0415
 
-    get_logger("api.http").exception("unhandled error", exc_info=exc)
+    get_logger("api.http").exception(
+        "unhandled error",
+        exc_info=exc,
+        request_id=_request_id(request),
+    )
     return JSONResponse(
         status_code=500,
         content=error_body(

@@ -119,6 +119,21 @@ REQUIRED_PORTS: dict[str, tuple[str, ...]] = {
 
 AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
 SECURITY_EVENT_KEYS = ("identity.user_banned.v1", "identity.password_changed.v1")
+KNOWN_ROUTERS = frozenset(
+    {
+        "health",
+        "auth",
+        "identity",
+        "access",
+        "content",
+        "taxonomy",
+        "settings",
+        "assets",
+        "audit",
+        "oidc",
+    }
+)
+KNOWN_WORKERS = frozenset({"outbox", "workflow"})
 
 
 def _fail(code: str, message: str) -> KernelError:
@@ -171,6 +186,7 @@ class ApplicationContainer:
         self._clock = clock
         self._settings = settings
         self._frozen = False
+        self._started = False
         self._tasks: list[asyncio.Task[Any]] = []
         self.schema_registry = EventSchemaRegistry()
         self.handler_registry = EventHandlerRegistry()
@@ -202,6 +218,23 @@ class ApplicationContainer:
                         "kernel.feature_requires_missing",
                         f"feature {name!r} requires capability {required!r}",
                     )
+        for group_name, group, known in (
+            ("capability", self._manifest.capabilities, set(CAPABILITY_SPECS)),
+            ("feature", self._manifest.features, set(FEATURE_SPECS)),
+            ("router", self._manifest.routers, KNOWN_ROUTERS),
+            ("worker", self._manifest.workers, KNOWN_WORKERS),
+        ):
+            if len(set(group)) != len(group):
+                raise _fail(
+                    "kernel.manifest_duplicate",
+                    f"manifest lists duplicate {group_name} entries",
+                )
+            unknown = set(group) - known
+            if unknown:
+                raise _fail(
+                    "kernel.registry_unknown",
+                    f"unknown {group_name} in manifest: {sorted(unknown)}",
+                )
 
     def _register_event_schemas(self) -> None:
         capabilities = set(self._manifest.capabilities)
@@ -220,6 +253,11 @@ class ApplicationContainer:
 
             for key, schema in TAXONOMY_EVENT_SCHEMAS.items():
                 self.schema_registry.register(key, schema)
+        if "access" in capabilities:
+            from inc.capabilities.access.events import ACCESS_EVENT_SCHEMAS
+
+            for key, schema in ACCESS_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
         if "settings" in capabilities:
             from inc.capabilities.settings.events import SETTINGS_EVENT_SCHEMAS
 
@@ -227,7 +265,8 @@ class ApplicationContainer:
                 self.schema_registry.register(key, schema)
         from inc.capabilities.audit.schemas import AuditEntryRecorded
 
-        self.schema_registry.register(AUDIT_EVENT_KEY, AuditEntryRecorded)
+        if "audit" in capabilities:
+            self.schema_registry.register(AUDIT_EVENT_KEY, AuditEntryRecorded)
 
     def _register_permissions(self) -> None:
         for name in self._manifest.capabilities:
@@ -269,6 +308,13 @@ class ApplicationContainer:
         asset_queries: AssetQueries | None = None
         asset_command_ctx: AssetCommandContext | None = None
         if "assets" in capabilities:
+            if getattr(self._settings, "environment", "dev") == "production" and _binds_dev_storage(
+                self._manifest
+            ):
+                raise _fail(
+                    "kernel.adapter_production_denied",
+                    "assets.dev_memory must not be bound in production",
+                )
             dev_storage = InMemoryObjectStorage()
             asset_command_ctx = AssetCommandContext(
                 uow_factory=self._uow_factory,
@@ -420,11 +466,21 @@ class ApplicationContainer:
     def _validate_required_ports(self, adapters: dict[str, Any]) -> None:
         for capability in self._manifest.capabilities:
             for port in REQUIRED_PORTS.get(capability, ()):
-                if port not in adapters:
+                if port not in adapters or adapters[port] is None:
                     raise _fail(
                         "kernel.port_unbound",
                         f"capability {capability!r} requires port {port!r} which is not bound",
                     )
+
+    def _validate_handler_schemas(self) -> None:
+        """Every registered handler must consume a registered event schema."""
+
+        for event_key in self.handler_registry.keys():
+            if self.schema_registry.schema_for(event_key) is None:
+                raise _fail(
+                    "kernel.handler_schema_missing",
+                    f"handler for {event_key!r} has no registered event schema",
+                )
 
     def build(self) -> ApplicationContainer:
         """Run the full boot sequence; callers must then freeze()."""
@@ -435,6 +491,7 @@ class ApplicationContainer:
         self._register_permissions()
         self._register_declarations()
         self._build_services()
+        self._validate_handler_schemas()
         return self
 
     def freeze(self) -> None:
@@ -464,6 +521,10 @@ class ApplicationContainer:
         services = self.services
         if services is None:
             raise _fail("kernel.container_not_built", "container has not been built")
+        if not self._frozen:
+            raise _fail("kernel.container_not_frozen", "container must be frozen before start")
+        if self._started:
+            raise _fail("kernel.container_already_started", "container already started")
         sleep = getattr(self._settings, "worker_sleep_seconds", 1.0)
         if "outbox" in self._manifest.workers:
             self._tasks.append(
@@ -489,13 +550,18 @@ class ApplicationContainer:
                     )
                 )
             )
+        self._started = True
 
     async def _loop(self, name: str, call: Any, sleep_seconds: float) -> None:
         while True:
             try:
                 await call()
-            except Exception:  # noqa: BLE001 - worker loops must survive individual failures
-                pass
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - worker loops survive individual failures
+                from inc.kernel.observability import get_logger  # noqa: PLC0415
+
+                get_logger("api.workers").exception("worker %s cycle failed", name)
             await asyncio.sleep(sleep_seconds)
 
     async def stop(self) -> None:
@@ -504,9 +570,19 @@ class ApplicationContainer:
         for task in self._tasks:
             try:
                 await task
+            except asyncio.CancelledError:
+                pass
             except Exception:  # noqa: BLE001
                 pass
         self._tasks.clear()
+        self._started = False
+
+
+def _binds_dev_storage(manifest: AppManifest) -> bool:
+    return any(
+        port == "assets.object_storage" and adapter == "assets.dev_memory"
+        for port, adapter in manifest.adapters
+    )
 
 
 def build_container(

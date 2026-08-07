@@ -102,3 +102,14 @@ class ReplaceReferencesInput(BaseModel):
     kind: str
     targets: list[uuid.UUID] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PurgeResultDTO(BaseModel):
+    """Result of the operations purge command (archive-only elsewhere)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content_id: str
+    type_name: str
+    outgoing_references: int
+    dry_run: bool

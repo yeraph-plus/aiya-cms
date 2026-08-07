@@ -8,6 +8,8 @@ capability keys; the capability set comes from access grants.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
@@ -25,12 +27,19 @@ class MeDTO(BaseModel):
     capabilities: list[str] = []
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = ()
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
 
     @router.get("/auth/me", response_model=MeDTO)
     async def me(
-        ctx: AppContext = Depends(require_capability("identity.users.read")),
+        ctx: AppContext = Depends(require_authenticated()),
     ) -> MeDTO:
         subject = await services.identity_queries.get_subject(ctx.principal.subject_id)
         if subject is None:

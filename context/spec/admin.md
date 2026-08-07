@@ -6,6 +6,8 @@
 
 保留 YummyAdmin 的 MIT 许可证 `admin/LICENSE` 和来源说明 `admin/UPSTREAM.md`；重构业务页面不得移除归属信息。
 
+界面基座为 Sakai Vue UI kit（MIT），组件与页面清单见 `admin-uikit.md`。
+
 ## 2. 契约
 
 - 所有 API 类型从根 OpenAPI snapshot 生成。

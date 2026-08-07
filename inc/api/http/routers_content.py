@@ -10,7 +10,6 @@ pin-stable ordering defined by the content spec.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Path, Query
@@ -37,8 +36,10 @@ from inc.capabilities.content.schemas import (
     ContentDTO,
     ContentPageDTO,
     CreateContentInput,
+    PurgeResultDTO,
     ReferenceDTO,
     ReplaceReferencesInput,
+    ScheduleContentInput,
     SetContentPinInput,
     UpdateContentInput,
 )
@@ -48,27 +49,6 @@ class RejectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str | None = None
-
-
-class ScheduleBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    publish_at: datetime
-
-
-class PinBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    is_pinned: bool
-    pin_rank: int = 0
-
-
-class ReferencesBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: str
-    targets: list[uuid.UUID]
-    metadata: dict[str, Any] = {}
 
 
 def _ctx(ctx: AppContext, services: Services) -> CommandContext:
@@ -83,7 +63,22 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
     )
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "content.read",
+    "content.write",
+    "content.schedule",
+    "content.publish",
+    "content.archive",
+    "content.pin",
+    "content.purge",
+)
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin")
 
     @router.get("/content", response_model=ContentPageDTO)
@@ -153,7 +148,7 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
 
     @router.post("/content/{content_id}/schedule", response_model=ContentDTO)
     async def schedule_content(
-        body: ScheduleBody,
+        body: ScheduleContentInput,
         content_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("content.schedule")),
     ) -> ContentDTO:
@@ -189,31 +184,27 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
 
     @router.post("/content/{content_id}/pin", response_model=ContentDTO)
     async def set_pin(
-        body: PinBody,
+        body: SetContentPinInput,
         content_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("content.pin")),
     ) -> ContentDTO:
-        return await SetContentPin(_ctx(ctx, services))(
-            content_id, SetContentPinInput(is_pinned=body.is_pinned, pin_rank=body.pin_rank)
-        )
+        return await SetContentPin(_ctx(ctx, services))(content_id, body)
 
     @router.put("/content/{content_id}/references", status_code=204)
     async def replace_references(
-        body: ReferencesBody,
+        body: ReplaceReferencesInput,
         content_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("content.write")),
     ) -> None:
-        await ReplaceContentReferences(_ctx(ctx, services))(
-            content_id,
-            ReplaceReferencesInput(kind=body.kind, targets=body.targets, metadata=body.metadata),
-        )
+        await ReplaceContentReferences(_ctx(ctx, services))(content_id, body)
 
-    @router.post("/content/{content_id}/purge")
+    @router.post("/content/{content_id}/purge", response_model=PurgeResultDTO)
     async def purge_content(
         content_id: uuid.UUID = Path(...),
         dry_run: bool = Query(default=False),
         ctx: AppContext = Depends(require_capability("content.purge")),
-    ) -> dict[str, Any]:
-        return await PurgeArchivedContent(_ctx(ctx, services))(content_id, dry_run=dry_run)
+    ) -> PurgeResultDTO:
+        report = await PurgeArchivedContent(_ctx(ctx, services))(content_id, dry_run=dry_run)
+        return PurgeResultDTO(**report)
 
     return router

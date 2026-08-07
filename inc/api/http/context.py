@@ -53,10 +53,12 @@ class BearerVerifier:
         services: Services,
         issuer: str,
         api_audience: str,
+        clock_skew_seconds: int = 60,
     ) -> None:
         self._services = services
         self._issuer = issuer
         self._api_audience = api_audience
+        self._clock_skew_seconds = clock_skew_seconds
 
     async def verify(
         self,
@@ -69,9 +71,15 @@ class BearerVerifier:
         subject_id = str(payload.get("sub", ""))
         if not subject_id:
             raise _unauthorized("access token carries no subject")
+        scope = str(payload.get("scope", ""))
+        if "openid" not in scope.split():
+            raise _unauthorized("access token lacks the openid scope")
 
         async with self._services.uow_factory():
-            subject = await self._services.identity_queries.get_subject(subject_id)
+            try:
+                subject = await self._services.identity_queries.get_subject(subject_id)
+            except ValueError as exc:
+                raise _unauthorized("access token carries a malformed subject") from exc
         if subject is None:
             raise _unauthorized("subject no longer exists")
         if subject.status != "active":
@@ -103,42 +111,60 @@ class BearerVerifier:
     async def _decode(self, token: str) -> dict[str, Any]:
         from jwt.algorithms import RSAAlgorithm
 
+        try:
+            unverified = jwt.get_unverified_header(token)
+        except jwt.PyJWTError as exc:
+            raise _unauthorized("malformed access token") from exc
+        kid = unverified.get("kid")
+        if not kid:
+            raise _unauthorized("access token carries no kid")
         jwks = await self._services.keys.public_jwks()
-        for key in jwks.get("keys", []):
-            kid = key.get("kid")
-            if kid is None:
-                continue
-            try:
-                public_key: Any = RSAAlgorithm.from_jwk(key)
-                payload = jwt.decode(
-                    token,
-                    public_key,
-                    algorithms=["RS256"],
-                    issuer=self._issuer,
-                    audience=self._api_audience,
-                    options={"require": ["exp", "iat"]},
-                )
-                return payload
-            except jwt.PyJWTError:
-                continue
-        raise _unauthorized("invalid or expired access token")
+        key = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
+        if key is None:
+            raise _unauthorized("access token key is not active")
+        try:
+            public_key: Any = RSAAlgorithm.from_jwk(key)
+            payload = jwt.decode(
+                token,
+                public_key,
+                algorithms=["RS256"],
+                issuer=self._issuer,
+                audience=self._api_audience,
+                options={"require": ["exp", "iat"]},
+                leeway=self._clock_skew_seconds,
+            )
+            return payload
+        except jwt.PyJWTError as exc:
+            raise _unauthorized("invalid or expired access token") from exc
 
 
 RequireCapability = Callable[[str], Callable[..., Any]]
 
 
-def make_require_capability(*, verifier: BearerVerifier) -> RequireCapability:
-    """Dependency factory bound to one app's verifier."""
+class _AuthDeps:
+    """Authenticated/authorized dependency factories bound to a verifier."""
+
+    def __init__(self, verifier: BearerVerifier) -> None:
+        self._verifier = verifier
 
     async def _resolve(
+        self,
         credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
         request: Request = None,  # type: ignore[assignment]
     ) -> AppContext:
-        return await verifier.verify(credentials, request)
+        return await self._verifier.verify(credentials, request)
 
-    def require_capability(permission_key: str) -> Callable[..., Any]:
+    def authenticated(self) -> Callable[..., Any]:
         async def _dependency(
-            ctx: AppContext = Depends(_resolve),
+            ctx: AppContext = Depends(self._resolve),
+        ) -> AppContext:
+            return ctx
+
+        return _dependency
+
+    def require_capability(self, permission_key: str) -> Callable[..., Any]:
+        async def _dependency(
+            ctx: AppContext = Depends(self._resolve),
         ) -> AppContext:
             if permission_key not in ctx.principal.capabilities:
                 raise KernelError(
@@ -150,4 +176,16 @@ def make_require_capability(*, verifier: BearerVerifier) -> RequireCapability:
 
         return _dependency
 
-    return require_capability
+
+def make_require_capability(*, verifier: BearerVerifier) -> RequireCapability:
+    """Dependency factory bound to one app's verifier."""
+
+    deps = _AuthDeps(verifier)
+    return deps.require_capability
+
+
+def make_authenticated(*, verifier: BearerVerifier) -> Callable[[], Callable[..., Any]]:
+    """Authenticated-only dependency factory (no capability requirement)."""
+
+    deps = _AuthDeps(verifier)
+    return deps.authenticated

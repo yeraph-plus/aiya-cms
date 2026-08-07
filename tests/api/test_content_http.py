@@ -59,7 +59,7 @@ async def test_unknown_type_is_validation_error(client: Any, admin_token: str) -
         json={"type_name": "ghost", "title": "x", "slug": "x-1", "data": {}},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    assert response.status_code == 500
+    assert response.status_code == 422
     assert response.json()["code"] == "content.unknown_type"
 
 

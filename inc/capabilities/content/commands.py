@@ -78,6 +78,17 @@ def _validation(code: str, message: str) -> KernelError:
     return KernelError(code=code, category=ErrorCategory.VALIDATION, message=message)
 
 
+def _require_type(ctx: CommandContext, type_name: str) -> ContentTypeSpec:
+    """Client-supplied type names are validation errors, not internal ones."""
+
+    try:
+        return ctx.types.require(type_name)
+    except KernelError as exc:
+        if exc.code == "content.unknown_type":
+            raise _validation("content.unknown_type", exc.message) from exc
+        raise
+
+
 def _not_found(content_id: Any) -> KernelError:
     return KernelError(
         code="content.not_found", category=ErrorCategory.NOT_FOUND, message=f"content {content_id}"
@@ -257,7 +268,7 @@ class CreateContent:
     async def __call__(self, input_: CreateContentInput) -> ContentDTO:  # type: ignore[return]
         ctx = self._ctx
         _require_permission(ctx, PERMISSION_WRITE)
-        spec = ctx.types.require(input_.type_name)
+        spec = _require_type(ctx, input_.type_name)
         _validate_slug(spec, input_.slug)
         _validate_text(spec, input_.title, input_.body, input_.excerpt)
         payload = _validate_data(spec, input_.data)
@@ -730,7 +741,12 @@ class ReplaceContentReferences:
                         "content.reference_target_missing",
                         f"reference target {target_id} does not exist",
                     )
-                target_spec = ctx.types.require(target.type_name)
+                try:
+                    target_spec = ctx.types.require(target.type_name)
+                except KernelError as exc:
+                    if exc.code == "content.unknown_type":
+                        raise _validation("content.unknown_type", exc.message) from exc
+                    raise
                 if not target_spec.allows_incoming_references:
                     raise _validation(
                         "content.reference_target_not_allowed",

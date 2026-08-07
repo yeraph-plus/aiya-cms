@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict
 class ApiSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    environment: str = "dev"
     issuer: str = "http://localhost:8080"
     api_audience: str = "aiya-admin"
     secure_cookies: bool = False
@@ -24,6 +25,10 @@ class ApiSettings(BaseModel):
 
 
 def load_api_settings(overrides: dict[str, Any] | None = None) -> ApiSettings:
-    if overrides is None:
-        return ApiSettings()
-    return ApiSettings(**overrides)
+    settings = ApiSettings(**overrides) if overrides else ApiSettings()
+    if settings.environment == "production":
+        if not settings.issuer.startswith("https://"):
+            raise ValueError("production issuer must be https")
+        if not settings.secure_cookies:
+            raise ValueError("production requires secure cookies")
+    return settings

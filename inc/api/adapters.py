@@ -74,22 +74,30 @@ class AccessAuthorizationReader(AuthorizationDecisionReader):
         self._authorize = authorize
 
     async def can_grant(self, subject_id: str, client_id: str, scopes: set[str]) -> bool:
+        required = _scope_capabilities(scopes)
+        if required is None:
+            return False  # unknown scopes are never silently granted
         principal = Principal(subject_id=subject_id, status="active", client_id=client_id)
         capabilities = await self._authorize.capabilities_of(principal)
-        required = _scope_capabilities(scopes)
         return required <= capabilities
 
 
-def _scope_capabilities(scopes: set[str]) -> set[str]:
+def _scope_capabilities(scopes: set[str]) -> set[str] | None:
+    """Scope -> capability policy; None means the scope set is not grantable.
+
+    openid is always granted to an authenticated subject; profile/email
+    require the identity read grant. Unknown scopes are rejected instead
+    of being silently accepted.
+    """
+
     out: set[str] = set()
     for scope in scopes:
         if scope == "openid":
             continue
         if scope in ("profile", "email"):
             out.add("identity.users.read")
-        elif scope == "admin":
-            out.add("content.write")
-            out.add("content.read")
+        else:
+            return None
     return out
 
 
@@ -133,6 +141,7 @@ class InMemoryObjectStorage:
 
     def __init__(self) -> None:
         self._objects: dict[str, bytes] = {}
+        self._mimes: dict[str, str] = {}
 
     async def create_upload_intent(
         self,
@@ -143,6 +152,8 @@ class InMemoryObjectStorage:
         checksum_sha256: str | None,
         expires_at: Any,
     ) -> UploadIntentCredentials:
+        if mime_types:
+            self._mimes[object_key] = mime_types[0]
         return UploadIntentCredentials(
             upload_url=f"memory://{object_key}", headers={"x-dev-upload": "1"}
         )
@@ -161,7 +172,7 @@ class InMemoryObjectStorage:
 
         return ObjectStat(
             byte_size=len(data),
-            mime_type=_guess_mime(object_key),
+            mime_type=self._mimes.get(object_key) or _guess_mime(object_key),
             checksum_sha256=hashlib.sha256(data).hexdigest(),
         )
 

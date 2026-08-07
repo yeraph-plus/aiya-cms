@@ -18,7 +18,6 @@ from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
 from inc.capabilities.access.commands import (
     AssignRoleToSubject,
-    BootstrapAdministrator,
     CommandContext,
     CreateRole,
     RevokeRoleFromSubject,
@@ -69,7 +68,19 @@ def _subject_exists(ctx: AppContext, services: Any) -> Any:
     return _Exists()
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "access.roles.read",
+    "access.roles.manage",
+    "access.roles.assign",
+    "access.bootstrap",
+)
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin")
 
     @router.get("/capabilities", response_model=CapabilityDTO)
@@ -108,7 +119,7 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
             subject_type=body.subject_type, subject_id=body.subject_id
         )
 
-    @router.delete("/roles/{role_id}/assign", status_code=204)
+    @router.post("/roles/{role_id}/revoke", status_code=204)
     async def revoke_role(
         body: AssignRoleBody,
         role_id: uuid.UUID = Path(...),
@@ -118,15 +129,6 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
             subject_type=body.subject_type,
             subject_id=body.subject_id,
             role_id=str(role_id),
-        )
-
-    @router.post("/bootstrap-admin", response_model=RoleDTO)
-    async def bootstrap_admin(
-        body: AssignRoleBody,
-        ctx: AppContext = Depends(require_capability("access.bootstrap")),
-    ) -> RoleDTO:
-        return await BootstrapAdministrator(_ctx(ctx, services))(
-            subject_type=body.subject_type, subject_id=body.subject_id
         )
 
     return router

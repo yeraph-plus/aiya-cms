@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Path
-from pydantic import BaseModel, ConfigDict
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
@@ -21,13 +20,6 @@ from inc.capabilities.settings import (
     UpdateSettingGroup,
 )
 from inc.capabilities.settings.schemas import SettingGroupDTO, UpdateSettingGroupInput
-
-
-class UpdateGroupBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    expected_version: int | None = None
-    values: dict[str, Any]
 
 
 def _ctx(ctx: AppContext, services: Services) -> CommandContext:
@@ -42,7 +34,17 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
     )
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "settings.read",
+    "settings.update",
+)
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin")
 
     @router.get("/settings/groups", response_model=list[SettingGroupDTO])
@@ -60,19 +62,18 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
 
     @router.put("/settings/groups/{group_key}", response_model=SettingGroupDTO)
     async def update_group(
-        body: UpdateGroupBody,
+        body: UpdateSettingGroupInput,
         group_key: str = Path(...),
-        ctx: AppContext = Depends(require_capability("settings.update")),
+        ctx: AppContext = Depends(require_authenticated()),
     ) -> SettingGroupDTO:
-        return await UpdateSettingGroup(_ctx(ctx, services))(
-            group_key,
-            UpdateSettingGroupInput(expected_version=body.expected_version, values=body.values),
-        )
+        # the group's registered update permission (settings.<group>.update)
+        # is enforced by the capability command itself
+        return await UpdateSettingGroup(_ctx(ctx, services))(group_key, body)
 
     @router.post("/settings/groups/{group_key}/reset", response_model=SettingGroupDTO)
     async def reset_group(
         group_key: str = Path(...),
-        ctx: AppContext = Depends(require_capability("settings.update")),
+        ctx: AppContext = Depends(require_authenticated()),
     ) -> SettingGroupDTO:
         return await ResetSettingGroup(_ctx(ctx, services))(group_key)
 

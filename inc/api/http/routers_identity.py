@@ -9,6 +9,7 @@ principal's capability set. Subjects are the capability's opaque ids.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, Path, Query
 from pydantic import BaseModel, ConfigDict
@@ -41,7 +42,18 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
     )
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "identity.users.read",
+    "identity.users.ban",
+    "identity.users.delete",
+)
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin")
 
     @router.get("/users", response_model=Page[SubjectDTO])

@@ -25,8 +25,10 @@ class AssetQueries:
         self._ctx = ctx
         self._clock = clock
 
-    async def get(self, asset_id: Any) -> AssetRefDTO | None:  # type: ignore[return]
-        if PERMISSION_READ not in self._ctx.permissions:
+    async def get(  # type: ignore[return]
+        self, asset_id: Any, *, permissions: frozenset[str]
+    ) -> AssetRefDTO | None:
+        if PERMISSION_READ not in permissions:
             raise KernelError(
                 code="assets.forbidden",
                 category=ErrorCategory.FORBIDDEN,
@@ -37,9 +39,13 @@ class AssetQueries:
             return _to_ref(row) if row is not None else None
 
     async def resolve_url(
-        self, asset_id: Any, *, expires_in_seconds: int = 300
+        self,
+        asset_id: Any,
+        *,
+        expires_in_seconds: int = 300,
+        permissions: frozenset[str],
     ) -> ResolvedAssetUrlDTO:
-        if PERMISSION_READ not in self._ctx.permissions:
+        if PERMISSION_READ not in permissions:
             raise KernelError(
                 code="assets.forbidden",
                 category=ErrorCategory.FORBIDDEN,

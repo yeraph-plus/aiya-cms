@@ -12,7 +12,6 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, Path, Query
-from pydantic import BaseModel, ConfigDict
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
@@ -35,13 +34,6 @@ from inc.capabilities.assets.schemas import (
 )
 
 
-class UpdateMetadataBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    alt_text: str | None = None
-    metadata: dict[str, Any] | None = None
-
-
 def _ctx(ctx: AppContext, services: Services) -> CommandContext:
     return CommandContext(
         uow_factory=ctx.uow_factory,
@@ -55,7 +47,19 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
     )
 
 
-def build_router(services: Services, require_capability: RequireCapability) -> APIRouter:
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "assets.upload",
+    "assets.manage",
+    "assets.read",
+    "assets.delete",
+)
+
+
+def build_router(
+    services: Services,
+    require_capability: RequireCapability,
+    require_authenticated: Any = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin")
 
     @router.post("/assets/upload-intents", response_model=CreateUploadIntentResult)
@@ -85,7 +89,9 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
         ctx: AppContext = Depends(require_capability("assets.read")),
     ) -> AssetRefDTO:
         assert services.asset_queries is not None
-        asset = await services.asset_queries.get(asset_id)
+        asset = await services.asset_queries.get(
+            asset_id, permissions=frozenset(ctx.principal.capabilities)
+        )
         if asset is None:
             from inc.kernel.errors import ErrorCategory, KernelError
 
@@ -104,18 +110,18 @@ def build_router(services: Services, require_capability: RequireCapability) -> A
     ) -> ResolvedAssetUrlDTO:
         assert services.asset_queries is not None
         return await services.asset_queries.resolve_url(
-            asset_id, expires_in_seconds=expires_in_seconds
+            asset_id,
+            expires_in_seconds=expires_in_seconds,
+            permissions=frozenset(ctx.principal.capabilities),
         )
 
     @router.patch("/assets/{asset_id}", response_model=AssetRefDTO)
     async def update_metadata(
-        body: UpdateMetadataBody,
+        body: UpdateAssetMetadataInput,
         asset_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("assets.manage")),
     ) -> AssetRefDTO:
-        return await UpdateAssetMetadata(_ctx(ctx, services))(
-            asset_id, UpdateAssetMetadataInput(alt_text=body.alt_text, metadata=body.metadata)
-        )
+        return await UpdateAssetMetadata(_ctx(ctx, services))(asset_id, body)
 
     @router.delete("/assets/{asset_id}", status_code=204)
     async def delete_asset(

@@ -24,11 +24,20 @@ if str(_ROOT) not in sys.path:
 
 
 def _build_app() -> Any:
+    import os
+
     kernel_settings = load_settings()
     api_settings = load_api_settings(
         {
-            "issuer": "http://localhost:8080",
-            "api_audience": "aiya-admin",
+            "environment": os.environ.get("AIYA_ENVIRONMENT", "dev"),
+            "issuer": os.environ.get("AIYA_ISSUER", "http://localhost:8080"),
+            "api_audience": os.environ.get("AIYA_API_AUDIENCE", "aiya-admin"),
+            "secure_cookies": os.environ.get("AIYA_SECURE_COOKIES", "0") == "1",
+            "cors_origins": tuple(
+                origin.strip()
+                for origin in os.environ.get("AIYA_CORS_ORIGINS", "").split(",")
+                if origin.strip()
+            ),
         }
     )
     engine = create_engine(kernel_settings.database_url.get_secret_value())

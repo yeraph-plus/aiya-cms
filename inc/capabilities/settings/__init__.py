@@ -2,14 +2,15 @@
 
 Contract source: context/spec/capabilities/settings.md.
 
-Public surface for the composition root: group registry, the seo group
-declaration, queries, commands and the command context.
+Passive host: group declarations (fields + metadata) are provided by
+downstream (features, composition root); settings persists, validates,
+gates by permission, publishes events and serves public reads. It never
+declares groups of its own.
 """
 
 from __future__ import annotations
 
-from inc.capabilities.settings.groups import SettingGroupRegistry
-from inc.capabilities.settings.seo import build_seo_group_spec
+from inc.capabilities.settings.groups import SettingGroupRegistry, SettingGroupSpec
 from inc.capabilities.settings.service import (
     CommandContext,
     ResetSettingGroup,
@@ -21,7 +22,7 @@ __all__ = [
     "CommandContext",
     "ResetSettingGroup",
     "SettingGroupRegistry",
+    "SettingGroupSpec",
     "SettingsQueries",
     "UpdateSettingGroup",
-    "build_seo_group_spec",
 ]

@@ -61,6 +61,7 @@ FeatureSpec 不声明或拥有业务表；需要持久化的 feature 状态使�
 ## 4. Port 与 adapter
 
 - Port 由消费方定义。例如 OIDC 定义 `SubjectClaimsReader`，由组合根用 identity adapter 实现。
+- adapter 库位于 `inc/api/adapters/`，按消费方 capability 分目录组织；完整目录合同、已装配/计划实现与占位规则见 [`adapters.md`](adapters.md)。
 - capability 不得为了复用实现而导入 provider capability。
 - adapter 只能通过 provider 的公开 Query/Command 获取数据，不能读取其 Repository/ORM。
 - 一个 Port 可以有 production、sandbox、in-memory adapter，但同一 manifest 中绑定必须唯一。

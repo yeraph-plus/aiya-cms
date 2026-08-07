@@ -62,7 +62,6 @@ from inc.capabilities.oidc_provider import (
 from inc.capabilities.settings import (
     SettingGroupRegistry,
     SettingsQueries,
-    build_seo_group_spec,
 )
 from inc.capabilities.taxonomy import (
     DimensionRegistry,
@@ -102,6 +101,7 @@ for _module, _attr in (
 for _module, _attr in (
     ("inc.features.post.definition", "spec"),
     ("inc.features.page.definition", "spec"),
+    ("inc.features.site_settings.definition", "spec"),
 ):
     _spec = getattr(importlib.import_module(_module), _attr)
     FEATURE_SPECS[_module.rsplit(".", 2)[1]] = _spec
@@ -281,8 +281,13 @@ class ApplicationContainer:
                 self.content_types.register(content_type)
             for dimension in getattr(module, "dimension_specs", ()):
                 self.dimensions.register(dimension)
-        if "settings" in self._manifest.capabilities:
-            self.settings_groups.register(build_seo_group_spec())
+        if "site_settings" in self._manifest.features:
+            from inc.features.site_settings.definition import (
+                build_site_setting_group_specs,
+            )
+
+            for spec in build_site_setting_group_specs():
+                self.settings_groups.register(spec)
 
     def _build_services(self) -> Services:
         capabilities = set(self._manifest.capabilities)

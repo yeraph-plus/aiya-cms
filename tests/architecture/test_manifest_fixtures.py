@@ -24,7 +24,7 @@ ALL_CAPABILITIES = (
     "assets",
 )
 
-ALL_FEATURES = ("post", "page")
+ALL_FEATURES = ("post", "page", "site_settings")
 
 
 def test_manifest_fixtures_are_immutable_and_named() -> None:

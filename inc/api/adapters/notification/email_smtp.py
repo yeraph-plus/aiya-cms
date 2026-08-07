@@ -1,18 +1,22 @@
 """SMTP email adapter (NotificationProvider implementation).
 
-Contract source: context/spec/capabilities/notification.md §4.
+Contract source: context/spec/adapters.md §3.1, context/spec/capabilities/notification.md §4.
 
 Thin wrapper over aiosmtplib: owns connection settings, credentials,
-timeout and error classification. SMTP has no native idempotency, so the
-stable delivery idempotency key is passed through for provider-side
-deduplication where supported, and the adapter never guesses outcomes on
-timeout (unknown).
+timeout and error classification. Connection settings are filled through
+the ``site_settings`` ``notification`` settings group
+(``smtp_settings_from_group``); the composition root reads the group at
+wiring time and passes a frozen ``SmtpSettings`` in. SMTP has no native
+idempotency, so the stable delivery idempotency key is passed through
+for provider-side deduplication where supported, and the adapter never
+guesses outcomes on timeout (unknown).
 """
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Any
 
 import aiosmtplib
 
@@ -25,6 +29,8 @@ from inc.kernel.errors import ErrorCategory
 
 _SMTP_TIMEOUT = 15.0
 
+_DEFAULT_FROM_ADDRESS = "no-reply@aiya.local"
+
 
 @dataclass(frozen=True, slots=True)
 class SmtpSettings:
@@ -32,7 +38,7 @@ class SmtpSettings:
     port: int = 25
     username: str | None = None
     password: str | None = None  # noqa: S105
-    from_address: str = "no-reply@aiya.local"
+    from_address: str = _DEFAULT_FROM_ADDRESS
     use_tls: bool = False
     starttls: bool = False
     timeout_seconds: float = _SMTP_TIMEOUT
@@ -44,6 +50,30 @@ class SmtpSettings:
             f"use_tls={self.use_tls}, starttls={self.starttls}, "
             f"timeout_seconds={self.timeout_seconds})"
         )
+
+
+def smtp_settings_from_group(value: dict[str, Any]) -> SmtpSettings:
+    """Build SmtpSettings from the site_settings ``notification`` group value.
+
+    Missing/empty host means the channel is not configured; the
+    composition root must fail before serving rather than bind an adapter
+    that can never connect.
+    """
+
+    host = value.get("smtp_host", "")
+    if not host:
+        raise ValueError(
+            "notification settings group has no smtp_host; SMTP adapter cannot be bound"
+        )
+    return SmtpSettings(
+        host=host,
+        port=value.get("smtp_port", 25),
+        username=value.get("smtp_username") or None,
+        password=value.get("smtp_password") or None,
+        from_address=value.get("smtp_from_address", _DEFAULT_FROM_ADDRESS),
+        use_tls=bool(value.get("smtp_use_tls", False)),
+        starttls=bool(value.get("smtp_starttls", False)),
+    )
 
 
 class _AfterDataSentError(Exception):

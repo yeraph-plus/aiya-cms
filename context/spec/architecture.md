@@ -10,6 +10,7 @@ inc/
   capabilities/    独立业务能力
   features/        跨能力垂直业务流
   api/             唯一组合根和 HTTP 适配
+    adapters/      组合根侧 Port 实现库（按 capability 分目录，见 adapters.md）
 admin/             OpenAPI 客户端
 ```
 
@@ -17,12 +18,13 @@ admin/             OpenAPI 客户端
 flowchart TD
     API["api / composition root"] --> FEATURES["features / vertical flows"]
     API --> CAPS["capabilities / business contracts"]
+    API --> ADAPTERS["api/adapters / Port implementations"]
     FEATURES --> CAPS
     FEATURES --> KERNEL["kernel / technical runtime"]
     CAPS --> KERNEL
 ```
 
-依赖箭头只允许向下。`kernel` 不认识业务；capability 之间不存在横向代码依赖；feature 负责合法的跨能力业务编排；API 只负责装配和传输适配，不成为业务服务仓库。
+依赖箭头只允许向下。`kernel` 不认识业务；capability 之间不存在横向代码依赖；feature 负责合法的跨能力业务编排；API 只负责装配、传输适配和 adapter 选择，不成为业务服务仓库。adapter 与 capability/feature 同级是一等规格成员（`adapters.md`），由 manifest 按稳定 key 显式绑定。
 
 ## 2. 术语
 
@@ -43,7 +45,7 @@ flowchart TD
 | `kernel` | 标准库、批准的基础设施库、kernel 自身 | capabilities、features、api、具体业务模型 |
 | 单个 capability | kernel、自身公开与内部模块 | 兄弟 capability、feature、api、兄弟表/ORM |
 | feature | kernel、多个 capability 的公开面、自身 | capability 内部实现、ORM、Repository、api |
-| api | kernel、capability/feature 公开声明、传输 adapter | capability 私有实现和跨表业务逻辑 |
+| api | kernel、capability/feature 公开声明、传输 adapter（`api/adapters/`） | capability 私有实现和跨表业务逻辑 |
 | admin | 生成的 OpenAPI 类型和 HTTP | Python 源码、手写后端 DTO、数据库 |
 
 架构测试必须基于 AST/import graph 验证本矩阵；包名约定不是人工自觉替代品。
@@ -52,6 +54,7 @@ flowchart TD
 
 - 每个 kernel 组件和 capability 只能从其包根或明确的 `public.py` 导出稳定公开面。
 - ORM、Repository、UoW 实现、私有 registry 和 provider SDK adapter 默认是内部实现。
+- 外部 provider adapter 集中在 `api/adapters/<capability>/`，按 `adapters.md` 目录合同组织；capability 不持有 SDK，组合根按 manifest 显式选择实现。
 - feature 只能持有 Command/Query gateway、Activity 或 Port；不得接收 Session。
 - API handler 只能做协议解析、鉴权依赖、调用公开入口和响应映射，不实现领域规则。
 - 不承诺旧 Demo 的 Python import path、表结构、端点或事件 key 兼容。

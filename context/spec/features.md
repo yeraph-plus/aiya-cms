@@ -58,6 +58,15 @@ inc/features/<name>/
 - workflow 幂等键为内部 order ID；provider event ID 另有唯一约束。
 - webhook 重复或乱序不得重复发放积分。
 - 退款调用 points reversal，保留支付和积分原始流水。
+- 价格来自代码注册的服务端受信 offer 目录（`POINT_OFFERS`），客户端只能选择 `offer_key`，不得自报金额或积分数量。
+
+### 4.5 site_settings
+
+- 站点级 settings 组声明集中于此：`general`（站点通用）、`seo`（结构化站点默认值）、`notification`（投递通道设置）。
+- `notification` 组承载 SMTP 连接参数与凭据：host/port/username/password/from_address、use_tls/starttls 全部由 settings 填写；`smtp_password` 登记为 sensitive，不进入公共 DTO、事件、日志和审计摘要。
+- settings capability 是纯被动宿主：只持久化、校验、按权限门控、发事件和提供读取；不自行声明任何组。
+- 注册由组合根显式装配并 freeze；未知组、重复 key、不可序列化默认值启动失败。
+- adapter 装配时从 `notification` 组读取连接配置（见 `adapters.md` §3.1）；host 未配置时拒绝绑定 SMTP adapter，不在缺配置状态下静默运行。
 
 ## 5. 示例流程的非需求声明
 

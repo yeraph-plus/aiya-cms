@@ -10,11 +10,12 @@
 2. [`spec/composition.md`](spec/composition.md)：manifest、注册表、Port/adapter 和启动生命周期。
 3. [`spec/kernel/README.md`](spec/kernel/README.md)：技术内核范围，再按其中索引阅读细分规格。
 4. [`spec/capabilities/README.md`](spec/capabilities/README.md)：能力统一合同，再按需求阅读单项能力。
-5. [`spec/features.md`](spec/features.md)：跨能力垂直业务流。
-6. [`spec/http-openapi.md`](spec/http-openapi.md)：HTTP、授权、分页和 OpenAPI。
-7. [`spec/admin.md`](spec/admin.md)：管理员端认证、契约和部署。
-8. [`spec/admin-uikit.md`](spec/admin-uikit.md)：管理员 UI kit（Sakai Vue）组件与页面清单。
-9. [`spec/quality-release.md`](spec/quality-release.md)：测试矩阵、迁移和发布门。
+5. [`spec/adapters.md`](spec/adapters.md)：组合根侧 Port 实现库，按 capability 分目录组织。
+6. [`spec/features.md`](spec/features.md)：跨能力垂直业务流。
+7. [`spec/http-openapi.md`](spec/http-openapi.md)：HTTP、授权、分页和 OpenAPI。
+8. [`spec/admin.md`](spec/admin.md)：管理员端认证、契约和部署。
+9. [`spec/admin-uikit.md`](spec/admin-uikit.md)：管理员 UI kit（Sakai Vue）组件与页面清单。
+10. [`spec/quality-release.md`](spec/quality-release.md)：测试矩阵、迁移和发布门。
 
 ## 文档规则
 
@@ -31,6 +32,7 @@
 context/spec/
   architecture.md
   composition.md
+  adapters.md
   features.md
   http-openapi.md
   admin.md

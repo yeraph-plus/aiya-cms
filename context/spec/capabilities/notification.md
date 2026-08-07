@@ -31,6 +31,7 @@ variables 为有模型 JSONB，不得包含不必要 secret。收件地址为可
 - `RecipientResolver`：按 opaque recipient ref 解析当前允许的 channel/address。
 - `NotificationProvider`：发送一个已渲染 delivery，返回归一化 provider result。
 - Email/SMS adapter 负责 SDK client、credential、timeout、provider idempotency、限流和错误分类。
+- Email adapter 的连接配置（host/port/username/password/from_address 等）由 `site_settings` 的 `notification` settings 组填写，凭据字段登记为 sensitive；host 未配置时拒绝绑定。
 
 Port 由 notification 定义，identity 或外部通讯录 adapter 由组合根绑定；notification 不导入 identity。
 

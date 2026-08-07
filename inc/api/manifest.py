@@ -40,7 +40,7 @@ cms = AppManifest(
         "taxonomy",
         "assets",
     ),
-    features=("post", "page"),
+    features=("post", "page", "site_settings"),
     adapters=(
         ("oidc.subject_authenticator", "identity.credential"),
         ("oidc.subject_claims", "identity.profile"),

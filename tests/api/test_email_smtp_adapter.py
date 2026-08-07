@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from inc.api.adapters_email import SmtpEmailAdapter, SmtpSettings
+from inc.api.adapters.notification.email_smtp import SmtpEmailAdapter, SmtpSettings
 from inc.capabilities.notification.ports import (
     ProviderError,
     ProviderResult,

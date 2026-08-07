@@ -31,7 +31,7 @@
 - [ ] admin readmodel providers 未实现（`admin_summary_registry` 为空注册）；R8/R9 余项
 - [ ] FeatureSpec 与 composition.md §2.2 对齐（workflows/events/Cron/routers/ports 字段）待扩展
 - [ ] 生产签名密钥加载器（env/file/KMS）未实现，现用 InMemorySigningKeyStore（container 与 CLI 均如此）
-- [ ] SMTP adapter 配置由部署注入（`.env.example` 已含 `AIYA_SMTP_*`）；mailpit 验证容器已删除，集成测试在无 SMTP 端点时自动跳过
+- [ ] SMTP adapter 配置由 `site_settings` 的 `notification` settings 组填写（host/port/username/password/from_address，password 为 sensitive）；`notification` 装配进 manifest 时从组读取，mailpit 验证容器已删除，集成测试在无 SMTP 端点时自动跳过
 - [ ] kernel `cache` Port 未建（无真实消费者；出现第二个用例再抽象）——compose 已起 Redis 但后端未接入
 - [ ] 宿主环境说明：本地跑 kernel/capability 测试需 `pip install` dev 依赖（aiosqlite/httpx/anyio≥4.9/asyncpg/python-multipart 等），完整门禁以 compose 为准
 

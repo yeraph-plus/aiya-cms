@@ -4,18 +4,18 @@
 
 settings 保存由代码注册的结构化配置组及其运行值，提供公开/私有读取、校验、缓存失效和审计。它不读取环境 secret，不执行数据库内脚本，也不负责前端展示逻辑。
 
-基础设施 secret 继续由 kernel config/secret provider 管理，禁止写入 settings 表。
+基础设施 secret 继续由 kernel config/secret provider 管理；例外是 `site_settings` 显式登记的 SMTP 通道凭据（§5），作为 sensitive 字段承载并受公共面排除约束。
 
 ## 2. SettingGroupSpec
 
-capability/feature 可以注册：
+feature/组合根可以注册：
 
 - group key、版本和 Pydantic value schema。
 - 字段默认值、公开性、是否敏感、编辑权限。
 - cache policy 和变更事件策略。
 - 可选跨字段 validator。
 
-未知 group/field、重复 key 或无法序列化默认值必须启动失败。注册只声明 schema，不在启动时自动写库。
+settings 是纯被动宿主：不自行声明组；组声明由下游（feature、组合根）提供并集中在声明处维护。未知 group/field、重复 key 或无法序列化默认值必须启动失败。注册只声明 schema，不在启动时自动写库。
 
 ## 3. 表所有权
 
@@ -35,7 +35,7 @@ JSONB 必须按 group spec 验证。数据库缺少 row 时 Query 返回代码�
 
 ## 5. SEO 组
 
-首版注册 `seo` group：
+首版由 `site_settings` feature 声明 `seo` group（组合根装配注册）：
 
 - site name。
 - default title template。
@@ -45,6 +45,8 @@ JSONB 必须按 group spec 验证。数据库缺少 row 时 Query 返回代码�
 - canonical host。
 
 后端只提供结构化站点默认值和内容基础数据。具体页面的 title、description、canonical、Open Graph、Twitter Card、JSON-LD 选择与前端路由由前端实现；后端不存页面路由树或生成 HTML。
+
+`site_settings` feature 同时声明 `general`（站点通用）与 `notification` 组。`notification` 组承载 SMTP 连接参数与凭据：host/port/username/password/from_address、use_tls/starttls 全部由 settings 填写；`smtp_password` 登记为 sensitive 字段，不进入公共 DTO、事件 payload、日志和审计摘要。adapter 装配时从该组构造连接配置（见 `adapters.md` §3.1），host 未配置时启动失败。
 
 ## 6. 事件、缓存与审计
 
@@ -57,6 +59,7 @@ JSONB 必须按 group spec 验证。数据库缺少 row 时 Query 返回代码�
 
 - 读取缺失设置不写库并返回验证后的默认值。
 - 未知字段、错误 schema 和乐观版本冲突被拒绝。
-- public DTO 不含 private/sensitive 字段。
+- public DTO 不含 private/sensitive 字段；`notification` 组的 SMTP 凭据只存在于私有读取。
 - SEO 设置不包含前端路由或单页渲染规则。
 - cache 故障不改变事实值，更新后旧缓存最终失效。
+- settings 自身不声明任何组；组声明全部来自下游并集中在声明处维护。

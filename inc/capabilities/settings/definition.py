@@ -16,6 +16,8 @@ spec = CapabilitySpec(
     access_keys=(
         "settings.read",
         "settings.update",
+        "settings.general.update",
         "settings.seo.update",
+        "settings.notification.update",
     ),
 )

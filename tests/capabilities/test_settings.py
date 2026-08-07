@@ -19,13 +19,13 @@ from inc.capabilities.settings.events import SETTINGS_EVENT_SCHEMAS
 from inc.capabilities.settings.groups import SettingGroupRegistry
 from inc.capabilities.settings.models import SettingsValue
 from inc.capabilities.settings.schemas import UpdateSettingGroupInput
-from inc.capabilities.settings.seo import build_seo_group_spec
 from inc.capabilities.settings.service import (
     CommandContext,
     ResetSettingGroup,
     SettingsQueries,
     UpdateSettingGroup,
 )
+from inc.features.site_settings.definition import build_site_setting_group_specs
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import KernelError
 from inc.kernel.events import EventSchemaRegistry, OutboxMessage, OutboxWriter
@@ -34,7 +34,8 @@ from inc.kernel.events import EventSchemaRegistry, OutboxMessage, OutboxWriter
 @pytest.fixture
 def groups() -> SettingGroupRegistry:
     registry = SettingGroupRegistry()
-    registry.register(build_seo_group_spec())
+    for spec in build_site_setting_group_specs():
+        registry.register(spec)
     return registry
 
 
@@ -111,6 +112,51 @@ async def test_read_missing_group_returns_defaults_without_write(
     assert await _row_count(uow_factory) == 0
     public = await queries.get_public_settings()
     assert public.values["seo"]["robots_policy"] == "index,follow"
+
+
+def test_notification_group_carries_smtp_credentials_as_sensitive() -> None:
+    from inc.features.site_settings.definition import build_site_setting_group_specs
+
+    notification = next(
+        spec for spec in build_site_setting_group_specs() if spec.group_key == "notification"
+    )
+    fields = set(notification.value_schema.model_fields)
+    smtp_fields = {"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from_address"}
+    assert smtp_fields <= fields
+    assert "smtp_password" in notification.sensitive_fields
+    assert "smtp_password" not in notification.public_fields
+    assert not (set(notification.public_fields) & set(notification.sensitive_fields))
+
+
+async def test_notification_update_excludes_smtp_password_from_public_and_changes(
+    uow_factory: UoWFactory,
+    clock: Any,
+    groups: SettingGroupRegistry,
+    schema_registry: EventSchemaRegistry,
+    queries: SettingsQueries,
+) -> None:
+    notification_ctx = CommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        outbox=OutboxWriter(schema_registry, clock),
+        groups=groups,
+        permissions=frozenset({"settings.read", "settings.notification.update", "settings.update"}),
+        actor_id="admin-1",
+        trace_id="trace-1",
+    )
+    await UpdateSettingGroup(notification_ctx)(
+        "notification",
+        UpdateSettingGroupInput(
+            expected_version=1,
+            values={"smtp_host": "mail.example.com", "smtp_password": "s3cret"},
+        ),
+    )
+    group = await queries.get_group("notification")
+    assert group.values["smtp_host"] == "mail.example.com"
+    assert group.values["smtp_password"] == "s3cret"
+    public = await queries.get_public_settings()
+    assert "smtp_password" not in public.values["notification"]
+    assert "smtp_host" not in public.values["notification"]
 
 
 async def test_update_validates_schema_and_versions(

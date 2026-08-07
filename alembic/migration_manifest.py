@@ -27,4 +27,5 @@ MIGRATION_OWNER_MODULES: dict[str, str] = {
     "capability:taxonomy": "inc.capabilities.taxonomy.models",
     "capability:settings": "inc.capabilities.settings.models",
     "capability:assets": "inc.capabilities.assets.models",
+    "capability:notification": "inc.capabilities.notification.models",
 }

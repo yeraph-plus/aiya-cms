@@ -16,6 +16,7 @@ ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 WORKDIR /app
 
 RUN addgroup --system aiya && adduser --system --ingroup aiya aiya
@@ -23,8 +24,8 @@ COPY --from=build /opt/venv /opt/venv
 COPY --chown=aiya:aiya inc ./inc
 COPY --chown=aiya:aiya tests ./tests
 COPY --chown=aiya:aiya alembic ./alembic
-COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md ./
+COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md openapi.json openapi.sha256 ./
 RUN chown -R aiya:aiya /app
 USER aiya
 EXPOSE 8000
-CMD ["uvicorn", "inc.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "inc.main:get_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

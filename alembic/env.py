@@ -10,6 +10,7 @@ the kernel Base metadata; capability tables attach to the same Base.
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -38,11 +39,17 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _database_url() -> str:
+    """AIYA_DATABASE_URL overrides alembic.ini (container deployments)."""
+
+    return os.environ.get("AIYA_DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+
+
 def run_migrations_offline() -> None:
     """Run migrations without creating a DB connection."""
 
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=_database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -64,8 +71,10 @@ def do_run_migrations(connection: object) -> None:
 async def run_async_migrations() -> None:
     """Create an async engine and run the synchronous Alembic callbacks."""
 
+    section = dict(config.get_section(config.config_ini_section, {}))
+    section["sqlalchemy.url"] = _database_url()
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

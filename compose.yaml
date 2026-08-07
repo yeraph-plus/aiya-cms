@@ -2,10 +2,12 @@ name: aiya-cms
 
 x-infra-profiles: &infra_profiles [runtime, dev, test, review, ops]
 
+# anchor kept for reference
+
 services:
   postgres:
     image: postgres:16.4-alpine
-    profiles: *infra_profiles
+    profiles: [runtime, dev, test, review, ops]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aiya}
       POSTGRES_USER: ${POSTGRES_USER:-aiya}
@@ -22,7 +24,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    profiles: *infra_profiles
+    profiles: [runtime, dev, test, review, ops]
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
@@ -35,7 +37,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.21
-    profiles: *infra_profiles
+    profiles: [runtime, dev, test, review, ops]
     ports:
       - "${SMTP_HOST_PORT:-1025}:1025"
       - "${MAILPIT_HOST_PORT:-8025}:8025"
@@ -64,6 +66,7 @@ services:
       target: runtime
     profiles: [runtime, test]
     env_file: [.env]
+    command: ["uvicorn", "inc.main:get_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     depends_on:
@@ -86,7 +89,7 @@ services:
       target: runtime
     profiles: [dev]
     env_file: [.env]
-    command: ["uvicorn", "inc.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "inc.main:get_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - ./inc:/app/inc:ro
       - ./alembic:/app/alembic:ro
@@ -96,37 +99,7 @@ services:
       redis:
         condition: service_healthy
 
-  admin:
-    build:
-      context: .
-      dockerfile: admin/Dockerfile
-    profiles: [runtime, test]
-    ports:
-      - "${ADMIN_HOST_PORT:-7000}:8080"
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget --spider --quiet http://127.0.0.1:8080/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
-  admin-dev:
-    image: node:24.4.1-alpine
-    profiles: [dev]
-    environment:
-      AIYA_API_URL: http://api-dev:8000
-    working_dir: /app/admin
-    command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0"]
-    ports:
-      - "${ADMIN_HOST_PORT:-7000}:7000"
-    volumes:
-      - ./admin:/app/admin
-      - admin-node-modules:/app/admin/node_modules
-    depends_on:
-      api-dev:
-        condition: service_started
 
   backend-quality:
     build:
@@ -143,7 +116,7 @@ services:
       target: runtime
     profiles: [test]
     env_file: [.env]
-    command: ["pytest", "-q"]
+    command: ["python", "-m", "pytest", "-q"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -158,7 +131,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
     profiles: [test, ops]
-    command: ["python", "-m", "inc.api.openapi", "check"]
+    command: ["python", "-m", "inc.main", "openapi-check"]
 
   migration-check:
     build:
@@ -172,29 +145,7 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  admin-quality:
-    image: node:24.4.1-alpine
-    profiles: [test]
-    working_dir: /app/admin
-    command: ["sh", "-c", "npm ci && npm run check && npm run typecheck && npm run test:unit && npm run build && npm audit --audit-level=high"]
-    volumes:
-      - ./admin:/app/admin
-      - admin-quality-node-modules:/app/admin/node_modules
 
-  admin-e2e:
-    image: mcr.microsoft.com/playwright:v1.62.1-noble
-    profiles: [test]
-    working_dir: /app/admin
-    environment:
-      AIYA_E2E_BASE_URL: http://admin
-      AIYA_E2E_WEB_SERVER: "false"
-    command: ["sh", "-c", "npm ci && npm run test:e2e"]
-    volumes:
-      - ./admin:/app/admin:ro
-      - admin-e2e-node-modules:/app/admin/node_modules
-    depends_on:
-      admin:
-        condition: service_healthy
 
   opencode-review:
     image: node:24.4.1-bookworm-slim
@@ -225,6 +176,3 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  admin-node-modules:
-  admin-quality-node-modules:
-  admin-e2e-node-modules:

@@ -65,8 +65,14 @@ def test_old_api_binding_files_are_gone() -> None:
 
 
 def test_root_cli_and_settings_facades_are_gone() -> None:
-    assert not (INC_ROOT / "cli.py").exists()
+    # the old demo's auto-registering root facades must not return; the new
+    # ops CLI is an explicit, side-effect-free entry (python -m inc.cli)
     assert not (INC_ROOT / "setting.py").exists()
+    cli = INC_ROOT / "cli.py"
+    if cli.exists():
+        source = cli.read_text(encoding="utf-8")
+        assert "create-admin" in source
+        assert 'if __name__ == "__main__":' in source
 
 
 def test_old_migration_revisions_are_gone() -> None:

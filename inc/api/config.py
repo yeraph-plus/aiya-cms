@@ -17,7 +17,7 @@ class ApiSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     environment: str = "dev"
-    issuer: str = "http://localhost:8080"
+    issuer: str = "http://127.0.0.1:8080"
     api_audience: str = "aiya-admin"
     secure_cookies: bool = False
     cors_origins: tuple[str, ...] = ()

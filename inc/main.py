@@ -30,7 +30,7 @@ def _build_app() -> Any:
     api_settings = load_api_settings(
         {
             "environment": os.environ.get("AIYA_ENVIRONMENT", "dev"),
-            "issuer": os.environ.get("AIYA_ISSUER", "http://localhost:8080"),
+            "issuer": os.environ.get("AIYA_ISSUER", "http://127.0.0.1:8080"),
             "api_audience": os.environ.get("AIYA_API_AUDIENCE", "aiya-admin"),
             "secure_cookies": os.environ.get("AIYA_SECURE_COOKIES", "0") == "1",
             "cors_origins": tuple(

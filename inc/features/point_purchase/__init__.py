@@ -1,4 +1,3 @@
-"""Point purchase feature: payment capture then points credit workflow.
+"""Point purchase feature: captured payment -> points credit."""
 
-Contract source: context/spec/features.md §4.4.
-"""
+from __future__ import annotations

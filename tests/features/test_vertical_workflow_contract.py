@@ -49,7 +49,11 @@ from inc.capabilities.notification.ports import (
     ProviderResult,
     RecipientTarget,
 )
-from inc.capabilities.notification.specs import NotificationSpec, NotificationSpecRegistry
+from inc.capabilities.notification.specs import (
+    DeliveryPolicy,
+    NotificationSpec,
+    NotificationSpecRegistry,
+)
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import KernelError
 from inc.kernel.events import EventSchemaRegistry, OutboxWriter
@@ -195,7 +199,11 @@ async def harness(
         resolver=FakeIdentityResolver(),
         providers={"email": email},
     )
-    registry.register(build_deliver_workflow_spec(activity=deliver_activity, max_attempts=3))
+    registry.register(
+        build_deliver_workflow_spec(
+            activity=deliver_activity, policy=DeliveryPolicy(base_delay_seconds=0.1, max_attempts=3)
+        )
+    )
 
     content_ctx = ContentCommandContext(
         uow_factory=uow_factory,

@@ -148,7 +148,11 @@ def ctx(
         resolver=FakeResolver(),
         providers={"email": provider},
     )
-    workflow_registry.register(build_deliver_workflow_spec(activity=activity, max_attempts=3))
+    workflow_registry.register(
+        build_deliver_workflow_spec(
+            activity=activity, policy=DeliveryPolicy(base_delay_seconds=0.1, max_attempts=3)
+        )
+    )
     return CommandContext(
         uow_factory=uow_factory,
         clock=clock,

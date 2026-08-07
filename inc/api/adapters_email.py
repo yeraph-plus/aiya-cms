@@ -31,11 +31,23 @@ class SmtpSettings:
     host: str
     port: int = 25
     username: str | None = None
-    password: str | None = None
+    password: str | None = None  # noqa: S105
     from_address: str = "no-reply@aiya.local"
     use_tls: bool = False
     starttls: bool = False
     timeout_seconds: float = _SMTP_TIMEOUT
+
+    def __repr__(self) -> str:
+        return (
+            f"SmtpSettings(host={self.host!r}, port={self.port}, "
+            f"username={self.username!r}, from_address={self.from_address!r}, "
+            f"use_tls={self.use_tls}, starttls={self.starttls}, "
+            f"timeout_seconds={self.timeout_seconds})"
+        )
+
+
+class _AfterDataSentError(Exception):
+    """Raised when the message may have been handed to the server."""
 
 
 class SmtpEmailAdapter:
@@ -76,6 +88,12 @@ class SmtpEmailAdapter:
                 error_category="timeout",
                 error_summary="SMTP send timed out; outcome unknown",
             )
+        except _AfterDataSentError as exc:
+            return ProviderResult(
+                status="unknown",
+                error_category="timeout",
+                error_summary=f"SMTP failed after DATA was accepted: {exc}",
+            )
         except aiosmtplib.SMTPRecipientsRefused as exc:
             raise ProviderError(
                 message="SMTP recipient refused",
@@ -111,5 +129,8 @@ class SmtpEmailAdapter:
         async with client:
             if settings.username:
                 await client.login(settings.username, settings.password or "")
-            await client.sendmail(settings.from_address, [to_address], message)
+            try:
+                await client.sendmail(settings.from_address, [to_address], message)
+            except (aiosmtplib.SMTPException, OSError) as exc:
+                raise _AfterDataSentError(f"{type(exc).__name__} after DATA accepted") from exc
         return f"{settings.host}:{settings.port}"

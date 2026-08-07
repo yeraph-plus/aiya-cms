@@ -105,11 +105,14 @@ class DeliverActivity:
             spec = self._specs.require(intent.spec_key)
         except KernelError as exc:
             if exc.code == "notification.unknown_spec":
-                raise KernelError(
-                    code="notification.spec_missing",
-                    category=ErrorCategory.INTERNAL,
-                    message=f"spec {intent.spec_key!r} is not registered",
-                ) from exc
+                await self._fail_permanently(
+                    uow,
+                    ctx,
+                    delivery=delivery,
+                    intent=intent,
+                    reason="spec not registered",
+                )
+                return {"skipped": False, "status": "failed", "reason": "spec_missing"}
             raise
 
         now = self._clock.utc_now()
@@ -120,17 +123,12 @@ class DeliverActivity:
 
         template = await _find_template(uow, spec.template_keys[0], delivery.channel, spec.locale)
         if template is None:
-            delivery.status = "failed"
-            delivery.error_category = RetryCategory.PERMANENT.value
-            delivery.error_summary = "no active template"
-            await self._emit(
+            await self._fail_permanently(
                 uow,
                 ctx,
                 delivery=delivery,
                 intent=intent,
-                key="notification.delivery_failed.v1",
-                error_category="permanent",
-                attempt=delivery.attempt,
+                reason="no active template",
             )
             return {"skipped": False, "status": "failed", "reason": "no_template"}
 
@@ -138,27 +136,25 @@ class DeliverActivity:
             intent.recipient_type, intent.recipient_id, delivery.channel
         )
         if target is None:
-            delivery.status = "failed"
-            delivery.error_category = RetryCategory.PERMANENT.value
-            delivery.error_summary = "recipient unresolvable at delivery time"
-            await self._emit(
+            await self._fail_permanently(
                 uow,
                 ctx,
                 delivery=delivery,
                 intent=intent,
-                key="notification.delivery_failed.v1",
-                error_category="permanent",
-                attempt=delivery.attempt,
+                reason="recipient unresolvable at delivery time",
             )
             return {"skipped": False, "status": "failed", "reason": "unresolvable"}
 
         provider = self._providers.get(delivery.channel)
         if provider is None:
-            raise KernelError(
-                code="notification.channel_unbound",
-                category=ErrorCategory.INTERNAL,
-                message=f"no provider for channel {delivery.channel!r}",
+            await self._fail_permanently(
+                uow,
+                ctx,
+                delivery=delivery,
+                intent=intent,
+                reason=f"no provider bound for channel {delivery.channel!r}",
             )
+            return {"skipped": False, "status": "failed", "reason": "channel_unbound"}
         subject, body = render_template(
             template.subject, template.body, dict(intent.variables.values)
         )
@@ -231,6 +227,31 @@ class DeliverActivity:
         raise ProviderError(
             message=result.error_summary or "provider failure",
             category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+        )
+
+    async def _fail_permanently(
+        self,
+        uow: UnitOfWork,
+        ctx: ActivityContext,
+        *,
+        delivery: NotificationDelivery,
+        intent: NotificationIntent,
+        reason: str,
+    ) -> None:
+        delivery.status = "failed"
+        delivery.error_category = RetryCategory.PERMANENT.value
+        delivery.error_summary = reason
+        delivery.lease_owner = None
+        delivery.lease_expires_at = None
+        delivery.next_retry_at = None
+        await self._emit(
+            uow,
+            ctx,
+            delivery=delivery,
+            intent=intent,
+            key="notification.delivery_failed.v1",
+            error_category="permanent",
+            attempt=delivery.attempt,
         )
 
     async def _send(
@@ -331,9 +352,12 @@ def _retry_delay(policy: DeliveryPolicy, attempt: int) -> Any:
     return timedelta(seconds=delay)
 
 
-def build_deliver_workflow_spec(*, activity: DeliverActivity, max_attempts: int = 5) -> Any:
+def build_deliver_workflow_spec(
+    *, activity: DeliverActivity, policy: DeliveryPolicy | None = None
+) -> Any:
     from inc.kernel.workflow import ActivitySpec, RetryPolicy, WorkflowSpec
 
+    policy = policy or DeliveryPolicy()
     return WorkflowSpec(
         key=DELIVER_WORKFLOW_KEY,
         version="1",
@@ -342,8 +366,9 @@ def build_deliver_workflow_spec(*, activity: DeliverActivity, max_attempts: int 
                 key="notification.deliver.step.v1",
                 timeout_seconds=60.0,
                 retry=RetryPolicy(
-                    max_attempts=max_attempts,
-                    base_delay_seconds=1.0,
+                    max_attempts=policy.max_attempts,
+                    base_delay_seconds=policy.base_delay_seconds,
+                    max_delay_seconds=policy.max_delay_seconds,
                     permanent_categories=frozenset(
                         {RetryCategory.PERMANENT, RetryCategory.CANCELLED}
                     ),

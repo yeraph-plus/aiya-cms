@@ -358,7 +358,12 @@ class CancelPendingNotification:
 
 
 class RetryDelivery:
-    """Explicit admin recovery: re-queue a failed/dead/unknown delivery."""
+    """Explicit admin recovery: re-queue a delivery.
+
+    Accepts terminal states (failed/dead/unknown/cancelled) plus
+    ``sending``/``pending`` orphans left by a crashed run; the workflow
+    restart is idempotent by ``delivery:<id>:retry:<attempt>``.
+    """
 
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
@@ -372,7 +377,14 @@ class RetryDelivery:
             )
             if delivery is None:
                 raise _not_found("notification.delivery_not_found", f"delivery {delivery_id}")
-            if delivery.status not in ("failed", "dead", "unknown", "cancelled"):
+            if delivery.status not in (
+                "failed",
+                "dead",
+                "unknown",
+                "cancelled",
+                "sending",
+                "pending",
+            ):
                 raise _conflict(
                     "notification.not_retryable",
                     f"delivery is {delivery.status}",
@@ -381,6 +393,8 @@ class RetryDelivery:
             delivery.next_retry_at = None
             delivery.error_category = None
             delivery.error_summary = None
+            delivery.lease_owner = None
+            delivery.lease_expires_at = None
             intent = await uow.session.get(NotificationIntent, delivery.intent_id)
             if intent is not None and intent.state == "cancelled":
                 intent.state = "pending"

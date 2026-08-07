@@ -728,10 +728,348 @@ def upgrade() -> None:
         ["term_id", "target_type", "target_id"],
         unique=False,
     )
+
+    op.create_table(
+        "notification_intents",
+        sa.Column("spec_key", sa.String(length=100), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
+        sa.Column("recipient_type", sa.String(length=32), nullable=False),
+        sa.Column("recipient_id", sa.String(length=200), nullable=False),
+        sa.Column("variables", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("requested_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("state", sa.String(length=16), nullable=False),
+        sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "spec_key", "idempotency_key", name="uq_notification_intents_spec_idempotency"
+        ),
+    )
+    op.create_index(
+        op.f("ix_notification_intents_recipient_id"),
+        "notification_intents",
+        ["recipient_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_notification_intents_spec_key"), "notification_intents", ["spec_key"], unique=False
+    )
+    op.create_table(
+        "notification_templates",
+        sa.Column("template_key", sa.String(length=100), nullable=False),
+        sa.Column("version", sa.String(length=32), nullable=False),
+        sa.Column("channel", sa.String(length=32), nullable=False),
+        sa.Column("locale", sa.String(length=16), nullable=False),
+        sa.Column("subject", sa.String(length=500), nullable=False),
+        sa.Column("body", sa.String(length=5000), nullable=False),
+        sa.Column("variables_schema_version", sa.String(length=32), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "template_key",
+            "version",
+            "channel",
+            "locale",
+            name="uq_notification_templates_key_version_channel_locale",
+        ),
+    )
+    op.create_table(
+        "notification_deliveries",
+        sa.Column("intent_id", sa.Uuid(), nullable=False),
+        sa.Column("channel", sa.String(length=32), nullable=False),
+        sa.Column("provider_key", sa.String(length=64), nullable=False),
+        sa.Column("recipient", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("attempt", sa.Integer(), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("provider_ref", sa.String(length=200), nullable=True),
+        sa.Column("error_category", sa.String(length=32), nullable=True),
+        sa.Column("error_summary", sa.String(length=500), nullable=True),
+        sa.Column("next_retry_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("lease_owner", sa.String(length=200), nullable=True),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["intent_id"], ["notification_intents.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        "ix_notification_deliveries_due",
+        "notification_deliveries",
+        ["status", "next_retry_at"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_notification_deliveries_intent_id"),
+        "notification_deliveries",
+        ["intent_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_notification_deliveries_status"),
+        "notification_deliveries",
+        ["status"],
+        unique=False,
+    )
+
+    op.create_table(
+        "payment_orders",
+        sa.Column("subject_type", sa.String(length=32), nullable=False),
+        sa.Column("subject_id", sa.String(length=200), nullable=False),
+        sa.Column("provider_key", sa.String(length=64), nullable=False),
+        sa.Column("order_reference", sa.String(length=200), nullable=False),
+        sa.Column("offer", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=False),
+        sa.Column("state", sa.String(length=32), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("captured_amount", sa.Integer(), nullable=False),
+        sa.Column("refunded_amount", sa.Integer(), nullable=False),
+        sa.Column("captured_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("failed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("provider_ref", sa.String(length=200), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("order_reference"),
+        sa.UniqueConstraint(
+            "provider_key", "idempotency_key", name="uq_payment_orders_provider_idempotency"
+        ),
+    )
+    op.create_index(op.f("ix_payment_orders_state"), "payment_orders", ["state"], unique=False)
+    op.create_index(
+        op.f("ix_payment_orders_subject_id"), "payment_orders", ["subject_id"], unique=False
+    )
+    op.create_table(
+        "points_behavior_definitions",
+        sa.Column("behavior_key", sa.String(length=200), nullable=False),
+        sa.Column("version", sa.String(length=32), nullable=False),
+        sa.Column("program_key", sa.String(length=100), nullable=False),
+        sa.Column("direction", sa.String(length=16), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("behavior_key"),
+    )
+    op.create_table(
+        "points_programs",
+        sa.Column("program_key", sa.String(length=100), nullable=False),
+        sa.Column("display_name", sa.String(length=200), nullable=False),
+        sa.Column("unit", sa.String(length=32), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("allow_admin_reversal", sa.Boolean(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("program_key"),
+    )
+    op.create_table(
+        "payment_attempts",
+        sa.Column("order_id", sa.Uuid(), nullable=False),
+        sa.Column("provider_ref", sa.String(length=200), nullable=False),
+        sa.Column("attempt", sa.Integer(), nullable=False),
+        sa.Column("state", sa.String(length=16), nullable=False),
+        sa.Column("request_digest", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("error_category", sa.String(length=32), nullable=True),
+        sa.Column("error_summary", sa.String(length=500), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["order_id"], ["payment_orders.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_payment_attempts_order_id"), "payment_attempts", ["order_id"], unique=False
+    )
+    op.create_table(
+        "payment_refunds",
+        sa.Column("order_id", sa.Uuid(), nullable=False),
+        sa.Column("refund_ref", sa.String(length=200), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=False),
+        sa.Column("state", sa.String(length=16), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
+        sa.Column("reason", sa.String(length=500), nullable=False),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["order_id"], ["payment_orders.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "order_id", "idempotency_key", name="uq_payment_refunds_order_idempotency"
+        ),
+    )
+    op.create_index(
+        op.f("ix_payment_refunds_order_id"), "payment_refunds", ["order_id"], unique=False
+    )
+    op.create_table(
+        "payment_webhook_receipts",
+        sa.Column("provider_key", sa.String(length=64), nullable=False),
+        sa.Column("event_id", sa.String(length=200), nullable=False),
+        sa.Column("payload_digest", sa.String(length=128), nullable=False),
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("processing_state", sa.String(length=16), nullable=False),
+        sa.Column("failure_reason", sa.String(length=500), nullable=True),
+        sa.Column("order_id", sa.Uuid(), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["order_id"],
+            ["payment_orders.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("provider_key", "event_id", name="uq_payment_webhook_provider_event"),
+    )
+    op.create_index(
+        op.f("ix_payment_webhook_receipts_order_id"),
+        "payment_webhook_receipts",
+        ["order_id"],
+        unique=False,
+    )
+    op.create_table(
+        "points_accounts",
+        sa.Column("program_id", sa.Uuid(), nullable=False),
+        sa.Column("subject_type", sa.String(length=32), nullable=False),
+        sa.Column("subject_id", sa.String(length=200), nullable=False),
+        sa.Column("state", sa.String(length=16), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["program_id"],
+            ["points_programs.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "program_id", "subject_type", "subject_id", name="uq_points_accounts_program_subject"
+        ),
+    )
+    op.create_index(
+        op.f("ix_points_accounts_program_id"), "points_accounts", ["program_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_points_accounts_subject_id"), "points_accounts", ["subject_id"], unique=False
+    )
+    op.create_table(
+        "points_balances",
+        sa.Column("account_id", sa.Uuid(), nullable=False),
+        sa.Column("balance", sa.Integer(), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["account_id"], ["points_accounts.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("account_id"),
+    )
+    op.create_table(
+        "points_ledger_entries",
+        sa.Column("program_id", sa.Uuid(), nullable=False),
+        sa.Column("account_id", sa.Uuid(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("entry_type", sa.String(length=16), nullable=False),
+        sa.Column("behavior_key", sa.String(length=200), nullable=True),
+        sa.Column("behavior_version", sa.String(length=32), nullable=True),
+        sa.Column("source_type", sa.String(length=64), nullable=True),
+        sa.Column("source_id", sa.String(length=200), nullable=True),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=True),
+        sa.Column("actor_type", sa.String(length=32), nullable=True),
+        sa.Column("actor_id", sa.String(length=200), nullable=True),
+        sa.Column("entry_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("reversal_of", sa.Uuid(), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["account_id"],
+            ["points_accounts.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["program_id"],
+            ["points_programs.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["reversal_of"],
+            ["points_ledger_entries.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "program_id", "idempotency_key", name="uq_points_ledger_program_idempotency"
+        ),
+    )
+    op.create_index(
+        op.f("ix_points_ledger_entries_account_id"),
+        "points_ledger_entries",
+        ["account_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_points_ledger_entries_program_id"),
+        "points_ledger_entries",
+        ["program_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_points_ledger_entries_reversal_of"),
+        "points_ledger_entries",
+        ["reversal_of"],
+        unique=False,
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
+
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index(op.f("ix_points_ledger_entries_reversal_of"), table_name="points_ledger_entries")
+    op.drop_index(op.f("ix_points_ledger_entries_program_id"), table_name="points_ledger_entries")
+    op.drop_index(op.f("ix_points_ledger_entries_account_id"), table_name="points_ledger_entries")
+    op.drop_table("points_ledger_entries")
+    op.drop_table("points_balances")
+    op.drop_index(op.f("ix_points_accounts_subject_id"), table_name="points_accounts")
+    op.drop_index(op.f("ix_points_accounts_program_id"), table_name="points_accounts")
+    op.drop_table("points_accounts")
+    op.drop_index(
+        op.f("ix_payment_webhook_receipts_order_id"), table_name="payment_webhook_receipts"
+    )
+    op.drop_table("payment_webhook_receipts")
+    op.drop_index(op.f("ix_payment_refunds_order_id"), table_name="payment_refunds")
+    op.drop_table("payment_refunds")
+    op.drop_index(op.f("ix_payment_attempts_order_id"), table_name="payment_attempts")
+    op.drop_table("payment_attempts")
+    op.drop_table("points_programs")
+    op.drop_table("points_behavior_definitions")
+    op.drop_index(op.f("ix_payment_orders_subject_id"), table_name="payment_orders")
+    op.drop_index(op.f("ix_payment_orders_state"), table_name="payment_orders")
+    op.drop_table("payment_orders")
+
+    op.drop_index(op.f("ix_notification_deliveries_status"), table_name="notification_deliveries")
+    op.drop_index(
+        op.f("ix_notification_deliveries_intent_id"), table_name="notification_deliveries"
+    )
+    op.drop_index("ix_notification_deliveries_due", table_name="notification_deliveries")
+    op.drop_table("notification_deliveries")
+    op.drop_table("notification_templates")
+    op.drop_index(op.f("ix_notification_intents_spec_key"), table_name="notification_intents")
+    op.drop_index(op.f("ix_notification_intents_recipient_id"), table_name="notification_intents")
+    op.drop_table("notification_intents")
+
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_index("ix_taxonomy_assignments_term_target", table_name="taxonomy_assignments")
     op.drop_index(op.f("ix_taxonomy_assignments_term_id"), table_name="taxonomy_assignments")
@@ -822,4 +1160,3 @@ def downgrade() -> None:
     op.drop_table("assets_upload_intents")
     op.drop_table("assets_objects")
     op.drop_table("access_roles")
-    # ### end Alembic commands ###

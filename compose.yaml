@@ -35,17 +35,6 @@ services:
       timeout: 3s
       retries: 20
 
-  mailpit:
-    image: axllent/mailpit:v1.21
-    profiles: [runtime, dev, test, review, ops]
-    ports:
-      - "${SMTP_HOST_PORT:-1025}:1025"
-      - "${MAILPIT_HOST_PORT:-8025}:8025"
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8025/api/v1/info"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
 
   migrate:
     build:
@@ -73,8 +62,6 @@ services:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_healthy
-      mailpit:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)\""]

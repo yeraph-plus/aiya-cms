@@ -1,4 +1,3 @@
-"""Check-in feature: explicit daily check-in rewarded via points.
+"""Check-in feature: explicit daily reward behavior."""
 
-Contract source: context/spec/features.md §4.3.
-"""
+from __future__ import annotations

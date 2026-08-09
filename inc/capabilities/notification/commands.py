@@ -228,6 +228,18 @@ class RequestNotification:
                         "notification.intent_without_delivery",
                         "existing intent has no delivery",
                     )
+                await uow.commit()
+                # runner.start is idempotent by business key: if the original
+                # commit succeeded but the workflow start crashed (or the
+                # process died between commit and start), replaying the request
+                # must (re)start the delivery workflow instead of leaving the
+                # delivery pending forever.
+                await ctx.runner.start(
+                    workflow_key=DELIVER_WORKFLOW_KEY,
+                    idempotency_key=f"delivery:{delivery.id}",
+                    input_data={"delivery_id": str(delivery.id)},
+                    trace_id=ctx.trace_id,
+                )
                 return RequestNotificationResult(
                     intent=_to_intent_dto(existing),
                     delivery=_to_delivery_dto(delivery),
@@ -343,7 +355,11 @@ class CancelPendingNotification:
             )
             if delivery is None:
                 raise _not_found("notification.delivery_not_found", f"delivery {delivery_id}")
-            if delivery.status not in ("pending", "sending"):
+            if delivery.status != "pending":
+                # ``sending`` means the provider call is in flight; cancelling
+                # it here would be overwritten back to delivered on success and
+                # the caller would wrongly believe the notification never went
+                # out.
                 raise _conflict(
                     "notification.not_cancellable",
                     f"delivery is {delivery.status}",
@@ -377,6 +393,20 @@ class RetryDelivery:
             )
             if delivery is None:
                 raise _not_found("notification.delivery_not_found", f"delivery {delivery_id}")
+            now = ctx.clock.utc_now()
+            lease_alive = (
+                delivery.lease_expires_at is not None
+                and _ensure_utc(delivery.lease_expires_at) > now
+            )
+            if delivery.status in ("sending", "pending") and lease_alive:
+                # The original run may still be executing: starting a second
+                # workflow under a different business key would race the live
+                # one and risk duplicate sends. Only a dead lease (crashed
+                # run) or a terminal state may be retried.
+                raise _conflict(
+                    "notification.retry_lease_alive",
+                    "delivery is still owned by a live lease; wait for expiry or a terminal state",
+                )
             if delivery.status not in (
                 "failed",
                 "dead",

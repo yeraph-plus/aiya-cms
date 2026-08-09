@@ -15,6 +15,7 @@ import hashlib
 import secrets
 from datetime import UTC, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -142,7 +143,8 @@ def _required(form: dict[str, Any], key: str) -> str:
 
 def _login_form(params: dict[str, str]) -> str:
     hidden = "".join(
-        f'<input type="hidden" name="{k}" value="{_html_escape(v)}"/>' for k, v in params.items()
+        f'<input type="hidden" name="{_html_escape(k)}" value="{_html_escape(v)}"/>'
+        for k, v in params.items()
     )
     return (
         "<!doctype html><html><body>"
@@ -165,7 +167,7 @@ def _html_escape(value: str) -> str:
 def build_router(services: OidcHttpServices) -> APIRouter:
     """Factory: returns a router; mounting is the composition root's job."""
 
-    router = APIRouter()
+    router = APIRouter(tags=["oidc"])
 
     @router.get("/.well-known/openid-configuration")
     async def discovery() -> JSONResponse:
@@ -208,9 +210,15 @@ def build_router(services: OidcHttpServices) -> APIRouter:
         client_id = _first(form, "client_id") or "browser"
         subject_id = await services.authenticator.authenticate(username, password)
         if subject_id is None:
-            return HTMLResponse(_login_form({k: str(v) for k, v in form.items()}), status_code=401)
+            # Never echo the typed password back into the 401 page.
+            redacted = {k: str(v) for k, v in form.items() if k != "password"}
+            return HTMLResponse(_login_form(redacted), status_code=401)
         handle = await services.establish_session(subject_id, client_id)
-        response = RedirectResponse("/oidc/authorize", status_code=302)
+        # Preserve the original authorize parameters so the follow-up GET can
+        # issue a code; only the credentials are stripped.
+        authorize_params = {k: str(v) for k, v in form.items() if k not in ("username", "password")}
+        query = urlencode(authorize_params, doseq=True)
+        response = RedirectResponse(f"/oidc/authorize?{query}", status_code=302)
         response.set_cookie(
             SESSION_COOKIE_NAME,
             value=handle,

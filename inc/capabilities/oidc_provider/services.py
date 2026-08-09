@@ -15,7 +15,7 @@ from datetime import UTC, timedelta
 from typing import Any
 
 import jwt as pyjwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from inc.capabilities.oidc_provider.keys import KeyService, load_public_key, sign_jwt, verify_jwt
 from inc.capabilities.oidc_provider.models import (
@@ -208,6 +208,10 @@ class AuthorizationService:
                 raise OidcError("invalid_request", "unknown or disabled client")
             if redirect_uri not in client.redirect_uris.items:
                 raise OidcError("invalid_request", "redirect uri is not registered")
+            if response_type not in SUPPORTED_RESPONSE_TYPES:
+                raise OidcError(
+                    "unsupported_response_type", "response_type is not supported by this server"
+                )
             if response_type not in client.response_types.items:
                 raise OidcError("unsupported_response_type", "unsupported response type")
             if not scopes.issubset(set(client.allowed_scopes.items)):
@@ -274,6 +278,11 @@ class TokenService:
             await _authenticate_client(
                 uow, client, client_secret=client_secret, now=self._ctx.clock.utc_now()
             )
+            if "authorization_code" not in client.grant_types.items:
+                raise OidcError(
+                    "unauthorized_client",
+                    "client is not registered for the authorization_code grant",
+                )
 
             row = (
                 (
@@ -297,6 +306,9 @@ class TokenService:
                     subject_id=row.subject_id,
                     details={"code_id": str(row.id)},
                 )
+                # The replay-detection audit must survive the error: the UoW
+                # would otherwise roll it back when the exception propagates.
+                await uow.commit()
                 raise OidcError("invalid_grant", "authorization code already used")
             if _ensure_utc(row.expires_at) < self._ctx.clock.utc_now():
                 raise OidcError("invalid_grant", "authorization code expired")
@@ -313,6 +325,28 @@ class TokenService:
                 raise OidcError("invalid_grant", "unexpected code verifier without challenge")
 
             row.consumed_at = self._ctx.clock.utc_now()
+            # Consume the code atomically so a concurrent exchange cannot
+            # redeem the same code twice.
+            consumed = await uow.session.execute(
+                update(OidcAuthorizationCode)
+                .where(
+                    OidcAuthorizationCode.id == row.id,
+                    OidcAuthorizationCode.consumed_at.is_(None),
+                )
+                .values(consumed_at=self._ctx.clock.utc_now())
+                .execution_options(synchronize_session=False)
+            )
+            if consumed.rowcount != 1:
+                await _append_audit(
+                    uow,
+                    self._ctx,
+                    action="oidc.token.code_replay",
+                    client_id=client.client_id,
+                    subject_id=row.subject_id,
+                    details={"code_id": str(row.id)},
+                )
+                await uow.commit()
+                raise OidcError("invalid_grant", "authorization code already used")
             await self._ensure_grant(uow, client, row)
             session = await self._ensure_session(uow, client, row.subject_id)
             tokens = await self._issue_tokens(
@@ -343,6 +377,10 @@ class TokenService:
             await _authenticate_client(
                 uow, client, client_secret=client_secret, now=self._ctx.clock.utc_now()
             )
+            if "refresh_token" not in client.grant_types.items or not client.allow_refresh:
+                raise OidcError(
+                    "unauthorized_client", "client is not registered for the refresh_token grant"
+                )
 
             token = (
                 (
@@ -382,7 +420,35 @@ class TokenService:
                 or _ensure_utc(token.inactivity_expires_at) < now
             ):
                 raise OidcError("invalid_grant", "refresh token expired")
-
+            # Rotate the token atomically: only the first caller wins, so a
+            # concurrent reuse of the same token cannot mint two successors.
+            rotated = await uow.session.execute(
+                update(OidcRefreshToken)
+                .where(
+                    OidcRefreshToken.id == token.id,
+                    OidcRefreshToken.rotated_at.is_(None),
+                )
+                .values(
+                    rotated_at=now,
+                    last_used_at=now,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if rotated.rowcount != 1:
+                # A concurrent rotation already won; the reused token is a theft
+                # signal, so revoke the whole family.
+                family.revoked_at = now
+                token.reused_at = now
+                await _append_audit(
+                    uow,
+                    self._ctx,
+                    action="oidc.refresh.reuse_detected",
+                    client_id=client.client_id,
+                    subject_id=family.subject_id,
+                    details={"family_id": str(family.id)},
+                )
+                await uow.commit()
+                raise OidcError("invalid_grant", "refresh token reuse detected")
             token.rotated_at = now
             token.last_used_at = now
             new_token = _new_opaque()

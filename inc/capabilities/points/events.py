@@ -48,6 +48,14 @@ class EntryReversedPayload(_Base):
     balance: int
 
 
+class BucketExpiredPayload(_Base):
+    entry_id: str
+    bucket_id: str
+    expiration_identity: str
+    amount: int
+    balance: int
+
+
 class AccountFrozenPayload(_Base):
     state: str
 
@@ -57,6 +65,7 @@ POINTS_EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "points.credited.v1": CreditedPayload,
     "points.debited.v1": DebitedPayload,
     "points.entry_reversed.v1": EntryReversedPayload,
+    "points.bucket_expired.v1": BucketExpiredPayload,
     "points.account_frozen.v1": AccountFrozenPayload,
 }
 

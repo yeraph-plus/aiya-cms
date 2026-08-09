@@ -14,6 +14,8 @@ from inc.capabilities.access.commands import (
     BootstrapAdministrator,
     CommandContext,
     CreateRole,
+    DeleteRole,
+    ReplaceRoleCapabilities,
     RevokeRoleFromSubject,
 )
 from inc.capabilities.access.queries import AccessDiagnostics, AccessQueries
@@ -27,6 +29,8 @@ __all__ = [
     "BootstrapAdministrator",
     "CommandContext",
     "CreateRole",
+    "DeleteRole",
     "PermissionRegistry",
+    "ReplaceRoleCapabilities",
     "RevokeRoleFromSubject",
 ]

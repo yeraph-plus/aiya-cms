@@ -40,8 +40,23 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    """AIYA_DATABASE_URL overrides alembic.ini (container deployments)."""
+    """Resolve the database URL from decomposed settings, env override, or alembic.ini.
 
+    The kernel Settings assemble ``AIYA_DATABASE_URL`` from the decomposed
+    ``AIYA_PG_*`` fields; that URL wins. A direct ``AIYA_DATABASE_URL`` env
+    var (deployments that still pass a full URL) is honoured as a fallback,
+    then alembic.ini.
+    """
+
+    from inc.kernel.config import load_settings
+
+    try:
+        kernel_settings = load_settings()
+        url = kernel_settings.database_url.get_secret_value()
+        if url:
+            return url
+    except Exception:  # noqa: BLE001 - fall back to explicit env/ini
+        pass
     return os.environ.get("AIYA_DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 
 

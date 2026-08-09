@@ -45,7 +45,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-settings"])
 
     @router.get("/settings/groups", response_model=list[SettingGroupDTO])
     async def list_groups(

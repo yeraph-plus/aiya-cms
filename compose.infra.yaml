@@ -1,0 +1,58 @@
+name: aiya-cms-infra
+
+# Infrastructure-only compose: PostgreSQL and Redis run here (or under an
+# external panel such as 1panel in production). The backend image never
+# manages its own databases; it connects through the decomposed
+# AIYA_PG_*/AIYA_REDIS_* environment variables.
+#
+# mailpit is the local email test sink: the backend's SMTP adapter points at
+# host.docker.internal:2525 and every sent mail lands in the UI on :8025.
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aiya}
+      POSTGRES_USER: ${POSTGRES_USER:-aiya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiya}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-aiya} -d $${POSTGRES_DB:-aiya}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    # Host SMTP port 2525 matches tests/api/test_email_smtp_adapter.py
+    # (MAILPIT_PORT); the web UI serves captured mail on 8025.
+    ports:
+      - "${MAILPIT_SMTP_PORT:-2525}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8025/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
+  redis-data:

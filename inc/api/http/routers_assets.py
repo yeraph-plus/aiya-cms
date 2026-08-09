@@ -39,7 +39,9 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
         uow_factory=ctx.uow_factory,
         clock=ctx.clock,
         outbox=services.outbox,
-        providers={"dev_memory": services.dev_storage},
+        providers=(
+            {"dev_memory": services.dev_storage} if services.dev_storage is not None else {}
+        ),
         runner=services.runner,
         permissions=frozenset(ctx.principal.capabilities),
         actor_id=ctx.principal.subject_id,
@@ -60,7 +62,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-assets"])
 
     @router.post("/assets/upload-intents", response_model=CreateUploadIntentResult)
     async def create_upload_intent(

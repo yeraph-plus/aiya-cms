@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from inc.kernel.db import UnitOfWork
 from inc.kernel.events.models import InboxReceipt
@@ -64,12 +65,28 @@ class InboxGuard:
         work: Callable[[], Awaitable[None]],
         processed_at: datetime,
     ) -> bool:
-        """Run *work* exactly once; returns True when actually executed."""
+        """Run *work* exactly once; returns True when actually executed.
 
-        if await cls.already_processed(uow, handler_key=handler_key, event_id=event_id):
+        The receipt is inserted first and the unique ``(handler_key,
+        event_id)`` constraint is the atomic guard: a concurrent delivery
+        whose insert collides is treated as already processed, so work can
+        never run twice even when both deliveries read concurrently.
+        """
+
+        uow.session.add(
+            InboxReceipt(
+                handler_key=handler_key,
+                event_id=event_id,
+                processed_at=processed_at,
+            )
+        )
+        try:
+            await uow.session.flush()
+        except IntegrityError:
+            # A concurrent delivery inserted the receipt first. Roll back the
+            # aborted transaction so the session stays usable, then report the
+            # duplicate. work() never ran, so nothing needs preserving.
+            await uow.session.rollback()
             return False
         await work()
-        await cls.mark_processed(
-            uow, handler_key=handler_key, event_id=event_id, processed_at=processed_at
-        )
         return True

@@ -92,6 +92,14 @@ class CredentialAuthenticator:
     API layer with equivalent responses and timing.
     """
 
+    #: A valid Argon2 hash whose verification cost masks user-state
+    #: side channels: unknown/inactive/no-credential identifiers still run a
+    #: full ``hasher.verify`` so response time does not reveal account state.
+    _DUMMY_HASH = (
+        "$argon2id$v=19$m=65536,t=3,p=4$6Qjm4MFCayp6X8iSgPYBPQ$"
+        "dvacfSa1/HZlagg2sv/0M8ffObkXI6QzDRn/VoKenJI"
+    )
+
     def __init__(self, *, uow_factory: UoWFactory, hasher: Any) -> None:
         self._uow_factory = uow_factory
         self._hasher = hasher
@@ -115,6 +123,10 @@ class CredentialAuthenticator:
                 .first()
             )
             if user is None or user.status != "active":
+                # Mask existence/status: spend the same verify cost as a real
+                # wrong-password attempt before returning the indistinguishable
+                # failure.
+                self._hasher.verify(password, self._DUMMY_HASH)
                 return None
             credential = (
                 (
@@ -127,6 +139,10 @@ class CredentialAuthenticator:
                 .scalars()
                 .first()
             )
-            if credential is None or not self._hasher.verify(password, credential.password_hash):
+            if credential is None:
+                # Mask missing-credential state with an equal-cost verify.
+                self._hasher.verify(password, self._DUMMY_HASH)
+                return None
+            if not self._hasher.verify(password, credential.password_hash):
                 return None
             return to_subject(user)

@@ -23,7 +23,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-audit"])
 
     @router.get("/audit/entries", response_model=Page[AuditEntryDTO])
     async def list_entries(

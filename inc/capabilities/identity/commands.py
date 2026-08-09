@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from inc.capabilities.identity.mappers import to_subject
@@ -134,6 +134,51 @@ async def _append_event(
             payload=payload,
         ),
     )
+
+
+async def _consume_challenge(
+    uow: UnitOfWork, ctx: CommandContext, challenge: IdentityChallenge | None
+) -> None:
+    """Consume a one-time challenge, persisting failed attempts.
+
+    A failed validation raises ``KernelError`` out of the UoW block, which
+    rolls back uncommitted changes. The attempt counter is therefore
+    committed before re-raising so brute-force limiting actually counts
+    failed attempts and ``challenge_attempts_exceeded`` can fire.
+    """
+
+    now = ctx.clock.utc_now()
+    if challenge is None:
+        raise KernelError(
+            code="identity.challenge_invalid",
+            category=ErrorCategory.VALIDATION,
+            message="invalid challenge token",
+        )
+    challenge.attempts += 1
+    failure: KernelError | None = None
+    if challenge.consumed_at is not None:
+        failure = KernelError(
+            code="identity.challenge_consumed",
+            category=ErrorCategory.VALIDATION,
+            message="challenge already consumed",
+        )
+    elif _ensure_utc(challenge.expires_at) < now:
+        failure = KernelError(
+            code="identity.challenge_expired",
+            category=ErrorCategory.VALIDATION,
+            message="challenge expired",
+        )
+    elif challenge.attempts > challenge.max_attempts:
+        failure = KernelError(
+            code="identity.challenge_attempts_exceeded",
+            category=ErrorCategory.RATE_LIMITED,
+            message="too many attempts",
+        )
+    if failure is not None:
+        # Persist the increment before the exception rolls the UoW back.
+        await uow.commit()
+        raise failure
+    challenge.consumed_at = now
 
 
 class RegisterLocalUser:
@@ -265,33 +310,90 @@ class VerifyEmail:
             return to_subject(user)
 
     async def _consume(self, uow: UnitOfWork, challenge: IdentityChallenge | None) -> None:
-        now = self._ctx.clock.utc_now()
-        if challenge is None:
-            raise KernelError(
-                code="identity.challenge_invalid",
-                category=ErrorCategory.VALIDATION,
-                message="invalid challenge token",
+        await _consume_challenge(uow, self._ctx, challenge)
+
+
+class RequestPasswordReset:
+    """Issues a one-time ``password_reset`` challenge for an active user.
+
+    Contract source: context/spec/capabilities/identity.md §4.
+
+    Enumeration-safe: unknown, banned or deleted identifiers return
+    ``None`` — the same external result as a successful request.
+    Outstanding unconsumed reset challenges are superseded, so only the
+    newest token stays valid. The token is returned to the in-process
+    caller exactly once; out-of-band delivery is orchestrated by
+    feature/notification workflows (identity never imports them), and
+    events/audits never carry the token.
+    """
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, identifier: str) -> ChallengeDTO | None:  # type: ignore[return]
+        username_normalized = normalize_username(identifier)
+        email_normalized = normalize_email(identifier)
+        async with self._ctx.uow_factory() as uow:
+            user = (
+                (
+                    await uow.session.execute(
+                        select(IdentityUser).where(
+                            IdentityUser.status == "active",
+                            or_(
+                                IdentityUser.username_normalized == username_normalized,
+                                IdentityUser.email_normalized == email_normalized,
+                            ),
+                        )
+                    )
+                )
+                .scalars()
+                .first()
             )
-        challenge.attempts += 1
-        if challenge.consumed_at is not None:
-            raise KernelError(
-                code="identity.challenge_consumed",
-                category=ErrorCategory.VALIDATION,
-                message="challenge already consumed",
+            if user is None:
+                return None
+            now = self._ctx.clock.utc_now()
+            outstanding = (
+                (
+                    await uow.session.execute(
+                        select(IdentityChallenge).where(
+                            IdentityChallenge.user_id == user.id,
+                            IdentityChallenge.purpose == "password_reset",
+                            IdentityChallenge.consumed_at.is_(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
             )
-        if _ensure_utc(challenge.expires_at) < now:
-            raise KernelError(
-                code="identity.challenge_expired",
-                category=ErrorCategory.VALIDATION,
-                message="challenge expired",
+            for old in outstanding:
+                old.consumed_at = now
+            token = random_token()
+            expires_at = now + timedelta(seconds=CHALLENGE_TTL_SECONDS)
+            uow.session.add(
+                IdentityChallenge(
+                    user_id=user.id,
+                    purpose="password_reset",
+                    token_digest=_digest(token),
+                    expires_at=expires_at,
+                    attempts=0,
+                    max_attempts=CHALLENGE_MAX_ATTEMPTS,
+                )
             )
-        if challenge.attempts > challenge.max_attempts:
-            raise KernelError(
-                code="identity.challenge_attempts_exceeded",
-                category=ErrorCategory.RATE_LIMITED,
-                message="too many attempts",
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="identity.password.reset_requested",
+                target_type="user",
+                target_id=str(user.id),
             )
-        challenge.consumed_at = now
+            await uow.commit()
+            return ChallengeDTO(
+                id=str(user.id),
+                purpose="password_reset",
+                expires_at=expires_at,
+                max_attempts=CHALLENGE_MAX_ATTEMPTS,
+                token=token,
+            )
 
 
 class ResetPassword:
@@ -327,6 +429,14 @@ class ResetPassword:
                 .scalars()
                 .first()
             )
+            if credential is None:
+                # OAuth-only accounts have no local password credential; a
+                # reset token cannot change what does not exist.
+                raise KernelError(
+                    code="identity.no_local_credential",
+                    category=ErrorCategory.VALIDATION,
+                    message="account has no local password credential",
+                )
             credential.password_hash = self._ctx.hasher.hash(new_password)
             credential.hash_version = HASH_VERSION
             credential.changed_at = self._ctx.clock.utc_now()
@@ -351,32 +461,7 @@ class ResetPassword:
     async def _verify_and_consume(
         self, uow: UnitOfWork, challenge: IdentityChallenge | None
     ) -> None:
-        if challenge is None:
-            raise KernelError(
-                code="identity.challenge_invalid",
-                category=ErrorCategory.VALIDATION,
-                message="invalid challenge token",
-            )
-        challenge.attempts += 1
-        if challenge.consumed_at is not None:
-            raise KernelError(
-                code="identity.challenge_consumed",
-                category=ErrorCategory.VALIDATION,
-                message="challenge already consumed",
-            )
-        if _ensure_utc(challenge.expires_at) < self._ctx.clock.utc_now():
-            raise KernelError(
-                code="identity.challenge_expired",
-                category=ErrorCategory.VALIDATION,
-                message="challenge expired",
-            )
-        if challenge.attempts > challenge.max_attempts:
-            raise KernelError(
-                code="identity.challenge_attempts_exceeded",
-                category=ErrorCategory.RATE_LIMITED,
-                message="too many attempts",
-            )
-        challenge.consumed_at = self._ctx.clock.utc_now()
+        await _consume_challenge(uow, self._ctx, challenge)
 
 
 class ChangePassword:
@@ -487,7 +572,11 @@ class UnbanUser:
             if user is None:
                 raise _not_found("user not found")
             if user.status != "banned":
-                raise _conflict("user is not banned")
+                raise KernelError(
+                    code="identity.not_banned",
+                    category=ErrorCategory.CONFLICT,
+                    message="user is not banned",
+                )
             user.status = "active"
             await _append_event(
                 uow,

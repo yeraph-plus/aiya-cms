@@ -32,9 +32,9 @@ from inc.kernel.db import UoWFactory
 from inc.kernel.events import EventSchemaRegistry, OutboxWriter
 from inc.kernel.time.fake import FakeClock
 
-ISSUER = "http://localhost:8000"
-REDIRECT_URI = "http://localhost:3000/cb"
-LOGOUT_REDIRECT = "http://localhost:3000/logged-out"
+ISSUER = "http://127.0.0.1:8000"
+REDIRECT_URI = "http://127.0.0.1:3000/cb"
+LOGOUT_REDIRECT = "http://127.0.0.1:3000/logged-out"
 SCOPES = "openid profile email offline_access"
 
 
@@ -351,6 +351,70 @@ async def test_http_pkce_downgrade_and_redirect_attacks(
     )
     assert no_verifier.status_code == 400
     assert no_verifier.json()["error"] == "invalid_grant"
+
+
+async def test_login_redirect_preserves_authorize_params(client: httpx.AsyncClient) -> None:
+    verifier, challenge = _pkce()
+    login = await client.post(
+        "/oidc/login",
+        data={
+            "username": "alice",
+            "password": "pw-alice",
+            "client_id": "spa",
+            "redirect_uri": REDIRECT_URI,
+            "response_type": "code",
+            "scope": SCOPES,
+            "state": "st-redirect",
+            "nonce": "n-redirect",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        },
+    )
+    assert login.status_code == 302
+    location = login.headers["location"]
+    assert location.startswith("/oidc/authorize?")
+    # The authorize parameters must survive so the follow-up GET can issue a code.
+    for param in ("client_id", "redirect_uri", "response_type", "scope", "state", "nonce"):
+        assert f"{param}=" in location
+    assert "state=st-redirect" in location
+    assert "code_challenge=" in location
+    # Credentials must never leak into the redirect.
+    assert "username" not in location
+    assert "password" not in location
+
+
+async def test_failed_login_never_echoes_password(client: httpx.AsyncClient) -> None:
+    response = await client.get("/oidc/authorize", params=_authorize_params())
+    assert response.status_code == 200
+
+    login = await client.post(
+        "/oidc/login",
+        data={
+            "username": "alice",
+            "password": "supersecret",
+            "client_id": "spa",
+            "redirect_uri": REDIRECT_URI,
+            "response_type": "code",
+            "scope": SCOPES,
+            "state": "st-1",
+            "nonce": "n-1",
+        },
+    )
+    assert login.status_code == 401
+    assert "supersecret" not in login.text
+    # The form must still carry the authorize params for retry.
+    assert "client_id" in login.text
+    assert 'name="state" value="st-1"' in login.text
+
+
+async def test_authorize_param_names_are_html_escaped(client: httpx.AsyncClient) -> None:
+    # A crafted query-key breaks out of the hidden input's name attribute.
+    malicious_key = 'x" autofocus onfocus="alert(1)'
+    response = await client.get("/oidc/authorize", params={malicious_key: "v", "client_id": "spa"})
+    assert response.status_code == 200
+    # The quote is escaped so the key cannot break out of the name attribute.
+    assert 'name="x&quot; autofocus onfocus=&quot;alert(1)"' in response.text
+    assert 'name="x" autofocus' not in response.text
 
 
 async def test_revocation_endpoint_is_idempotent(client: httpx.AsyncClient) -> None:

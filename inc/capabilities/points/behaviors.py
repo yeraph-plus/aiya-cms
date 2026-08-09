@@ -35,6 +35,7 @@ class PointBehaviorSpec:
     cooldown_seconds: int | None = None
     daily_limit: int | None = None
     business_timezone: str = "UTC"
+    expiration_days: int | None = None
     metadata_schema: type[BaseModel] = DEFAULT_METADATA
     allowed_source_types: tuple[str, ...] = ("content", "payment", "system")
     allowed_actor_types: tuple[str, ...] = ("user", "system")
@@ -57,6 +58,10 @@ class PointBehaviorSpec:
             raise ValueError(f"behavior {self.key} cooldown must be positive")
         if self.daily_limit is not None and self.daily_limit <= 0:
             raise ValueError(f"behavior {self.key} daily_limit must be positive")
+        if self.expiration_days is not None and self.expiration_days <= 0:
+            raise ValueError(f"behavior {self.key} expiration_days must be positive")
+        if self.direction == "debit" and self.expiration_days is not None:
+            raise ValueError(f"behavior {self.key} cannot combine debit with expiration_days")
         if not isinstance(self.metadata_schema, type) or not issubclass(
             self.metadata_schema, BaseModel
         ):

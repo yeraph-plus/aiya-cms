@@ -59,7 +59,7 @@ class ClientDTO(BaseModel):
     post_logout_redirect_uris: list[str] = field(default_factory=list)
     allowed_scopes: list[str]
     allowed_audiences: list[str] = field(default_factory=list)
-    auth_method: str = "none"
+    auth_method: str
     grant_types: list[str] = field(default_factory=lambda: ["authorization_code"])
     response_types: list[str] = field(default_factory=lambda: ["code"])
     status: str = "active"

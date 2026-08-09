@@ -33,14 +33,18 @@ def _redact_processor(
     method_name: str,
     event_dict: MutableMapping[str, Any],
 ) -> Mapping[str, Any]:
-    return cast(Mapping[str, Any], redact(dict(event_dict)))
+    try:
+        return cast(Mapping[str, Any], redact(dict(event_dict)))
+    except Exception:  # noqa: BLE001 - redaction is best-effort; never break the caller
+        return event_dict
 
 
 def configure_logging(*, level: str = "INFO", json_output: bool = True) -> None:
     """Configure structlog and the stdlib logging bridge once at boot."""
 
+    resolved_level = _LOG_NAMES_TO_LEVELS.get(level.upper(), logging.INFO)
     logging.basicConfig(
-        level=_LOG_NAMES_TO_LEVELS.get(level.upper(), logging.INFO),
+        level=resolved_level,
         format="%(message)s",
         force=True,
     )
@@ -57,7 +61,9 @@ def configure_logging(*, level: str = "INFO", json_output: bool = True) -> None:
         processors.append(structlog.dev.ConsoleRenderer())
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        # Use the resolved level so the filtering wrapper does not silently
+        # drop DEBUG events before the renderer sees them.
+        wrapper_class=structlog.make_filtering_bound_logger(resolved_level),
         cache_logger_on_first_use=True,
     )
 

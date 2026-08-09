@@ -19,7 +19,7 @@ _KEY = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 
 
 def validate_permission_key(key: str) -> None:
-    if not _KEY.match(key):
+    if not _KEY.fullmatch(key):
         raise ValueError(f"invalid permission key {key!r}: expected dotted lowercase key")
 
 

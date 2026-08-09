@@ -61,6 +61,17 @@ def test_metric_invalid_labels_rejected() -> None:
         counter.inc()  # missing required label
 
 
+def test_metric_label_values_must_be_str() -> None:
+    """Non-str label values must be rejected so the snapshot never compares
+    mixed types (e.g. int vs str) and crashes sorting."""
+    registry = MetricRegistry()
+    counter = registry.counter("kernel.x", label_names=("status",))
+    with pytest.raises(TypeError):
+        counter.inc(status=200)  # type: ignore[arg-type]
+    counter.inc(status="ok")
+    assert len(registry.snapshot()) == 1
+
+
 def test_metrics_snapshot_is_deterministic() -> None:
     registry = MetricRegistry()
     for name in ("b.metric", "a.metric", "c.metric"):

@@ -38,6 +38,25 @@ def test_cms_schema_contains_expected_contract() -> None:
     assert "HTTPBearer" in schema.get("components", {}).get("securitySchemes", {})
 
 
+def test_every_operation_is_tagged_and_admin_operations_are_grouped() -> None:
+    from inc.api.openapi import generate_schema
+
+    schema = generate_schema()
+    declared = [tag["name"] for tag in schema.get("tags", [])]
+    assert len(declared) == len(set(declared)), "tags must be unique"
+    admin_paths = 0
+    for path, methods in schema["paths"].items():
+        for operation in methods.values():
+            if not isinstance(operation, dict) or "tags" not in operation:
+                raise AssertionError(f"operation missing tags: {path}")
+            for tag in operation["tags"]:
+                assert tag in declared, f"undeclared tag {tag!r} on {path}"
+            if path.startswith("/api/v1/admin"):
+                admin_paths += 1
+                assert "admin" in operation["tags"], f"admin operation not grouped: {path}"
+    assert admin_paths > 0
+
+
 def test_dump_and_check_roundtrip(tmp_path: Any, monkeypatch: Any) -> None:
     import inc.api.openapi as openapi_module
 

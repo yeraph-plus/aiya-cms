@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from inc.capabilities.content.dto import to_dto
@@ -771,6 +771,19 @@ class ReplaceContentReferences:
                 .scalars()
                 .all()
             )
+            # Serialize the replacement on the source row: bump version with a
+            # conditional update so a concurrent replacement fails with a
+            # conflict instead of silently losing one caller's references.
+            cas = await uow.session.execute(
+                update(Content)
+                .where(Content.id == row.id, Content.version == row.version)
+                .values(version=Content.version + 1, updated_at=now)
+            )
+            if cas.rowcount == 0:
+                raise _conflict(
+                    "content.version_conflict",
+                    "content changed concurrently; retry with fresh state",
+                )
             for ref in existing:
                 await uow.session.delete(ref)
             await uow.session.flush()
@@ -848,9 +861,16 @@ class PurgeArchivedContent:
             if dry_run:
                 await uow.commit()
                 return report
+            # Delete conditionally on status so a concurrent transition that
+            # restored the content out of archived cannot have its change
+            # silently lost by a plain id-based delete.
+            purge = await uow.session.execute(
+                delete(Content).where(Content.id == row.id, Content.status == "archived")
+            )
+            if purge.rowcount == 0:
+                raise _conflict("content.purge_requires_archived", "content is no longer archived")
             for ref in outgoing:
                 await uow.session.delete(ref)
-            await uow.session.delete(row)
             await _append_audit(
                 ctx,
                 uow,

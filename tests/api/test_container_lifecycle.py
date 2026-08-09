@@ -29,7 +29,7 @@ async def test_start_stop_is_idempotent_and_clean(
         manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings
     )
     await container.start()
-    assert len(container._tasks) == 3  # outbox + workflow + publish scan
+    assert len(container._tasks) == 4  # outbox + workflow + publish scan + points expire
     with pytest.raises(KernelError) as excinfo:
         await container.start()  # double start must fail
     assert excinfo.value.code == "kernel.container_already_started"
@@ -97,6 +97,62 @@ async def test_production_requires_https_and_secure_cookies() -> None:
         load_api_settings({"environment": "production", "issuer": "http://insecure.example"})
     with pytest.raises(ValueError, match="secure cookies"):
         load_api_settings({"environment": "production", "issuer": "https://cms.example.com"})
+    with pytest.raises(ValueError, match="https"):
+        # hostless https:// must be rejected too
+        load_api_settings({"environment": "production", "issuer": "https://"})
+    with pytest.raises(ValueError):
+        # unknown environment value is rejected by the Literal constraint
+        ApiSettings(environment="Production")
+
+
+async def test_production_gate_holds_on_direct_construction() -> None:
+    """The production invariant must hold regardless of construction path —
+    not only through load_api_settings."""
+    with pytest.raises(ValueError, match="https"):
+        ApiSettings(environment="production", issuer="http://insecure.example")
+    with pytest.raises(ValueError, match="secure cookies"):
+        ApiSettings(environment="production", issuer="https://cms.example.com")
+
+
+async def test_assets_dev_storage_only_created_when_bound(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    """Enabling the assets capability without binding assets.dev_memory must
+    not create a live in-memory provider (production guard leak)."""
+    from inc.api.container import _binds_dev_storage
+
+    manifest_with_dev = AppManifest(
+        name="with-dev-storage",
+        capabilities=("assets",),
+        routers=("assets",),
+        adapters=(("assets.object_storage", "assets.dev_memory"),),
+    )
+    assert _binds_dev_storage(manifest_with_dev)
+    container_dev = build_container(
+        manifest=manifest_with_dev, uow_factory=uow_factory, clock=clock, settings=settings
+    )
+    assert container_dev.services.dev_storage is not None
+
+    # a non-dev storage binding is not considered dev-memory
+    manifest_other = AppManifest(
+        name="other-storage",
+        capabilities=("assets",),
+        routers=("assets",),
+        adapters=(("assets.object_storage", "assets.s3_real"),),
+    )
+    assert not _binds_dev_storage(manifest_other)
+
+    # assets with no object_storage binding fails closed on the required port
+    manifest_unbound = AppManifest(
+        name="no-dev-storage",
+        capabilities=("assets",),
+        routers=("assets",),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest_unbound, uow_factory=uow_factory, clock=clock, settings=settings
+        )
+    assert excinfo.value.code == "kernel.port_unbound"
 
 
 async def test_oidc_without_identity_fails_on_handler_schema(
@@ -134,3 +190,16 @@ async def test_worker_loop_survives_failures_and_logs(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_secure_cookie_env_parsing_accepts_truthy_spellings() -> None:
+    """AIYA_SECURE_COOKIES must accept common truthy values, so a deployment
+    writing "true"/"yes"/" on " does not silently disable the Secure flag on
+    the OIDC login session cookie."""
+    from inc.main import _parse_bool
+
+    for truthy in ("1", "true", "TRUE", "True", "yes", "on", " on "):
+        assert _parse_bool(truthy) is True, truthy
+    for falsy in ("0", "false", "", "anything", None):
+        assert _parse_bool(falsy) is False, falsy
+    assert _parse_bool(None, default=True) is True

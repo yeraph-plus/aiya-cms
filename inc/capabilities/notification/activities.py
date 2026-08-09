@@ -197,7 +197,13 @@ class DeliverActivity:
 
         # failed
         category = result.error_category or RetryCategory.TRANSIENT.value
-        permanent = category == RetryCategory.PERMANENT.value
+        # CANCELLED is declared a permanent category in the deliver workflow
+        # retry policy; a cancelled delivery must terminate as failed, never
+        # be re-sent.
+        permanent = category in {
+            RetryCategory.PERMANENT.value,
+            RetryCategory.CANCELLED.value,
+        }
         delivery.error_category = category
         delivery.error_summary = result.error_summary
         if permanent or delivery.attempt >= spec.delivery_policy.max_attempts:

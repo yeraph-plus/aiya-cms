@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from inc.capabilities.points.commands import CommandContext as PointsCommandContext
 from inc.capabilities.points.commands import CreditPoints
@@ -23,6 +24,12 @@ from inc.kernel.workflow import ActivitySpec, WorkflowSpec
 
 CHECK_IN_WORKFLOW_KEY = "checkin.reward.v1"
 REWARD_BEHAVIOR = "daily_check_in.reward"
+
+
+def business_date_for(clock: Clock, timezone: str) -> str:
+    """Local business date fixed at the explicit user action (spec §4.3)."""
+
+    return clock.utc_now().astimezone(ZoneInfo(timezone)).date().isoformat()
 
 
 @dataclass(frozen=True, slots=True)

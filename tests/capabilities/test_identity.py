@@ -7,7 +7,8 @@ Runs against SQLite with the kernel UoW/outbox code paths.
 
 from __future__ import annotations
 
-from datetime import timedelta
+import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -22,6 +23,9 @@ from inc.capabilities.identity.commands import (
     DeleteUser,
     LinkLoginIdentity,
     RegisterLocalUser,
+    RequestPasswordReset,
+    ResetPassword,
+    UnbanUser,
     UnlinkLoginIdentity,
     VerifyEmail,
 )
@@ -138,6 +142,69 @@ async def test_challenge_expiry_and_wrong_token_are_rejected(
     assert excinfo.value.code == "identity.challenge_expired"
 
 
+async def test_failed_challenge_attempts_persist_for_bruteforce_lockout(
+    identity_ctx: CommandContext, uow_factory: UoWFactory, clock: Any
+) -> None:
+    """A failed challenge verification must persist the attempt count.
+
+    The attempt increment used to be rolled back by the UoW when the
+    validation KernelError propagated, so ``challenge_attempts_exceeded``
+    could never fire. The increment must survive the failed attempt.
+    """
+
+    result = await RegisterLocalUser(identity_ctx)(
+        username="zoe",
+        email="zoe@example.com",
+        password="password-123",
+        issue_email_challenge=True,
+    )
+    assert result.challenge is not None and result.challenge.token is not None
+
+    from inc.capabilities.identity.models import IdentityChallenge
+
+    async def attempts_for(token: str) -> int:
+        from inc.capabilities.identity.commands import _digest
+
+        async with uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(IdentityChallenge).where(
+                            IdentityChallenge.purpose == "email_verification",
+                            IdentityChallenge.token_digest == _digest(token),
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            return row.attempts
+
+    # Expire the challenge, then a failed verification must still count.
+    clock.advance(timedelta(minutes=30))
+    with pytest.raises(KernelError):
+        await VerifyEmail(identity_ctx)(token=result.challenge.token)
+    assert await attempts_for(result.challenge.token) == 1
+
+    with pytest.raises(KernelError):
+        await VerifyEmail(identity_ctx)(token=result.challenge.token)
+    assert await attempts_for(result.challenge.token) == 2
+
+    # Once consumed, a replay also counts against the challenge.
+    fresh = await RegisterLocalUser(identity_ctx)(
+        username="zoe2",
+        email="zoe2@example.com",
+        password="password-123",
+        issue_email_challenge=True,
+    )
+    assert fresh.challenge is not None and fresh.challenge.token is not None
+    await VerifyEmail(identity_ctx)(token=fresh.challenge.token)
+    with pytest.raises(KernelError) as excinfo:
+        await VerifyEmail(identity_ctx)(token=fresh.challenge.token)
+    assert excinfo.value.code == "identity.challenge_consumed"
+    assert await attempts_for(fresh.challenge.token) == 2
+
+
 async def test_ban_blocks_authentication_and_delete_archives(
     identity_ctx: CommandContext,
     queries: IdentityQueries,
@@ -217,6 +284,122 @@ async def test_profile_update_rejects_unknown_fields(
     assert result.subject.display_name is None
 
 
+async def test_password_reset_request_issues_challenge_and_reset_rotates_credential(
+    identity_ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    result = await RegisterLocalUser(identity_ctx)(
+        username="judy", email="judy@example.com", password="old-password-1"
+    )
+    challenge = await RequestPasswordReset(identity_ctx)(identifier="JUDY@example.com")
+    assert challenge is not None and challenge.token is not None
+    assert challenge.purpose == "password_reset"
+    assert challenge.max_attempts > 0
+
+    subject = await ResetPassword(identity_ctx)(
+        token=challenge.token, new_password="new-password-2"
+    )
+    assert subject.id == result.subject.id
+    authenticator = CredentialAuthenticator(uow_factory=uow_factory, hasher=Argon2PasswordHasher())
+    assert await authenticator.authenticate_local("judy", "old-password-1") is None
+    assert await authenticator.authenticate_local("judy", "new-password-2") is not None
+
+
+async def test_password_reset_request_is_enumeration_safe(
+    identity_ctx: CommandContext,
+) -> None:
+    # unknown identifier
+    assert await RequestPasswordReset(identity_ctx)(identifier="ghost@example.com") is None
+
+    banned = await RegisterLocalUser(identity_ctx)(
+        username="kate", email="kate@example.com", password="password-123"
+    )
+    await BanUser(identity_ctx)(user_id=banned.subject.id, reason="spam")
+    assert await RequestPasswordReset(identity_ctx)(identifier="kate") is None
+    await UnbanUser(identity_ctx)(user_id=banned.subject.id)
+    assert await RequestPasswordReset(identity_ctx)(identifier="kate") is not None
+
+    deleted = await RegisterLocalUser(identity_ctx)(
+        username="ken", email="ken@example.com", password="password-123"
+    )
+    await DeleteUser(identity_ctx)(user_id=deleted.subject.id)
+    assert await RequestPasswordReset(identity_ctx)(identifier="ken@example.com") is None
+
+
+async def test_password_reset_request_supersedes_previous_challenge(
+    identity_ctx: CommandContext,
+) -> None:
+    await RegisterLocalUser(identity_ctx)(
+        username="leo", email="leo@example.com", password="password-123"
+    )
+    first = await RequestPasswordReset(identity_ctx)(identifier="leo")
+    second = await RequestPasswordReset(identity_ctx)(identifier="leo@example.com")
+    assert first is not None and first.token is not None
+    assert second is not None and second.token is not None
+
+    with pytest.raises(KernelError) as excinfo:
+        await ResetPassword(identity_ctx)(token=first.token, new_password="new-password-2")
+    assert excinfo.value.code == "identity.challenge_consumed"
+
+    await ResetPassword(identity_ctx)(token=second.token, new_password="new-password-2")
+
+
+async def test_password_reset_rejects_email_verification_token(
+    identity_ctx: CommandContext,
+) -> None:
+    result = await RegisterLocalUser(identity_ctx)(
+        username="mike",
+        email="mike@example.com",
+        password="password-123",
+        issue_email_challenge=True,
+    )
+    assert result.challenge is not None and result.challenge.token is not None
+    with pytest.raises(KernelError) as excinfo:
+        await ResetPassword(identity_ctx)(
+            token=result.challenge.token, new_password="new-password-2"
+        )
+    assert excinfo.value.code == "identity.challenge_invalid"
+
+
+async def test_password_reset_rejects_oauth_only_account(
+    identity_ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    """An OAuth-only account (no local credential) must fail reset cleanly."""
+
+    from inc.capabilities.identity.commands import RegisterLocalUser
+    from inc.capabilities.identity.models import IdentityLoginIdentity
+
+    # OAuth-only user: register locally, then unlink the local credential path
+    # by adding an external identity and removing the local credential row.
+    registered = await RegisterLocalUser(identity_ctx)(
+        username="olivia",
+        email="olivia@example.com",
+        password="password-123",
+    )
+    await LinkLoginIdentity(identity_ctx)(
+        user_id=registered.subject.id, provider="external", provider_subject="ext-olivia"
+    )
+    async with uow_factory() as uow:
+        from inc.capabilities.identity.models import IdentityPasswordCredential
+
+        await uow.session.execute(
+            IdentityPasswordCredential.__table__.delete().where(
+                IdentityPasswordCredential.user_id == uuid.UUID(registered.subject.id)
+            )
+        )
+        await uow.commit()
+
+    challenge = await RequestPasswordReset(identity_ctx)(identifier="olivia")
+    assert challenge is not None and challenge.token is not None
+    with pytest.raises(KernelError) as excinfo:
+        await ResetPassword(identity_ctx)(token=challenge.token, new_password="new-password-2")
+    assert excinfo.value.code == "identity.no_local_credential"
+
+    # The account still has its external login method intact.
+    async with uow_factory() as uow:
+        identities = (await uow.session.execute(select(IdentityLoginIdentity))).scalars().all()
+        assert any(i.user_id == uuid.UUID(registered.subject.id) for i in identities)
+
+
 async def test_diagnostics_are_readonly(
     identity_ctx: CommandContext,
     uow_factory: UoWFactory,
@@ -233,3 +416,73 @@ async def test_diagnostics_are_readonly(
         users_after = len((await uow.session.execute(select(IdentityUser.id))).scalars().all())
     assert users_before == users_after
     assert any(r.code == "identity.no_login_method" for r in results)
+
+
+async def test_challenge_token_not_leaked_in_repr(identity_ctx: CommandContext) -> None:
+    """The one-time challenge token must not appear in repr()/str() of the
+    DTO, so accidental logging or traceback dumps do not leak the secret."""
+    from inc.capabilities.identity.schemas import ChallengeDTO
+
+    dto = ChallengeDTO(
+        id="challenge-1",
+        purpose="verify_email",
+        expires_at=datetime.now(),
+        token="super-secret-token",
+    )
+    assert "super-secret-token" not in repr(dto)
+    assert "super-secret-token" not in str(dto)
+    assert dto.token == "super-secret-token"
+
+
+async def test_authenticator_runs_constant_time_verify_on_all_failures(
+    identity_ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    """Unknown identifier, inactive user and missing-credential paths must
+    still run a hasher.verify against a dummy hash so response time does not
+    reveal account state (timing side channel)."""
+
+    class RecordingHasher:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def hash(self, password: str) -> str:
+            return "hash"
+
+        def verify(self, password: str, encoded: str) -> bool:
+            self.calls.append(encoded)
+            return False
+
+        def needs_rehash(self, encoded: str) -> bool:
+            return False
+
+    hasher = RecordingHasher()
+    authenticator = CredentialAuthenticator(uow_factory=uow_factory, hasher=hasher)
+
+    # Unknown identifier still spends a verify.
+    assert await authenticator.authenticate_local("ghost", "pw") is None
+    assert len(hasher.calls) == 1
+    assert hasher.calls[0] == CredentialAuthenticator._DUMMY_HASH
+
+    # Register a user, then ban: inactive path must also verify.
+    result = await RegisterLocalUser(identity_ctx)(
+        username="tim", email="tim@example.com", password="password-123"
+    )
+    await BanUser(identity_ctx)(user_id=result.subject.id, reason="x")
+    assert await authenticator.authenticate_local("tim", "pw") is None
+    assert len(hasher.calls) == 2
+    assert hasher.calls[1] == CredentialAuthenticator._DUMMY_HASH
+
+    # Missing credential path verifies too.
+    from inc.capabilities.identity.models import IdentityPasswordCredential
+
+    async with uow_factory() as uow:
+        await uow.session.execute(
+            IdentityPasswordCredential.__table__.delete().where(
+                IdentityPasswordCredential.user_id == uuid.UUID(result.subject.id)
+            )
+        )
+        await uow.commit()
+    await UnbanUser(identity_ctx)(user_id=result.subject.id)
+    assert await authenticator.authenticate_local("tim", "pw") is None
+    assert len(hasher.calls) == 3
+    assert hasher.calls[2] == CredentialAuthenticator._DUMMY_HASH

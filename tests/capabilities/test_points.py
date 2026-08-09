@@ -18,6 +18,7 @@ from inc.capabilities.points.commands import (
     CommandContext,
     CreditPoints,
     DebitPoints,
+    ExpireBuckets,
     FreezePointsAccount,
     OpenPointsAccount,
     RebuildBalance,
@@ -25,7 +26,7 @@ from inc.capabilities.points.commands import (
 )
 from inc.capabilities.points.diagnostics import PointsDiagnostics
 from inc.capabilities.points.events import POINTS_EVENT_SCHEMAS
-from inc.capabilities.points.models import PointsLedgerEntry, PointsProgram
+from inc.capabilities.points.models import PointsBucket, PointsProgram
 from inc.capabilities.points.queries import PointsQueries
 from inc.capabilities.points.schemas import AdjustInput, CreditDebitInput, ReverseInput
 from inc.kernel.db import UoWFactory
@@ -34,6 +35,7 @@ from inc.kernel.events import EventSchemaRegistry, OutboxWriter
 
 REWARD_KEY = "daily_check_in.reward"
 PURCHASE_KEY = "purchase.completed.credit"
+EXPIRING_KEY = "invite.reward"
 
 
 def make_reward_spec() -> PointBehaviorSpec:
@@ -60,11 +62,24 @@ def make_purchase_spec() -> PointBehaviorSpec:
     )
 
 
+def make_expiring_spec() -> PointBehaviorSpec:
+    return PointBehaviorSpec(
+        key=EXPIRING_KEY,
+        version="1",
+        program_key="default",
+        direction="credit",
+        fixed_amount=100,
+        expiration_days=30,
+        allowed_source_types=("system", "payment"),
+    )
+
+
 @pytest.fixture
 def behaviors() -> PointBehaviorRegistry:
     registry = PointBehaviorRegistry()
     registry.register(make_reward_spec())
     registry.register(make_purchase_spec())
+    registry.register(make_expiring_spec())
     return registry
 
 
@@ -73,6 +88,9 @@ def schema_registry() -> EventSchemaRegistry:
     registry = EventSchemaRegistry()
     for key, schema in POINTS_EVENT_SCHEMAS.items():
         registry.register(key, schema)
+    from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
+
+    registry.register(AUDIT_EVENT_KEY, AuditEntryRecorded)
     return registry
 
 
@@ -148,6 +166,20 @@ async def test_open_account_creates_zero_balance_and_is_idempotent(
     assert fetched.balance == 0
 
 
+async def test_open_account_creates_single_perpetual_bucket(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory
+) -> None:
+    balance = await open_account(ctx)
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    assert len(rows) == 1
+    bucket = rows[0]
+    assert bucket.bucket_type == "perpetual"
+    assert bucket.expires_at is None and bucket.expiration_identity is None
+    assert bucket.amount == 0
+    assert balance.account_id
+
+
 async def test_unknown_behavior_is_validation_error(ctx: CommandContext, program: None) -> None:
     with pytest.raises(KernelError) as excinfo:
         await CreditPoints(ctx)("ghost.reward.v1", credit_input())
@@ -208,6 +240,132 @@ async def test_fixed_amount_and_source_type_enforced(ctx: CommandContext, progra
             credit_input(amount=100, source_type="content", idempotency_key="k2"),
         )
     assert excinfo.value.code == "points.source_type_not_allowed"
+
+
+# --- buckets --------------------------------------------------------------
+
+
+async def test_perpetual_credit_goes_to_perpetual_bucket(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory, queries: PointsQueries
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(REWARD_KEY, credit_input())
+    await CreditPoints(ctx)(
+        PURCHASE_KEY,
+        credit_input(amount=50, source_type="payment", source_id="pay-1", idempotency_key="k2"),
+    )
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].bucket_type == "perpetual"
+    assert rows[0].amount == 60
+    balance = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert balance.balance == 60
+
+
+async def test_expiring_credit_creates_expiring_bucket(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    assert len(rows) == 2
+    expiring = next(r for r in rows if r.bucket_type == "expiring")
+    assert expiring.expiration_identity == EXPIRING_KEY
+    assert expiring.expires_at is not None
+    assert expiring.amount == 100
+
+
+async def test_credits_share_expiring_bucket_when_same_identity_and_expiry(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-2", idempotency_key="k4"),
+    )
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    expiring = [r for r in rows if r.bucket_type == "expiring"]
+    assert len(expiring) == 1
+    assert expiring[0].amount == 200
+
+
+async def test_debit_consumes_expiring_before_perpetual(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory, queries: PointsQueries
+) -> None:
+    """FIFO: expiring points are consumed before perpetual points."""
+    await open_account(ctx)
+    await CreditPoints(ctx)(REWARD_KEY, credit_input())  # perpetual +10
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    spend_key = _debit_spec(ctx, "spend")
+    await DebitPoints(ctx)(spend_key, credit_input(amount=50, idempotency_key="spend-1"))
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    buckets = {r.bucket_type: r.amount for r in rows}
+    assert buckets["expiring"] == 50
+    assert buckets["perpetual"] == 10
+    balance = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert balance.balance == 60
+
+
+async def test_debit_consumes_earliest_expiry_first(
+    ctx: CommandContext, program: None, clock: Any, uow_factory: UoWFactory
+) -> None:
+    """With two expiring buckets, the earliest expiry is consumed first."""
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    clock.advance(timedelta(days=5))
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-2", idempotency_key="k4"),
+    )
+    spend_key = _debit_spec(ctx, "spend")
+    await DebitPoints(ctx)(spend_key, credit_input(amount=130, idempotency_key="spend-1"))
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    expiring = sorted((r for r in rows if r.bucket_type == "expiring"), key=lambda r: r.expires_at)
+    assert [r.amount for r in expiring] == [0, 70]  # earliest expired first
+
+
+async def test_debit_records_allocations(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory, queries: PointsQueries
+) -> None:
+    from inc.capabilities.points.models import PointsDebitAllocation
+
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    spend_key = _debit_spec(ctx, "spend")
+    debit = await DebitPoints(ctx)(spend_key, credit_input(amount=30, idempotency_key="spend-1"))
+    async with uow_factory() as uow:
+        allocs = (await uow.session.execute(select(PointsDebitAllocation))).scalars().all()
+    assert len(allocs) == 1
+    assert allocs[0].entry_id == uuid.UUID(debit.id)
+    assert allocs[0].amount == 30
+    fetched = await queries.get_entry(uuid.UUID(debit.id))
+    assert fetched is not None and fetched.allocations == [fetched.allocations[0]]
+    assert fetched.allocations[0].amount == 30
 
 
 # --- debit / concurrency --------------------------------------------------
@@ -308,6 +466,25 @@ async def test_reversal_persists_fact_even_into_debt(
             ReverseInput(reason="no", idempotency_key="rev-3"),
         )
     assert excinfo.value.code == "points.reversal_of_reversal"
+
+
+async def test_reversal_of_debit_restores_original_buckets(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    spend_key = _debit_spec(ctx, "spend")
+    debit = await DebitPoints(ctx)(spend_key, credit_input(amount=30, idempotency_key="spend-1"))
+    await ReverseLedgerEntry(ctx)(
+        uuid.UUID(debit.id), ReverseInput(reason="undo", idempotency_key="rev-1")
+    )
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    expiring = next(r for r in rows if r.bucket_type == "expiring")
+    assert expiring.amount == 100  # restored to the same expiring bucket
 
 
 async def test_debt_state_blocks_ordinary_debits(
@@ -420,17 +597,124 @@ async def test_idempotency_key_cannot_be_reused_across_types(
     assert excinfo.value.code == "points.idempotency_mismatch"
 
 
-async def _find_entry(ctx: CommandContext, amount: int) -> Any:
-    async with ctx.uow_factory() as uow:
-        return (
-            (
-                await uow.session.execute(
-                    select(PointsLedgerEntry).where(PointsLedgerEntry.amount == amount)
-                )
-            )
-            .scalars()
-            .first()
-        )
+# --- expiration -----------------------------------------------------------
+
+
+async def test_expire_buckets_zeroes_due_bucket_and_records_entry(
+    ctx: CommandContext, program: None, clock: Any, uow_factory: UoWFactory, queries: PointsQueries
+) -> None:
+    from inc.capabilities.points.models import PointsDebitAllocation
+
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    clock.advance(timedelta(days=31))
+    entries = await ExpireBuckets(ctx)()
+    assert len(entries) == 1
+    assert entries[0].entry_type == "expiration"
+    assert entries[0].amount == -100
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    expiring = next(r for r in rows if r.bucket_type == "expiring")
+    assert expiring.amount == 0
+    async with uow_factory() as uow:
+        allocs = (await uow.session.execute(select(PointsDebitAllocation))).scalars().all()
+    assert len(allocs) == 1
+    assert allocs[0].amount == 100
+    balance = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert balance.balance == 0
+
+
+async def test_expire_buckets_is_idempotent_and_skips_future_buckets(
+    ctx: CommandContext, program: None, clock: Any
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    clock.advance(timedelta(days=31))
+    first = await ExpireBuckets(ctx)()
+    second = await ExpireBuckets(ctx)()
+    assert len(first) == 1
+    assert second == []
+
+
+async def test_expire_sweeps_multiple_due_buckets_of_one_account(
+    ctx: CommandContext,
+    program: None,
+    clock: Any,
+    uow_factory: UoWFactory,
+    queries: PointsQueries,
+) -> None:
+    """One sweep must zero every due bucket of an account, not just the first."""
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    clock.advance(timedelta(days=1))
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-2", idempotency_key="k4"),
+    )
+    clock.advance(timedelta(days=31))
+    entries = await ExpireBuckets(ctx)()
+    assert len(entries) == 2
+    assert sorted(e.amount for e in entries) == [-100, -100]
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    expiring = [r for r in rows if r.bucket_type == "expiring"]
+    assert all(r.amount == 0 for r in expiring)
+    balance = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert balance.balance == 0
+
+
+async def test_expire_does_not_touch_perpetual_or_future_buckets(
+    ctx: CommandContext, program: None, clock: Any, uow_factory: UoWFactory
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(REWARD_KEY, credit_input())
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    clock.advance(timedelta(days=29))
+    assert await ExpireBuckets(ctx)() == []
+    clock.advance(timedelta(days=2))
+    entries = await ExpireBuckets(ctx)()
+    assert len(entries) == 1
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    buckets = {r.bucket_type: r.amount for r in rows}
+    assert buckets["perpetual"] == 10
+    assert buckets["expiring"] == 0
+
+
+async def test_reversal_of_expiration_entry_restores_expired_bucket(
+    ctx: CommandContext, program: None, clock: Any, uow_factory: UoWFactory
+) -> None:
+    await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    clock.advance(timedelta(days=31))
+    entries = await ExpireBuckets(ctx)()
+    # rewind so the reversal happens "before" expiry check, then restore
+    await ReverseLedgerEntry(ctx)(
+        uuid.UUID(entries[0].id), ReverseInput(reason="ops fix", idempotency_key="rev-1")
+    )
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    expiring = next(r for r in rows if r.bucket_type == "expiring")
+    assert expiring.amount == 100
 
 
 # --- admin operations -----------------------------------------------------
@@ -456,12 +740,34 @@ async def test_adjust_requires_permission_and_reason(
             AdjustInput(
                 subject_type="identity",
                 subject_id="user-1",
+                program_key="default",
                 amount=50,
                 reason="x",
                 idempotency_key="a1",
             )
         )
     assert excinfo.value.code == "points.forbidden"
+
+
+async def test_positive_adjustment_lands_in_perpetual_bucket(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory
+) -> None:
+    await open_account(ctx)
+    await AdjustPoints(ctx)(
+        AdjustInput(
+            subject_type="identity",
+            subject_id="user-1",
+            program_key="default",
+            amount=50,
+            reason="x",
+            idempotency_key="a1",
+        )
+    )
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(PointsBucket))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].bucket_type == "perpetual"
+    assert rows[0].amount == 50
 
 
 async def test_rebuild_balance_dry_run_then_fix(
@@ -496,6 +802,61 @@ async def test_rebuild_balance_dry_run_then_fix(
     assert fetched.balance == 10
 
 
+async def test_rebuild_repairs_bucket_drift(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory, queries: PointsQueries
+) -> None:
+    balance = await open_account(ctx)
+    await CreditPoints(ctx)(
+        EXPIRING_KEY,
+        credit_input(amount=100, source_type="system", source_id="inv-1", idempotency_key="k3"),
+    )
+    async with uow_factory() as uow:
+        row = (
+            (
+                await uow.session.execute(
+                    select(PointsBucket).where(PointsBucket.bucket_type == "expiring")
+                )
+            )
+            .scalars()
+            .first()
+        )
+        row.amount = 7
+        row.version += 1
+        await uow.commit()
+    report = await RebuildBalance(ctx)(uuid.UUID(balance.account_id), dry_run=True)
+    assert report["match"] is False
+    report = await RebuildBalance(ctx)(uuid.UUID(balance.account_id), dry_run=False)
+    assert report["match"] is True
+    fetched = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert fetched.balance == 100
+
+
+async def test_rebuild_reports_debt_account_consistent(
+    ctx: CommandContext, program: None, uow_factory: UoWFactory, queries: PointsQueries
+) -> None:
+    """A debt account (negative balance, zero buckets) is a consistent state."""
+    balance = await open_account(ctx)
+    purchase = await CreditPoints(ctx)(
+        PURCHASE_KEY,
+        credit_input(amount=100, source_type="payment", source_id="pay-1", idempotency_key="k3"),
+    )
+    spend_key = _debit_spec(ctx, "spend")
+    await DebitPoints(ctx)(spend_key, credit_input(amount=40, idempotency_key="spend-1"))
+    await ReverseLedgerEntry(ctx)(
+        uuid.UUID(purchase.id), ReverseInput(reason="refund", idempotency_key="rev-1")
+    )
+    fetched = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert fetched.balance == -40 and fetched.state == "debt"
+    report = await RebuildBalance(ctx)(uuid.UUID(balance.account_id), dry_run=True)
+    assert report["match"] is True
+    report = await RebuildBalance(ctx)(uuid.UUID(balance.account_id), dry_run=False)
+    assert report["match"] is True
+
+
 async def test_freeze_blocks_credit(ctx: CommandContext, program: None) -> None:
     balance = await open_account(ctx)
     await FreezePointsAccount(ctx)(
@@ -516,6 +877,7 @@ async def test_diagnostics_report_only(
     program: None,
     uow_factory: UoWFactory,
     behaviors: PointBehaviorRegistry,
+    clock: Any,
 ) -> None:
     from inc.capabilities.points.models import BehaviorDefinitionData, PointsBehaviorDefinition
 
@@ -531,9 +893,11 @@ async def test_diagnostics_report_only(
                 )
             )
         await uow.commit()
-    diagnostics = PointsDiagnostics(uow_factory=uow_factory, behaviors=behaviors)
+    diagnostics = PointsDiagnostics(uow_factory=uow_factory, behaviors=behaviors, clock=clock)
     results = await diagnostics.run()
     codes = {r.code: r.status.value for r in results}
     assert codes["points.balance_mismatch"] == "ok"
+    assert codes["points.bucket_mismatch"] == "ok"
     assert codes["points.negative_outside_debt"] == "ok"
+    assert codes["points.buckets_overdue"] == "ok"
     assert codes["points.behavior_drift"] == "ok"

@@ -1,4 +1,5 @@
-"""Points capability: programs, accounts, immutable ledger and behaviors.
+"""Points capability: programs, accounts, immutable ledger, buckets and
+behaviors.
 
 Contract source: context/spec/capabilities/points.md.
 
@@ -12,12 +13,16 @@ from inc.capabilities.points.behaviors import (
     PointBehaviorRegistry,
     PointBehaviorSpec,
 )
-from inc.capabilities.points.commands import CommandContext
+from inc.capabilities.points.commands import (
+    CommandContext,
+    ExpireBuckets,
+)
 from inc.capabilities.points.diagnostics import PointsDiagnostics
 from inc.capabilities.points.queries import PointsQueries
 
 __all__ = [
     "CommandContext",
+    "ExpireBuckets",
     "PointBehaviorRegistry",
     "PointBehaviorSpec",
     "PointsDiagnostics",

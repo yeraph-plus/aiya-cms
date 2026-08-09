@@ -87,6 +87,13 @@ def test_permission_registry_validation(permissions: PermissionRegistry) -> None
         permissions.register("content.new.v1", owner="content")
 
 
+def test_permission_key_rejects_trailing_newline(permissions: PermissionRegistry) -> None:
+    """Trailing newline must not slip past the dotted-key regex (`$`-anchored
+    `.match()` accepted `foo.bar\n`); use fullmatch so control chars fail."""
+    with pytest.raises(ValueError):
+        permissions.register("content.publish\n", owner="content")
+
+
 async def test_role_lifecycle_and_protected_system_role(
     access_ctx: CommandContext,
 ) -> None:
@@ -137,6 +144,53 @@ async def test_default_deny_and_own_scope(
     assert not (await authorizer.decide(banned, "content.publish")).allowed
     anonymous = Principal(subject_id="", status="anonymous")
     assert not (await authorizer.decide(anonymous, "content.publish")).allowed
+
+
+async def test_own_scoped_grant_does_not_satisfy_global_scope(
+    access_ctx: CommandContext,
+    uow_factory: UoWFactory,
+    clock: Any,
+) -> None:
+    role = await CreateRole(access_ctx)(name="SelfPublisher", slug="self_publisher")
+    await ReplaceRoleCapabilities(access_ctx)(role_id=role.id, capability_keys=["content.publish"])
+    await AssignRoleToSubject(access_ctx)(
+        subject_type="identity",
+        subject_id="u-1",
+        role_id=role.id,
+        scope="own",
+    )
+    authorizer = AuthorizeService(uow_factory=uow_factory, clock=clock)
+    principal = Principal(subject_id="u-1", status="active")
+
+    # A grant scoped "own" must not satisfy a global-scope request.
+    global_decision = await authorizer.decide(principal, "content.publish", scope="global")
+    assert not global_decision.allowed
+    assert global_decision.reason == "deny.scope"
+
+    # The same grant does satisfy an own-scope request.
+    own_decision = await authorizer.decide(principal, "content.publish", scope="own")
+    assert own_decision.allowed
+    assert own_decision.reason == "allow.own"
+
+
+async def test_global_scoped_grant_satisfies_own_scope(
+    access_ctx: CommandContext,
+    uow_factory: UoWFactory,
+    clock: Any,
+) -> None:
+    role = await CreateRole(access_ctx)(name="GlobalPublisher", slug="global_publisher")
+    await ReplaceRoleCapabilities(access_ctx)(role_id=role.id, capability_keys=["content.publish"])
+    await AssignRoleToSubject(access_ctx)(
+        subject_type="identity",
+        subject_id="u-1",
+        role_id=role.id,
+        scope="global",
+    )
+    authorizer = AuthorizeService(uow_factory=uow_factory, clock=clock)
+    principal = Principal(subject_id="u-1", status="active")
+
+    assert (await authorizer.decide(principal, "content.publish", scope="global")).allowed
+    assert (await authorizer.decide(principal, "content.publish", scope="own")).allowed
 
 
 async def test_revocation_takes_effect_immediately(
@@ -190,6 +244,26 @@ async def test_bootstrap_administrator_is_idempotent(
     with pytest.raises(KernelError) as excinfo:
         await DeleteRole(access_ctx)(role_id=first.id)
     assert excinfo.value.code == "access.conflict"
+
+
+async def test_bootstrap_administrator_enforces_single_admin(
+    access_ctx: CommandContext,
+    uow_factory: UoWFactory,
+) -> None:
+    from inc.capabilities.access.models import AccessSubjectRole
+
+    first = await BootstrapAdministrator(access_ctx)(subject_type="identity", subject_id="u-1")
+    # same subject is idempotent
+    again = await BootstrapAdministrator(access_ctx)(subject_type="identity", subject_id="u-1")
+    assert again.id == first.id
+    # a second, different subject must be refused
+    with pytest.raises(KernelError) as excinfo:
+        await BootstrapAdministrator(access_ctx)(subject_type="identity", subject_id="u-2")
+    assert excinfo.value.code == "access.administrator_exists"
+
+    async with uow_factory() as uow:
+        grants = (await uow.session.execute(select(AccessSubjectRole))).scalars().all()
+    assert len(grants) == 1
 
 
 async def test_diagnostics_report_unknown_keys(

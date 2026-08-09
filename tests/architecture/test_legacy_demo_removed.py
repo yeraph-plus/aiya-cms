@@ -66,12 +66,15 @@ def test_old_api_binding_files_are_gone() -> None:
 
 def test_root_cli_and_settings_facades_are_gone() -> None:
     # the old demo's auto-registering root facades must not return; the new
-    # ops CLI is an explicit, side-effect-free entry (python -m inc.cli)
+    # ops CLI is an explicit, side-effect-free entry (python -m inc.cli).
+    # bootstrap is a single one-shot `install` command: create-admin must not
+    # exist as a separate flat admin operation (access.md §4/§9).
     assert not (INC_ROOT / "setting.py").exists()
     cli = INC_ROOT / "cli.py"
     if cli.exists():
         source = cli.read_text(encoding="utf-8")
-        assert "create-admin" in source
+        assert "create-admin" not in source
+        assert '"install"' in source
         assert 'if __name__ == "__main__":' in source
 
 

@@ -50,7 +50,21 @@ class UUIDPrimaryKeyMixin:
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_uuid7)
 
     def __eq__(self, other: Any) -> bool:
-        return isinstance(other, type(self)) and self.id == other.id
+        # Unsaved instances have id is None until flush; only compare equal by
+        # identity so two distinct transient rows never collide. Compare against
+        # the mixin type, not type(self), so equality stays symmetric across
+        # subclasses, and return NotImplemented for foreign types so Python can
+        # try the reflected comparison.
+        if not isinstance(other, Base):
+            return NotImplemented
+        self_id = getattr(self, "id", None)
+        other_id = getattr(other, "id", None)
+        if self_id is None or other_id is None:
+            return self is other
+        return bool(self_id == other_id)
 
     def __hash__(self) -> int:
-        return hash(self.id)
+        # id changes from None to a UUID after flush; keep the hash stable for
+        # that transition so sets/dicts keyed before persist keep working.
+        value = getattr(self, "id", None)
+        return hash(value) if value is not None else id(self)

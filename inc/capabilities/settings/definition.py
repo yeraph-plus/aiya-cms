@@ -19,5 +19,6 @@ spec = CapabilitySpec(
         "settings.general.update",
         "settings.seo.update",
         "settings.notification.update",
+        "settings.entitlements.update",
     ),
 )

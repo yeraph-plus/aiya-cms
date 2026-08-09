@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SubjectDTO(BaseModel):
@@ -55,7 +55,7 @@ class ChallengeDTO(BaseModel):
     expires_at: datetime
     attempts: int = 0
     max_attempts: int = 5
-    token: str | None = None
+    token: str | None = Field(default=None, repr=False)
 
 
 class RegistrationResult(BaseModel):

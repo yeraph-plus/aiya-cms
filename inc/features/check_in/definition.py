@@ -23,5 +23,6 @@ behavior_specs = (
         fixed_amount=10,
         daily_limit=1,
         business_timezone="Asia/Shanghai",
+        expiration_days=30,
     ),
 )

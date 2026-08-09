@@ -330,7 +330,12 @@ class RevokeRoleFromSubject:
 
 
 class BootstrapAdministrator:
-    """Idempotent ops-only bootstrap of the system administrator role."""
+    """Ops-only bootstrap that enforces a single system administrator.
+
+    ``install`` is the only caller. A target subject that already holds the
+    administrator role is idempotent; binding a second, different subject is
+    refused so the system can never end up with more than one super admin.
+    """
 
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
@@ -346,7 +351,9 @@ class BootstrapAdministrator:
             role = (
                 (
                     await uow.session.execute(
-                        select(AccessRole).where(AccessRole.slug == "administrator")
+                        select(AccessRole)
+                        .where(AccessRole.slug == "administrator")
+                        .with_for_update()
                     )
                 )
                 .scalars()
@@ -361,7 +368,55 @@ class BootstrapAdministrator:
                     system=True,
                 )
                 uow.session.add(role)
-                await uow.session.flush()
+                try:
+                    await uow.session.flush()
+                except IntegrityError:
+                    # A concurrent bootstrap created the administrator role
+                    # first; reload it under the row lock and continue.
+                    await uow.rollback()
+                    role = (
+                        (
+                            await uow.session.execute(
+                                select(AccessRole)
+                                .where(AccessRole.slug == "administrator")
+                                .with_for_update()
+                            )
+                        )
+                        .scalars()
+                        .first()
+                    )
+                    if role is None:
+                        raise
+                    created = False
+
+            existing_grant = (
+                (
+                    await uow.session.execute(
+                        select(AccessSubjectRole).where(AccessSubjectRole.role_id == role.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            target_holds = [
+                grant
+                for grant in existing_grant
+                if grant.subject_type == subject_type and grant.subject_id == subject_id
+            ]
+            other_holds = [
+                grant
+                for grant in existing_grant
+                if not (grant.subject_type == subject_type and grant.subject_id == subject_id)
+            ]
+            if other_holds:
+                raise KernelError(
+                    code="access.administrator_exists",
+                    category=ErrorCategory.CONFLICT,
+                    message=("an administrator already exists; only one super admin is allowed"),
+                )
+            if target_holds:
+                await uow.commit()
+                return _to_role(role, list(self._ctx.permissions.keys()))
 
             existing_keys = {
                 row.capability_key
@@ -381,37 +436,29 @@ class BootstrapAdministrator:
                 if key not in existing_keys:
                     uow.session.add(AccessRoleCapability(role_id=role.id, capability_key=key))
 
-            grant = (
-                (
-                    await uow.session.execute(
-                        select(AccessSubjectRole).where(
-                            AccessSubjectRole.subject_type == subject_type,
-                            AccessSubjectRole.subject_id == subject_id,
-                            AccessSubjectRole.role_id == role.id,
-                        )
-                    )
+            uow.session.add(
+                AccessSubjectRole(
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                    role_id=role.id,
+                    scope="global",
                 )
-                .scalars()
-                .first()
             )
-            if grant is None:
-                uow.session.add(
-                    AccessSubjectRole(
-                        subject_type=subject_type,
-                        subject_id=subject_id,
-                        role_id=role.id,
-                        scope="global",
-                    )
-                )
 
-            if created:
-                await _append_audit(
-                    uow,
-                    self._ctx,
-                    action="access.bootstrap.administrator",
-                    target_type="role",
-                    target_id=str(role.id),
-                    details={"subject": f"{subject_type}:{subject_id}"},
-                )
+            # Reach this point only when a new grant is actually created
+            # (the idempotent target_holds path returns earlier). Audit the
+            # security-sensitive grant regardless of whether the role was
+            # created or already existed.
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.bootstrap.administrator",
+                target_type="role",
+                target_id=str(role.id),
+                details={
+                    "subject": f"{subject_type}:{subject_id}",
+                    "role_created": created,
+                },
+            )
             await uow.commit()
             return _to_role(role, list(self._ctx.permissions.keys()))

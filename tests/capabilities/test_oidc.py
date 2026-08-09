@@ -32,6 +32,7 @@ from inc.capabilities.oidc_provider.keys import (
 )
 from inc.capabilities.oidc_provider.models import (
     OidcRefreshFamily,
+    StringList,
 )
 from inc.capabilities.oidc_provider.schemas import ClientRegistrationResult, OidcError
 from inc.capabilities.oidc_provider.services import (
@@ -45,8 +46,8 @@ from inc.capabilities.oidc_provider.services import (
 from inc.kernel.db import UoWFactory
 from inc.kernel.events import EventSchemaRegistry, OutboxWriter
 
-ISSUER = "http://localhost:8000"
-REDIRECT_URI = "http://localhost:3000/cb"
+ISSUER = "http://127.0.0.1:8000"
+REDIRECT_URI = "http://127.0.0.1:3000/cb"
 SCOPES = "openid profile email offline_access"
 CLIENT_SECRET = "confidential-secret-1"
 
@@ -152,7 +153,7 @@ async def register_clients(
         name="Admin SPA",
         client_type="public",
         redirect_uris=[REDIRECT_URI],
-        post_logout_redirect_uris=["http://localhost:3000/logged-out"],
+        post_logout_redirect_uris=["http://127.0.0.1:3000/logged-out"],
         allowed_scopes=["openid", "profile", "email", "offline_access"],
         allow_refresh=True,
         client_id="spa",
@@ -160,7 +161,7 @@ async def register_clients(
     api = await RegisterClient(client_ctx)(
         name="Confidential API",
         client_type="confidential",
-        redirect_uris=["http://localhost:4000/cb"],
+        redirect_uris=["http://127.0.0.1:4000/cb"],
         allowed_scopes=["openid", "profile", "email", "offline_access"],
         client_id="api",
     )
@@ -292,7 +293,7 @@ async def test_redirect_uri_must_be_registered_exactly(
     with pytest.raises(OidcError) as excinfo:
         await AuthorizationService(ctx).issue_code(
             client_id="spa",
-            redirect_uri="http://localhost:3000/EVIL",
+            redirect_uri="http://127.0.0.1:3000/EVIL",
             response_type="code",
             scope=SCOPES,
             state="st",
@@ -304,6 +305,44 @@ async def test_redirect_uri_must_be_registered_exactly(
         )
     assert excinfo.value.code == "invalid_request"
     assert "redirect" in (excinfo.value.description or "")
+
+
+async def test_register_client_rejects_malformed_redirect_uris(
+    client_ctx: ClientCommandContext,
+) -> None:
+    """Redirect URIs must be exact https URLs (or http loopback), never
+    hostless https, wildcards, fragments or loopback-lookalike hosts."""
+
+    bad = [
+        "https://",  # no host
+        "https:///path",  # no netloc
+        "http://localhost.evil.com/cb",  # not loopback
+        "http://localhost@evil.com/cb",  # userinfo tricks
+        "https://example.com/cb*",  # wildcard
+        "https://example.com/cb#frag",  # fragment
+    ]
+    for uri in bad:
+        with pytest.raises(OidcError) as excinfo:
+            await RegisterClient(client_ctx)(
+                name="Bad",
+                client_type="public",
+                redirect_uris=[uri],
+            )
+        assert excinfo.value.code == "invalid_request", f"accepted {uri!r}"
+
+    good = [
+        "https://example.com/cb",
+        "http://localhost:3000/cb",
+        "http://127.0.0.1:3000/cb",
+    ]
+    for index, uri in enumerate(good):
+        result = await RegisterClient(client_ctx)(
+            name="Good",
+            client_type="public",
+            redirect_uris=[uri],
+            client_id=f"good-{index}",
+        )
+        assert uri in result.client.redirect_uris
 
 
 async def test_pkce_downgrade_attempts_are_rejected(
@@ -429,7 +468,7 @@ async def test_code_binding_to_client_and_redirect(
             ctx,
             client_id="spa",
             code=raw_code,
-            redirect_uri="http://localhost:3000/other",
+            redirect_uri="http://127.0.0.1:3000/other",
             verifier=verifier,
         )
 
@@ -484,7 +523,7 @@ async def test_confidential_client_secret_authentication(
     verifier, challenge = _pkce_pair()
     code = await AuthorizationService(ctx).issue_code(
         client_id="api",
-        redirect_uri="http://localhost:4000/cb",
+        redirect_uri="http://127.0.0.1:4000/cb",
         response_type="code",
         scope="openid profile",
         state="st",
@@ -500,7 +539,7 @@ async def test_confidential_client_secret_authentication(
             ctx,
             client_id="api",
             code=raw_code,
-            redirect_uri="http://localhost:4000/cb",
+            redirect_uri="http://127.0.0.1:4000/cb",
             verifier=verifier,
             client_secret="wrong-secret",
         )
@@ -508,7 +547,7 @@ async def test_confidential_client_secret_authentication(
         ctx,
         client_id="api",
         code=raw_code,
-        redirect_uri="http://localhost:4000/cb",
+        redirect_uri="http://127.0.0.1:4000/cb",
         verifier=verifier,
         client_secret=api.client_secret,
     )
@@ -588,7 +627,7 @@ async def test_logout_requires_hint_for_redirect_and_exact_match(
     with pytest.raises(OidcError) as excinfo:
         await LogoutService(ctx).logout(
             id_token_hint=None,
-            post_logout_redirect_uri="http://localhost:3000/logged-out",
+            post_logout_redirect_uri="http://127.0.0.1:3000/logged-out",
             session_cookie=None,
         )
     assert excinfo.value.code == "invalid_request"
@@ -596,16 +635,16 @@ async def test_logout_requires_hint_for_redirect_and_exact_match(
     with pytest.raises(OidcError):
         await LogoutService(ctx).logout(
             id_token_hint=tokens["id_token"],
-            post_logout_redirect_uri="http://localhost:3000/EVIL",
+            post_logout_redirect_uri="http://127.0.0.1:3000/EVIL",
             session_cookie=None,
         )
 
     redirect = await LogoutService(ctx).logout(
         id_token_hint=tokens["id_token"],
-        post_logout_redirect_uri="http://localhost:3000/logged-out",
+        post_logout_redirect_uri="http://127.0.0.1:3000/logged-out",
         session_cookie=None,
     )
-    assert redirect == "http://localhost:3000/logged-out"
+    assert redirect == "http://127.0.0.1:3000/logged-out"
 
 
 async def test_security_event_revokes_sessions(
@@ -631,6 +670,37 @@ async def test_security_event_revokes_sessions(
         )
         await uow.commit()
     assert subscriber.revoked == [("u-1", "identity.user_banned.v1")]
+
+
+async def test_security_event_revokes_refresh_grants(
+    ctx: ServiceContext,
+    client_ctx: ClientCommandContext,
+    uow_factory: UoWFactory,
+    clock: Any,
+) -> None:
+    """Ban/password-change must stop refresh rotation, not just cookies."""
+
+    await register_clients(client_ctx)
+    tokens = await _authorize_and_exchange(ctx)
+    assert tokens["refresh_token"] is not None
+
+    from inc.capabilities.oidc_provider.sessions import OidcSessionRevoker
+
+    revoker = OidcSessionRevoker(uow_factory=uow_factory, clock=clock)
+    await revoker.revoke_subject_sessions("u-1", "identity.user_banned.v1")
+
+    # Families for the subject are revoked, so refresh is refused.
+    async with uow_factory() as uow:
+        families = (await uow.session.execute(select(OidcRefreshFamily))).scalars().all()
+        assert families
+        assert all(f.revoked_at is not None for f in families)
+
+    with pytest.raises(OidcError) as excinfo:
+        await TokenService(ctx).refresh(
+            client_id="spa",
+            refresh_token=tokens["refresh_token"],
+        )
+    assert excinfo.value.code == "invalid_grant"
 
 
 def _security_envelope(ctx: ServiceContext, key: str, subject: str) -> Any:
@@ -674,3 +744,162 @@ async def test_diagnostics_report_no_active_key_as_failed(
     assert any(
         r.code == "oidc.no_active_signing_key" and r.status.value == "failed" for r in results
     )
+
+
+async def test_unsupported_response_type_rejected(
+    ctx: ServiceContext,
+    client_ctx: ClientCommandContext,
+) -> None:
+    """response_type outside the server-supported set (e.g. implicit id_token)
+    must be rejected even if a client's registration lists it."""
+    from sqlalchemy import update
+
+    from inc.capabilities.oidc_provider.models import OidcClient
+    from inc.capabilities.oidc_provider.services import (
+        SUPPORTED_RESPONSE_TYPES,
+        AuthorizationService,
+    )
+
+    assert SUPPORTED_RESPONSE_TYPES == ("code",)
+    await RegisterClient(client_ctx)(
+        name="Implicit",
+        client_type="public",
+        redirect_uris=[REDIRECT_URI],
+        client_id="implicit-client",
+    )
+
+    async with ctx.uow_factory() as uow:
+        await uow.session.execute(
+            update(OidcClient)
+            .where(OidcClient.client_id == "implicit-client")
+            .values(response_types=StringList(items=["id_token", "code"]))
+        )
+        await uow.commit()
+
+    _, challenge = _pkce_pair()
+    with pytest.raises(OidcError) as excinfo:
+        await AuthorizationService(ctx).issue_code(
+            client_id="implicit-client",
+            redirect_uri=REDIRECT_URI,
+            response_type="id_token",
+            scope=SCOPES,
+            state="st",
+            nonce="n",
+            code_challenge=challenge,
+            code_challenge_method="S256",
+            subject_id="u-1",
+            session_handle=None,
+        )
+    assert excinfo.value.code == "unsupported_response_type"
+
+
+async def test_grant_type_enforced_for_exchange_and_refresh(
+    ctx: ServiceContext,
+    client_ctx: ClientCommandContext,
+) -> None:
+    """A client not registered for a grant type must not be able to use it,
+    even if it somehow obtained a code / refresh token."""
+    from sqlalchemy import update
+
+    from inc.capabilities.oidc_provider.models import OidcClient
+
+    await register_clients(client_ctx)
+
+    # A confidential client with refresh disabled.
+    no_refresh = await RegisterClient(client_ctx)(
+        name="No Refresh",
+        client_type="confidential",
+        redirect_uris=["https://app.example.com/cb"],
+        allowed_scopes=["openid", "profile", "email", "offline_access"],
+        allow_refresh=False,
+        client_id="no-refresh",
+    )
+
+    # Exchange is rejected when authorization_code grant is not registered.
+    async with ctx.uow_factory() as uow:
+        await uow.session.execute(
+            update(OidcClient)
+            .where(OidcClient.client_id == "no-refresh")
+            .values(grant_types=StringList(items=["refresh_token"]))
+        )
+        await uow.commit()
+
+    verifier, challenge = _pkce_pair()
+    code = await AuthorizationService(ctx).issue_code(
+        client_id="no-refresh",
+        redirect_uri="https://app.example.com/cb",
+        response_type="code",
+        scope=SCOPES,
+        state="st",
+        nonce="n",
+        code_challenge=challenge,
+        code_challenge_method="S256",
+        subject_id="u-1",
+        session_handle=None,
+    )
+    raw_code = code.split("code=")[1].split("&")[0]
+    with pytest.raises(OidcError) as excinfo:
+        await TokenService(ctx).exchange(
+            client_id="no-refresh",
+            code=raw_code,
+            redirect_uri="https://app.example.com/cb",
+            code_verifier=verifier,
+            client_secret=no_refresh.client_secret,
+        )
+    assert excinfo.value.code == "unauthorized_client"
+
+    # Refresh is rejected when the client is not registered for it.
+    tokens = await _authorize_and_exchange(ctx, client_id="spa")
+    assert tokens.get("refresh_token") is not None
+
+    async with ctx.uow_factory() as uow:
+        await uow.session.execute(
+            update(OidcClient)
+            .where(OidcClient.client_id == "spa")
+            .values(grant_types=StringList(items=["authorization_code"]))
+        )
+        await uow.commit()
+
+    with pytest.raises(OidcError) as excinfo:
+        await TokenService(ctx).refresh(
+            client_id="spa",
+            refresh_token=tokens["refresh_token"],
+        )
+    assert excinfo.value.code == "unauthorized_client"
+
+
+async def test_client_auth_method_is_required_and_never_defaults_to_none(
+    client_ctx: ClientCommandContext,
+) -> None:
+    """auth_method must be explicit at the boundary: a confidential client can
+    never silently degrade to unauthenticated (none) access."""
+
+    confidential = await RegisterClient(client_ctx)(
+        name="Confidential",
+        client_type="confidential",
+        redirect_uris=["https://app.example.com/cb"],
+    )
+    assert confidential.client.auth_method == "client_secret_basic"
+    assert confidential.client_secret is not None
+
+    public = await RegisterClient(client_ctx)(
+        name="Public",
+        client_type="public",
+        redirect_uris=["https://app.example.com/cb"],
+    )
+    assert public.client.auth_method == "none"
+    assert public.client_secret is None
+
+    from pydantic import ValidationError
+
+    from inc.capabilities.oidc_provider.schemas import ClientDTO
+
+    # The DTO no longer defaults to "none": omitting it is a loud failure.
+    with pytest.raises(ValidationError):
+        ClientDTO(
+            client_id="c-1",
+            client_type="confidential",
+            name="x",
+            redirect_uris=["https://app.example.com/cb"],
+            allowed_scopes=["openid"],
+        )

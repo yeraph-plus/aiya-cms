@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from inc.kernel.errors import ErrorCategory, KernelError
+from inc.kernel.security.redaction import redact
 
 _CATEGORY_STATUS = {
     ErrorCategory.VALIDATION: 422,
@@ -41,7 +42,8 @@ def error_body(
     if request_id is not None:
         body["request_id"] = request_id
     if details:
-        body["details"] = details
+        # KernelError.details may carry secrets; redact before exposing.
+        body["details"] = redact(details)
     return body
 
 
@@ -65,31 +67,58 @@ def kernel_error_response(request: Request, exc: KernelError) -> JSONResponse:
     return response
 
 
-def validation_error_response(request: Request, exc: RequestValidationError) -> JSONResponse:
+def _validation_errors(exc: RequestValidationError | ValidationError) -> list[str]:
     errors = []
     for item in exc.errors():
-        loc = ".".join(str(part) for part in item.get("loc", ()) if part != "body")
-        errors.append(f"{loc}: {item.get('msg', 'invalid')}")
+        parts = [str(p) for p in item.get("loc", ())]
+        if parts and parts[0] == "body":
+            parts = parts[1:]
+        loc = ".".join(parts)
+        # Derive client-safe text from the stable error type, never from the
+        # raw msg which can embed SQL fragments, file paths or provider
+        # payloads.
+        errors.append(f"{loc}: {_client_safe_type(item.get('type', 'invalid'))}")
+    return errors
+
+
+def _client_safe_type(error_type: str) -> str:
+    known = {
+        "missing": "required",
+        "string_too_long": "too long",
+        "string_too_short": "too short",
+        "string_pattern_mismatch": "invalid format",
+        "int_parsing": "invalid integer",
+        "bool_parsing": "invalid boolean",
+        "uuid_parsing": "invalid identifier",
+        "url_parsing": "invalid url",
+        "email": "invalid email",
+        "value_error": "invalid value",
+        "literal_error": "unsupported value",
+        "greater_than": "out of range",
+        "greater_than_equal": "out of range",
+        "less_than": "out of range",
+        "less_than_equal": "out of range",
+    }
+    return known.get(error_type, "invalid value")
+
+
+def validation_error_response(request: Request, exc: RequestValidationError) -> JSONResponse:
     return JSONResponse(
         status_code=422,
         content=error_body(
             code="kernel.validation_error",
-            message="; ".join(errors[:10]),
+            message="; ".join(_validation_errors(exc)[:10]),
             request_id=_request_id(request),
         ),
     )
 
 
 def pydantic_validation_response(request: Request, exc: ValidationError) -> JSONResponse:
-    errors = []
-    for item in exc.errors():
-        loc = ".".join(str(part) for part in item.get("loc", ()) if part != "body")
-        errors.append(f"{loc}: {item.get('msg', 'invalid')}")
     return JSONResponse(
         status_code=422,
         content=error_body(
             code="kernel.validation_error",
-            message="; ".join(errors[:10]),
+            message="; ".join(_validation_errors(exc)[:10]),
             request_id=_request_id(request),
         ),
     )

@@ -63,5 +63,6 @@ behavior_specs = (
         min_amount=1,
         max_amount=1_000_000,
         allowed_source_types=("payment",),
+        expiration_days=365,
     ),
 )

@@ -79,7 +79,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-content"])
 
     @router.get("/content", response_model=ContentPageDTO)
     async def list_content(
@@ -87,10 +87,11 @@ def build_router(
         size: int = Query(default=20, ge=1, le=100),
         type_name: str | None = None,
         status: str | None = None,
+        sort: str | None = Query(default=None, max_length=200),
         ctx: AppContext = Depends(require_capability("content.read")),
     ) -> ContentPageDTO:
         return await services.content_queries.list_contents(
-            page=page, size=size, type_name=type_name, status=status
+            page=page, size=size, type_name=type_name, status=status, sort=sort
         )
 
     @router.get("/content/{content_id}", response_model=ContentDTO)

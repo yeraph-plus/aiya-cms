@@ -60,7 +60,14 @@ def ctx(
         clock=clock,
         outbox=OutboxWriter(schema_registry, clock),
         groups=groups,
-        permissions=frozenset({"settings.read", "settings.seo.update", "settings.update"}),
+        permissions=frozenset(
+            {
+                "settings.read",
+                "settings.seo.update",
+                "settings.entitlements.update",
+                "settings.update",
+            }
+        ),
         actor_id="admin-1",
         trace_id="trace-1",
     )
@@ -209,6 +216,39 @@ async def test_update_requires_group_permission(
     assert excinfo.value.code == "settings.forbidden"
 
 
+async def test_settings_update_is_superset_of_group_updates(
+    uow_factory: UoWFactory,
+    clock: Any,
+    groups: SettingGroupRegistry,
+    schema_registry: EventSchemaRegistry,
+) -> None:
+    """An admin holding only `settings.update` must be able to update any
+    settings group; the declared access key is not dead weight."""
+    admin = CommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        outbox=OutboxWriter(schema_registry, clock),
+        groups=groups,
+        permissions=frozenset({"settings.update"}),
+    )
+    result = await UpdateSettingGroup(admin)(
+        "seo",
+        UpdateSettingGroupInput(
+            expected_version=None,
+            values={"site_name": "Superset Works", "default_description": "k"},
+        ),
+    )
+    assert result.values["site_name"] == "Superset Works"
+    result2 = await UpdateSettingGroup(admin)(
+        "general",
+        UpdateSettingGroupInput(
+            expected_version=None,
+            values={"site_tagline": "General Works", "maintenance_mode": False},
+        ),
+    )
+    assert result2.values["site_tagline"] == "General Works"
+
+
 async def test_reset_restores_defaults(ctx: CommandContext, queries: SettingsQueries) -> None:
     await UpdateSettingGroup(ctx)(
         "seo",
@@ -277,3 +317,152 @@ async def test_unknown_group_is_validation_error(ctx: CommandContext) -> None:
         )
     assert excinfo.value.code == "settings.unknown_group"
     assert excinfo.value.category.value == "validation"
+
+
+# --- entitlements group ----------------------------------------------------
+
+
+def test_entitlements_group_is_declared_public() -> None:
+    from inc.features.site_settings.definition import (
+        ENTITLEMENTS_GROUP_KEY,
+        build_site_setting_group_specs,
+    )
+
+    entitlements = next(
+        spec
+        for spec in build_site_setting_group_specs()
+        if spec.group_key == ENTITLEMENTS_GROUP_KEY
+    )
+    assert entitlements.update_permission == "settings.entitlements.update"
+    assert set(entitlements.public_fields) == {
+        "registration_reward",
+        "invite_reward",
+        "gift_quota",
+    }
+
+
+async def test_entitlements_defaults_readable_without_write(
+    queries: SettingsQueries, uow_factory: UoWFactory
+) -> None:
+    group = await queries.get_group("entitlements")
+    assert group.values == {"registration_reward": 0, "invite_reward": 0, "gift_quota": 0}
+    assert await _row_count(uow_factory) == 0
+
+
+async def test_entitlements_update_requires_group_permission(
+    ctx: CommandContext,
+    uow_factory: UoWFactory,
+    clock: Any,
+    groups: SettingGroupRegistry,
+    schema_registry: EventSchemaRegistry,
+) -> None:
+    restricted = CommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        outbox=OutboxWriter(schema_registry, clock),
+        groups=groups,
+        permissions=frozenset({"settings.read", "settings.seo.update"}),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        await UpdateSettingGroup(restricted)(
+            "entitlements",
+            UpdateSettingGroupInput(expected_version=1, values={"registration_reward": 50}),
+        )
+    assert excinfo.value.code == "settings.forbidden"
+
+
+async def test_entitlements_update_validates_values(
+    ctx: CommandContext, queries: SettingsQueries
+) -> None:
+    await UpdateSettingGroup(ctx)(
+        "entitlements",
+        UpdateSettingGroupInput(
+            expected_version=1,
+            values={"registration_reward": 50, "invite_reward": 20, "gift_quota": 100},
+        ),
+    )
+    group = await queries.get_group("entitlements")
+    assert group.values["registration_reward"] == 50
+    assert group.values["invite_reward"] == 20
+    assert group.values["gift_quota"] == 100
+
+
+async def test_entitlements_rejects_negative_and_unknown_fields(
+    ctx: CommandContext,
+) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        await UpdateSettingGroup(ctx)(
+            "entitlements",
+            UpdateSettingGroupInput(expected_version=1, values={"registration_reward": -5}),
+        )
+    with pytest.raises(ValidationError):
+        await UpdateSettingGroup(ctx)(
+            "entitlements",
+            UpdateSettingGroupInput(expected_version=1, values={"free_points": 1}),
+        )
+
+
+async def test_smtp_password_schema_masks_secret_in_repr(
+    uow_factory: UoWFactory,
+    clock: Any,
+    groups: SettingGroupRegistry,
+    schema_registry: EventSchemaRegistry,
+    queries: SettingsQueries,
+) -> None:
+    """The notification value schema must mask smtp_password in repr/str and
+    model_dump (SecretStr), while the persisted value keeps the real secret
+    so the SMTP adapter can still authenticate."""
+    from inc.features.site_settings.definition import NotificationValueSchema
+
+    schema = NotificationValueSchema(smtp_password="real-secret")
+    assert "real-secret" not in repr(schema)
+    assert "real-secret" not in str(schema)
+    dumped = schema.model_dump()
+    assert "real-secret" not in repr(dumped["smtp_password"])
+    assert dumped["smtp_password"].get_secret_value() == "real-secret"
+
+    # Update persists the real password (already covered by the public/filter
+    # test) and a subsequent read still yields the real value.
+    notification_ctx = CommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        outbox=OutboxWriter(schema_registry, clock),
+        groups=groups,
+        permissions=frozenset({"settings.notification.update", "settings.update"}),
+        actor_id="admin-1",
+    )
+    await UpdateSettingGroup(notification_ctx)(
+        "notification",
+        UpdateSettingGroupInput(
+            expected_version=None,
+            values={"smtp_host": "mail.example.com", "smtp_password": "real-secret"},
+        ),
+    )
+    group = await queries.get_group("notification")
+    assert group.values["smtp_password"] == "real-secret"
+
+
+async def test_uuid_field_roundtrip_is_json_compatible(
+    ctx: CommandContext, queries: SettingsQueries
+) -> None:
+    """Non-str schema fields (UUID) must be normalized to JSON-compatible
+    scalars on write, so a re-read yields the same str value and the stored
+    dict survives JSON serialization in the persistence layer."""
+    import uuid
+
+    asset_id = uuid.uuid4()
+    first = await UpdateSettingGroup(ctx)(
+        "seo",
+        UpdateSettingGroupInput(
+            expected_version=None,
+            values={"site_name": "Acme", "default_share_image_asset_id": str(asset_id)},
+        ),
+    )
+    assert first.values["default_share_image_asset_id"] == str(asset_id)
+
+    # The read-back value is a str (JSON-compatible), not a uuid.UUID object.
+    group = await queries.get_group("seo")
+    assert group.values["default_share_image_asset_id"] == str(asset_id)
+    assert isinstance(group.values["default_share_image_asset_id"], str)

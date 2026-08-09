@@ -11,11 +11,13 @@ key/value CRUD; unknown fields are rejected by the schema.
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
 
+from pydantic import SecretStr
 from sqlalchemy import select
 
 from inc.capabilities.settings.events import SETTINGS_EVENT_SCHEMAS
@@ -56,8 +58,18 @@ def _conflict(code: str, message: str) -> KernelError:
 
 
 def _require_permission(ctx: CommandContext, key: str) -> None:
-    if key not in ctx.permissions:
-        raise _forbidden("settings.forbidden", f"requires permission {key}")
+    """Exact-key membership, with ``settings.update`` as a superset of every
+    ``settings.<group>.update`` key (so a single admin grant can cover all
+    groups without per-group grants)."""
+    if key in ctx.permissions:
+        return
+    if (
+        key.endswith(".update")
+        and key.startswith("settings.")
+        and "settings.update" in ctx.permissions
+    ):
+        return
+    raise _forbidden("settings.forbidden", f"requires permission {key}")
 
 
 def _require_group(ctx: CommandContext, group_key: str) -> SettingGroupSpec:
@@ -80,7 +92,17 @@ def _ensure_utc(value: Any) -> Any:
 
 
 def _validate_values(spec: SettingGroupSpec, values: dict[str, Any]) -> dict[str, Any]:
-    return spec.value_schema.model_validate(values).model_dump(mode="json")
+    model = spec.value_schema.model_validate(values)
+    dumped = model.model_dump()
+    unwrapped = {
+        key: (value.get_secret_value() if isinstance(value, SecretStr) else value)
+        for key, value in dumped.items()
+    }
+    # Normalize to JSON-compatible scalars (UUID -> str, datetime -> iso) the
+    # way model_dump(mode="json") would, so persisted values compare equal to
+    # what the json column reads back.
+    normalized = json.loads(json.dumps(unwrapped, default=str))
+    return dict(normalized) if isinstance(normalized, dict) else unwrapped
 
 
 def _to_dto(row: SettingsValue) -> SettingGroupDTO:
@@ -175,7 +197,9 @@ class UpdateSettingGroup:
             row: SettingsValue | None = (
                 (
                     await uow.session.execute(
-                        select(SettingsValue).where(SettingsValue.group_key == group_key)
+                        select(SettingsValue)
+                        .where(SettingsValue.group_key == group_key)
+                        .with_for_update()
                     )
                 )
                 .scalars()
@@ -246,7 +270,9 @@ class ResetSettingGroup:
             row: SettingsValue | None = (
                 (
                     await uow.session.execute(
-                        select(SettingsValue).where(SettingsValue.group_key == group_key)
+                        select(SettingsValue)
+                        .where(SettingsValue.group_key == group_key)
+                        .with_for_update()
                     )
                 )
                 .scalars()

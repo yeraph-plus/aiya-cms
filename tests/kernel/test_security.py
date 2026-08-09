@@ -24,6 +24,17 @@ def test_argon2_roundtrip_and_rehash() -> None:
     assert hasher.needs_rehash("$1$legacy$hash")  # different algorithm family
 
 
+def test_argon2_malformed_hash_degrades_to_failed_login() -> None:
+    """A malformed/legacy stored hash must not crash the auth flow."""
+    hasher = Argon2PasswordHasher()
+    assert hasher.verify("pw", "$1$legacy$hash") is False
+    assert hasher.verify("pw", "$argon2id$v=19$m=65536,t=3,p=4$broken") is False
+    assert hasher.verify("pw", None) is False  # type: ignore[arg-type]
+    assert hasher.needs_rehash("$1$legacy$hash") is True
+    assert hasher.needs_rehash("$argon2id$v=19$m=65536,t=3,p=4$broken") is True
+    assert hasher.needs_rehash(None) is True  # type: ignore[arg-type]
+
+
 def test_argon2_hashes_are_salted() -> None:
     hasher = Argon2PasswordHasher()
     assert hasher.hash("same") != hasher.hash("same")
@@ -83,6 +94,26 @@ def test_redact_nested_and_secret_values() -> None:
     assert masked["deep"]["token"] == "[REDACTED]"
     assert masked["list"] == ["a", "b"]
     assert masked["user_id"] == "u1"
+
+
+def test_redact_masks_broader_credential_keys() -> None:
+    payload = {
+        "aws_access_key_id": "AKIA...",
+        "access_key": "acc-1",
+        "consumer_key": "cons-1",
+        "passphrase": "phrase",
+        "passcode": "1234",
+        "pwd": "pw",
+        "safe_key": "not-secret",
+    }
+    masked = redact(payload)
+    assert masked["aws_access_key_id"] == "[REDACTED]"
+    assert masked["access_key"] == "[REDACTED]"
+    assert masked["consumer_key"] == "[REDACTED]"
+    assert masked["passphrase"] == "[REDACTED]"
+    assert masked["passcode"] == "[REDACTED]"
+    assert masked["pwd"] == "[REDACTED]"
+    assert masked["safe_key"] == "not-secret"
 
 
 def test_redact_handles_pydantic_secret() -> None:

@@ -41,6 +41,12 @@ def _check_labels(name: str, label_names: tuple[str, ...], labels: dict[str, Any
     extra = [n for n in labels if n not in label_names]
     if missing or extra:
         raise ValueError(f"metric {name}: invalid labels missing={missing} extra={extra}")
+    for label_key, label_value in labels.items():
+        if not isinstance(label_value, str):
+            raise TypeError(
+                f"metric {name}: label {label_key!r} value must be str, "
+                f"got {type(label_value).__name__}"
+            )
 
 
 class MetricSink(Protocol):

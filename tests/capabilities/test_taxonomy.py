@@ -217,6 +217,36 @@ async def test_term_requires_manage_permission(
     assert excinfo.value.code == "taxonomy.forbidden"
 
 
+async def test_update_missing_term_does_not_leak_existence(
+    ctx: CommandContext,
+    uow_factory: UoWFactory,
+    clock: Any,
+    dimensions: DimensionRegistry,
+    target_exists: TargetExistsPort,
+    schema_registry: EventSchemaRegistry,
+) -> None:
+    """Unprivileged callers must not be able to distinguish existing from
+    missing terms via the error category (existence oracle): a missing term
+    without manage permission reports FORBIDDEN, not NOT_FOUND."""
+    restricted = CommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        outbox=OutboxWriter(schema_registry, clock),
+        dimensions=dimensions,
+        target_exists=target_exists,
+        permissions=frozenset({"taxonomy.read"}),
+    )
+    missing_id = uuid.uuid4()
+    with pytest.raises(KernelError) as excinfo:
+        await UpdateTerm(restricted)(missing_id, UpdateTermInput(name="x"))
+    assert excinfo.value.code == "taxonomy.forbidden"
+
+    # A manager still gets NOT_FOUND for a genuinely missing term.
+    with pytest.raises(KernelError) as excinfo:
+        await UpdateTerm(ctx)(missing_id, UpdateTermInput(name="x"))
+    assert excinfo.value.code == "taxonomy.term_not_found"
+
+
 async def test_remove_target_assignments_requires_manage_permission(
     ctx: CommandContext,
     uow_factory: UoWFactory,

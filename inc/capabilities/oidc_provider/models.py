@@ -55,7 +55,9 @@ class OidcClient(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allowed_audiences: Mapped[StringList] = mapped_column(
         JsonBModel(StringList, "1"), nullable=False
     )
-    auth_method: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
+    auth_method: Mapped[str] = mapped_column(  # none | client_secret_basic
+        String(32), nullable=False
+    )
     grant_types: Mapped[StringList] = mapped_column(JsonBModel(StringList, "1"), nullable=False)
     response_types: Mapped[StringList] = mapped_column(JsonBModel(StringList, "1"), nullable=False)
     status: Mapped[str] = mapped_column(

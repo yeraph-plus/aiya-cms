@@ -23,6 +23,25 @@ class BalanceDTO(BaseModel):
     version: int
 
 
+class BucketDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    account_id: str
+    bucket_type: str
+    expiration_identity: str | None = None
+    expires_at: datetime | None = None
+    amount: int
+    version: int
+
+
+class DebitAllocationDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bucket_id: str
+    amount: int
+
+
 class LedgerEntryDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -36,6 +55,7 @@ class LedgerEntryDTO(BaseModel):
     source_type: str | None = None
     source_id: str | None = None
     reversal_of: str | None = None
+    allocations: list[DebitAllocationDTO] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -52,6 +72,7 @@ class BehaviorCatalogDTO(BaseModel):
     cooldown_seconds: int | None = None
     daily_limit: int | None = None
     business_timezone: str
+    expiration_days: int | None = None
 
 
 class CreditDebitInput(BaseModel):
@@ -66,6 +87,7 @@ class CreditDebitInput(BaseModel):
     actor_type: str = "user"
     actor_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    expires_at: datetime | None = None  # explicit expiry; overrides behavior expiration_days
 
 
 class AdjustInput(BaseModel):
@@ -73,6 +95,7 @@ class AdjustInput(BaseModel):
 
     subject_type: str
     subject_id: str
+    program_key: str = Field(min_length=1, max_length=100)
     amount: int  # nonzero; negative is a debit-style adjustment
     reason: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=1, max_length=200)

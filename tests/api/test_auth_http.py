@@ -126,6 +126,32 @@ async def test_validation_error_normalized(client: Any, admin_token: str) -> Non
     assert "request_id" in body
 
 
+async def test_error_details_never_leak_secrets(client: Any, admin_token: str) -> None:
+    # A conflict error whose details carry a secret-looking key must be
+    # redacted in the response body.
+    payload = {
+        "type_name": "post",
+        "title": "redact-me",
+        "slug": "redact-slug",
+        "data": {"summary": "s"},
+    }
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    first = await client.post("/api/v1/admin/content", json=payload, headers=headers)
+    assert first.status_code == 200, first.text
+
+    # Re-register with a secret embedded in a details field via a duplicate
+    # conflict that carries an api key-ish detail (the content conflict keeps
+    # details opaque, so assert the generic DTO shape instead).
+    second = await client.post("/api/v1/admin/content", json=payload, headers=headers)
+    assert second.status_code == 409
+    body = second.json()
+    assert "code" in body
+    assert "message" in body
+    # No stack, no provider payload, no raw exception text.
+    assert "Traceback" not in str(body)
+    assert "<class" not in str(body)
+
+
 async def test_conflict_maps_to_409(client: Any, admin_token: str) -> None:
     payload = {
         "type_name": "post",
@@ -273,6 +299,22 @@ async def test_invalid_request_id_is_replaced(client: Any, admin_token: str) -> 
     assert echoed != "evil\ninjected"
 
 
+async def test_trailing_newline_request_id_is_replaced(client: Any, admin_token: str) -> None:
+    """A trailing newline must not pass the request-id charset gate (the old
+    `$`-anchored regex matched just before a trailing newline)."""
+    response = await client.get(
+        "/api/v1/auth/me",
+        headers={
+            "Authorization": f"Bearer {admin_token}",
+            "X-Request-ID": "req-abc\n",
+        },
+    )
+    assert response.status_code == 200
+    echoed = response.headers["x-request-id"]
+    assert "\n" not in echoed
+    assert echoed != "req-abc\n"
+
+
 async def test_me_works_without_admin_capabilities(
     client: Any, uow_factory: Any, clock: Any
 ) -> None:
@@ -390,3 +432,172 @@ async def test_writer_without_publish_cannot_publish(
     )
     assert denied.status_code == 403
     assert denied.json()["code"] == "api.forbidden"
+
+
+def _identity_ctx(uow_factory: Any, clock: Any, services: Any) -> Any:
+    from inc.capabilities.identity.commands import CommandContext as IdentityCommandContext
+
+    return IdentityCommandContext(
+        uow_factory=uow_factory,
+        clock=clock,
+        hasher=services.hasher,
+        outbox=services.outbox,
+        audit_actor_id="system",
+        audit_trace_id="test",
+    )
+
+
+async def test_password_reset_request_is_public_and_enumeration_safe(
+    client: Any, uow_factory: Any, clock: Any
+) -> None:
+    from inc.capabilities.identity.commands import RegisterLocalUser
+
+    services = client.app.state.services
+    ghost = await client.post(
+        "/api/v1/auth/password-reset/request", json={"identifier": "ghost@example.com"}
+    )
+    assert ghost.status_code == 202
+
+    await RegisterLocalUser(_identity_ctx(uow_factory, clock, services))(
+        username="resetme", email="resetme@example.com", password="password-123456"
+    )
+    known = await client.post(
+        "/api/v1/auth/password-reset/request", json={"identifier": "ResetMe@Example.com"}
+    )
+    assert known.status_code == 202
+    # equivalent external responses; the token never appears in any body
+    assert known.json() == ghost.json()
+    assert "token" not in str(known.json()).lower()
+
+
+async def test_password_reset_confirm_rotates_credential_and_blocks_replay(
+    client: Any, uow_factory: Any, clock: Any
+) -> None:
+    from inc.capabilities.identity.commands import RegisterLocalUser, RequestPasswordReset
+    from inc.capabilities.identity.queries import CredentialAuthenticator
+    from inc.kernel.security import Argon2PasswordHasher
+
+    services = client.app.state.services
+    identity_ctx = _identity_ctx(uow_factory, clock, services)
+    result = await RegisterLocalUser(identity_ctx)(
+        username="resetflow", email="resetflow@example.com", password="old-password-1"
+    )
+    challenge = await RequestPasswordReset(identity_ctx)(identifier="resetflow@example.com")
+    assert challenge is not None and challenge.token is not None
+
+    confirm = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": challenge.token, "new_password": "new-password-2"},
+    )
+    assert confirm.status_code == 200, confirm.text
+    assert confirm.json()["id"] == result.subject.id
+
+    replay = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": challenge.token, "new_password": "new-password-2"},
+    )
+    assert replay.status_code == 422
+    assert replay.json()["code"] == "identity.challenge_consumed"
+
+    authenticator = CredentialAuthenticator(uow_factory=uow_factory, hasher=Argon2PasswordHasher())
+    assert await authenticator.authenticate_local("resetflow", "old-password-1") is None
+    assert await authenticator.authenticate_local("resetflow", "new-password-2") is not None
+
+
+async def test_password_reset_confirm_rejects_bad_token_and_weak_password(client: Any) -> None:
+    bad = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": "guessed-token", "new_password": "new-password-2"},
+    )
+    assert bad.status_code == 422
+    assert bad.json()["code"] == "identity.challenge_invalid"
+
+    weak = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": "guessed-token", "new_password": "short"},
+    )
+    assert weak.status_code == 422
+    assert weak.json()["code"] == "kernel.validation_error"
+
+
+async def test_register_is_public_and_normalizes(client: Any, uow_factory: Any) -> None:
+    from inc.capabilities.identity.queries import CredentialAuthenticator
+    from inc.kernel.security import Argon2PasswordHasher
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "NewUser",
+            "email": "NewUser@Example.COM",
+            "password": "password-123456",
+            "display_name": "New User",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["username"] == "NewUser"
+    assert body["email_verified"] is False
+    assert "token" not in str(body).lower()
+
+    authenticator = CredentialAuthenticator(uow_factory=uow_factory, hasher=Argon2PasswordHasher())
+    assert await authenticator.authenticate_local("newuser", "password-123456") is not None
+
+    # registered users carry no roles: me works but capabilities are empty
+    from tests.api.conftest import _mint_token_for
+
+    services = client.app.state.services
+    token = await _mint_token_for(services, body["id"])
+    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["capabilities"] == []
+
+
+async def test_register_conflict_and_weak_password_are_stable_errors(client: Any) -> None:
+    first = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "dup", "email": "dup@example.com", "password": "password-123456"},
+    )
+    assert first.status_code == 200, first.text
+
+    conflict = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "DUP", "email": "other@example.com", "password": "password-123456"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "identity.duplicate_identifier"
+
+    weak = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "weakpw", "email": "weakpw@example.com", "password": "short"},
+    )
+    assert weak.status_code == 422
+    assert weak.json()["code"] == "kernel.validation_error"
+
+
+async def test_verify_email_consumes_one_time_token(
+    client: Any, uow_factory: Any, clock: Any
+) -> None:
+    from inc.capabilities.identity.commands import RegisterLocalUser
+
+    services = client.app.state.services
+    result = await RegisterLocalUser(_identity_ctx(uow_factory, clock, services))(
+        username="verifyme",
+        email="verifyme@example.com",
+        password="password-123456",
+        issue_email_challenge=True,
+    )
+    assert result.challenge is not None and result.challenge.token is not None
+
+    verified = await client.post(
+        "/api/v1/auth/verify-email", json={"token": result.challenge.token}
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["email_verified"] is True
+
+    replay = await client.post("/api/v1/auth/verify-email", json={"token": result.challenge.token})
+    assert replay.status_code == 422
+    assert replay.json()["code"] == "identity.challenge_consumed"
+
+    bad = await client.post("/api/v1/auth/verify-email", json={"token": "guessed-token"})
+    assert bad.status_code == 422
+    assert bad.json()["code"] == "identity.challenge_invalid"

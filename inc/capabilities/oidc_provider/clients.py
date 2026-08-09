@@ -14,6 +14,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 
@@ -33,6 +34,8 @@ from inc.kernel.time import Clock
 
 AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
 
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -48,8 +51,22 @@ class ClientCommandContext:
 
 
 def _require_valid_redirect_uri(value: str) -> None:
-    if not value.startswith(("https://", "http://localhost")):
-        raise OidcError("invalid_request", "redirect uri must be https (or http://localhost)")
+    """Validate an exact redirect URI.
+
+    Redirect URIs are exact strings, never wildcards or fragments. Only
+    https with a host, or http for loopback hosts, are accepted.
+    """
+
+    if "*" in value or "#" in value:
+        raise OidcError(
+            "invalid_request", "redirect uri must be exact, with no wildcard or fragment"
+        )
+    parts = urlsplit(value)
+    if parts.scheme == "https" and parts.netloc:
+        return
+    if parts.scheme == "http" and parts.hostname in _LOOPBACK_HOSTS:
+        return
+    raise OidcError("invalid_request", "redirect uri must be https (or http://localhost)")
 
 
 def _to_dto(client: OidcClient) -> ClientDTO:

@@ -19,6 +19,7 @@ spec = CapabilitySpec(
         "identity.users.read",
         "identity.users.update",
         "identity.users.ban",
+        "identity.users.unban",
         "identity.users.delete",
     ),
 )

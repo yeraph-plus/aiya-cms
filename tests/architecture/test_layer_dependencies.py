@@ -5,8 +5,8 @@ context/spec/composition.md §4.
 
 Rules enforced:
 
-- kernel never imports capabilities, features, api or modules.
-- a capability never imports a sibling capability, features, api or modules.
+- kernel never imports capabilities, features, api, adapters or modules.
+- a capability never imports a sibling capability, features, api, adapters or modules.
 - a feature only touches the public surface of capabilities: definition,
   schemas, commands, queries, ports, activities, events and package roots.
 - api never imports capability internals (models, repositories, uow, ...).
@@ -55,8 +55,8 @@ def test_capabilities_never_import_siblings_or_upper_layers() -> None:
                 other = _submodule(module, 2)
                 if other != own:
                     offenders.append(f"{path}: imports sibling capability {module}")
-            elif module.startswith(("inc.features.", "inc.api.", "inc.modules.")):
-                offenders.append(f"{path}: imports upper layer {module}")
+            elif module.startswith(("inc.features.", "inc.api.", "inc.adapters.", "inc.modules.")):
+                offenders.append(f"{path}: imports forbidden layer {module}")
     assert offenders == []
 
 

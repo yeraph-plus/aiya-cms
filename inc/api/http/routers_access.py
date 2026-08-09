@@ -81,7 +81,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-access"])
 
     @router.get("/capabilities", response_model=CapabilityDTO)
     async def list_capabilities(

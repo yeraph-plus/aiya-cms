@@ -3,9 +3,12 @@
 Contract source: context/spec/capabilities/content.md §7/§8.
 
 Public listing returns only published content; backend lists select status
-at the API layer under permission. Ordering is fixed per spec: pinned
-first (rank desc), then published_at desc nulls last, then id desc. total
-uses the same filter and includes pinned items.
+at the API layer under permission. Default ordering is fixed per spec:
+pinned first (rank desc), then published_at desc nulls last, then id desc.
+An explicit ``sort`` (spec §7.1) overrides the default order and is
+validated against the type's ``sort_options`` allowlist; the id DESC
+stable key is always appended. total uses the same filter and includes
+pinned items.
 """
 
 from __future__ import annotations
@@ -20,6 +23,27 @@ from inc.capabilities.content.models import Content, ContentReference
 from inc.capabilities.content.schemas import ContentDTO, ContentPageDTO, ReferenceDTO
 from inc.capabilities.content.types import ContentTypeRegistry
 from inc.kernel.db import Page, UoWFactory, fetch_page
+from inc.kernel.errors import ErrorCategory, KernelError
+
+# Fixed column whitelist for explicit sort (spec §7.1): no expressions,
+# no data-payload internals, no relationship fields.
+_SORTABLE_COLUMNS: dict[str, Any] = {
+    "id": Content.id,
+    "title": Content.title,
+    "slug": Content.slug,
+    "published_at": Content.published_at,
+    "created_at": Content.created_at,
+    "updated_at": Content.updated_at,
+    "pin_rank": Content.pin_rank,
+}
+
+
+def _invalid_sort(raw: str) -> KernelError:
+    return KernelError(
+        code="content.invalid_sort",
+        category=ErrorCategory.VALIDATION,
+        message=f"invalid sort field {raw!r}",
+    )
 
 
 class ContentQueries:
@@ -42,6 +66,7 @@ class ContentQueries:
         type_name: str | None = None,
         status: str | None = None,
         public_only: bool = False,
+        sort: str | None = None,
     ) -> ContentPageDTO:
         async with self._uow_factory() as uow:
             statement = select(Content)
@@ -51,12 +76,16 @@ class ContentQueries:
                 statement = statement.where(Content.status == status)
             if type_name is not None:
                 statement = statement.where(Content.type_name == type_name)
-            statement = statement.order_by(
-                Content.is_pinned.desc(),
-                Content.pin_rank.desc(),
-                Content.published_at.desc().nullslast(),
-                Content.id.desc(),
-            )
+            orderings = self._resolve_sort(sort=sort, type_name=type_name)
+            if orderings is None:
+                statement = statement.order_by(
+                    Content.is_pinned.desc(),
+                    Content.pin_rank.desc(),
+                    Content.published_at.desc().nullslast(),
+                    Content.id.desc(),
+                )
+            else:
+                statement = statement.order_by(*orderings)
             result: Page[Content] = await fetch_page(uow.session, statement, page=page, size=size)
             return ContentPageDTO(
                 items=[self._to_dto(row) for row in result.items],
@@ -64,6 +93,38 @@ class ContentQueries:
                 page=result.page,
                 size=result.size,
             )
+
+    def _resolve_sort(self, *, sort: str | None, type_name: str | None) -> list[Any] | None:
+        """Explicit sort (spec §7.1): type allowlist + stable id key."""
+
+        if sort is None:
+            return None
+        if type_name is not None:
+            spec = next((s for s in self._types.specs() if s.type_name == type_name), None)
+            allowed = set(spec.sort_options) if spec is not None else set()
+        else:
+            # cross-type lists intersect every registered type's options
+            intersection: set[str] | None = None
+            for registered in self._types.specs():
+                options = set(registered.sort_options)
+                intersection = options if intersection is None else intersection & options
+            allowed = intersection or set()
+        orderings: list[Any] = []
+        for raw in sort.split(","):
+            field = raw.strip()
+            descending = field.startswith("-")
+            if descending:
+                field = field[1:].strip()
+            column = _SORTABLE_COLUMNS.get(field)
+            if not field or field not in allowed or column is None:
+                raise _invalid_sort(raw)
+            orderings.append(
+                column.desc().nulls_last() if descending else column.asc().nulls_first()
+            )
+        if not orderings:
+            raise _invalid_sort(sort)
+        orderings.append(Content.id.desc())
+        return orderings
 
     async def list_outgoing(self, content_id: Any) -> list[ReferenceDTO]:  # type: ignore[return]
         async with self._uow_factory() as uow:

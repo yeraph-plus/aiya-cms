@@ -23,6 +23,23 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
+def _parse_bool(value: str | None, default: bool = False) -> bool:
+    """Parse a boolean-like env value (1/true/yes/on) case-insensitively.
+
+    Anything unrecognized (including "0"/"false"/empty) yields ``default``.
+    This prevents truthy spellings such as ``"True"`` or ``" on "`` from
+    silently disabling the Secure cookie flag outside the literal production
+    gate.
+    """
+
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    return default
+
+
 def _build_app() -> Any:
     import os
 
@@ -32,7 +49,7 @@ def _build_app() -> Any:
             "environment": os.environ.get("AIYA_ENVIRONMENT", "dev"),
             "issuer": os.environ.get("AIYA_ISSUER", "http://127.0.0.1:8080"),
             "api_audience": os.environ.get("AIYA_API_AUDIENCE", "aiya-admin"),
-            "secure_cookies": os.environ.get("AIYA_SECURE_COOKIES", "0") == "1",
+            "secure_cookies": _parse_bool(os.environ.get("AIYA_SECURE_COOKIES")),
             "cors_origins": tuple(
                 origin.strip()
                 for origin in os.environ.get("AIYA_CORS_ORIGINS", "").split(",")

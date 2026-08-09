@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from inc.capabilities.settings import SettingGroupSpec
 from inc.kernel.boot import FeatureSpec
@@ -25,6 +25,7 @@ spec = FeatureSpec(name="site_settings", version="1", requires=("settings",))
 GENERAL_GROUP_KEY = "general"
 SEO_GROUP_KEY = "seo"
 NOTIFICATION_GROUP_KEY = "notification"
+ENTITLEMENTS_GROUP_KEY = "entitlements"
 
 
 class GeneralValueSchema(BaseModel):
@@ -74,7 +75,7 @@ class NotificationValueSchema(BaseModel):
     smtp_host: str = Field(default="", max_length=200)
     smtp_port: int = Field(default=25, ge=1, le=65535)
     smtp_username: str = Field(default="", max_length=200)
-    smtp_password: str | None = Field(default=None, max_length=200)
+    smtp_password: SecretStr | None = Field(default=None, max_length=200)
     smtp_from_address: str = Field(default="no-reply@aiya.local", max_length=200)
     smtp_use_tls: bool = False
     smtp_starttls: bool = False
@@ -83,6 +84,24 @@ class NotificationValueSchema(BaseModel):
 NOTIFICATION_PUBLIC_FIELDS = ("default_from_name", "email_enabled", "default_channel")
 
 NOTIFICATION_SENSITIVE_FIELDS = ("smtp_password",)
+
+
+class EntitlementsValueSchema(BaseModel):
+    """Configurable entitlement amounts awarded by business flows.
+
+    Points grants are never computed here; these values are read by
+    features (registration reward, invite reward, gift quota) and passed
+    as fixed amounts to points behaviors. All values are whole points.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    registration_reward: int = Field(default=0, ge=0, le=1_000_000)
+    invite_reward: int = Field(default=0, ge=0, le=1_000_000)
+    gift_quota: int = Field(default=0, ge=0, le=1_000_000)
+
+
+ENTITLEMENTS_PUBLIC_FIELDS = ("registration_reward", "invite_reward", "gift_quota")
 
 
 def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
@@ -110,6 +129,14 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
             public_fields=NOTIFICATION_PUBLIC_FIELDS,
             sensitive_fields=NOTIFICATION_SENSITIVE_FIELDS,
             update_permission="settings.notification.update",
+            cache_policy="event",
+        ),
+        SettingGroupSpec(
+            group_key=ENTITLEMENTS_GROUP_KEY,
+            version="1",
+            value_schema=EntitlementsValueSchema,
+            public_fields=ENTITLEMENTS_PUBLIC_FIELDS,
+            update_permission="settings.entitlements.update",
             cache_policy="event",
         ),
     )

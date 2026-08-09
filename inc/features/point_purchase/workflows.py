@@ -29,7 +29,7 @@ from inc.capabilities.points.schemas import CreditDebitInput, ReverseInput
 from inc.features.point_purchase.definition import require_offer
 from inc.kernel.db import UnitOfWork
 from inc.kernel.errors import ErrorCategory, KernelError
-from inc.kernel.workflow import ActivitySpec, WorkflowSpec
+from inc.kernel.workflow import ActivitySpec, WorkflowRunner, WorkflowSpec
 
 PURCHASE_WORKFLOW_KEY = "pointpurchase.purchase.v1"
 REFUND_WORKFLOW_KEY = "pointpurchase.refund.v1"
@@ -169,7 +169,15 @@ def build_refund_workflow_spec(*, ctx: PointPurchaseContext) -> WorkflowSpec:
             behavior_key=CREDIT_BEHAVIOR, source_id=order_reference
         )
         if credit is None:
-            return {"skipped": True, "reason": "no_credit_entry"}
+            # The refund event may arrive before the purchase workflow's credit
+            # step ran. Skipping here would let the credit land afterwards and
+            # never be reversed (permanent over-credit); retry instead until
+            # the credit is recorded or the workflow fails loudly.
+            raise KernelError(
+                code="pointpurchase.credit_not_found",
+                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                message=f"credit for {order_reference} not recorded yet; retrying",
+            )
         reversal = await ReverseLedgerEntry(ctx.points_ctx)(
             uuid.UUID(credit.id),
             ReverseInput(reason="purchase refunded", idempotency_key=f"refund:{order_reference}"),
@@ -193,3 +201,76 @@ def build_refund_workflow_spec(*, ctx: PointPurchaseContext) -> WorkflowSpec:
         ),
         signal_keys=(REFUND_SIGNAL,),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeContext:
+    """What the webhook bridge needs: workflow runner + payments reads."""
+
+    runner: WorkflowRunner
+    payments_queries: PaymentsQueries
+
+
+def purchase_workflow_idempotency_key(idempotency_key: str) -> str:
+    """One convention shared by the orders endpoint and the webhook bridge.
+
+    The purchase workflow and the payment order share the same business
+    idempotency key, so a verified capture event can locate the waiting
+    workflow instance via the runner's read-only lookup.
+    """
+
+    return f"purchase:{idempotency_key}"
+
+
+def checkout_view(instance: Any) -> dict[str, Any] | None:
+    """Project persisted workflow state into the purchase HTTP view."""
+
+    state = instance.state.data
+    order = state.get("pointpurchase.create.order.v1") or {}
+    attempt = state.get("pointpurchase.start.attempt.v1") or {}
+    order_reference = order.get("order_reference")
+    checkout_url = attempt.get("checkout_url")
+    if not order_reference or not checkout_url:
+        return None
+    return {"order_reference": order_reference, "checkout_url": checkout_url}
+
+
+async def bridge_payment_event(ctx: BridgeContext, *, order_id: str) -> str:
+    """Bridge one verified payment fact into workflow signals.
+
+    Contract source: context/spec/features.md §4.4. Duplicate receipts are
+    filtered by the payments command before this runs; a captured order
+    wakes the waiting purchase workflow, a completed refund starts and
+    signals the refund workflow. Anything else is ignored on purpose.
+    """
+
+    order = await ctx.payments_queries.get_order(uuid.UUID(order_id))
+    if order is None:
+        return "order_missing"
+    if order.state == "captured":
+        instance = await ctx.runner.find_by_business_key(
+            workflow_key=PURCHASE_WORKFLOW_KEY,
+            idempotency_key=order.idempotency_key,
+        )
+        if instance is None:
+            return "no_workflow"
+        # deliver_signal durably persists the signal for any non-terminal
+        # instance and the runner consumes pre-wait signals when the workflow
+        # reaches its wait step; requiring "waiting" here would drop a capture
+        # that lands while the workflow is still in create-order/start-attempt.
+        await ctx.runner.deliver_signal(
+            workflow_id=instance.id, signal_key=CAPTURE_SIGNAL, payload={"order_id": order_id}
+        )
+        return "capture_signaled"
+    if order.state in ("partially_refunded", "refunded"):
+        instance = await ctx.runner.start(
+            workflow_key=REFUND_WORKFLOW_KEY,
+            idempotency_key=f"refund:{order.order_reference}",
+            input_data={"order_reference": order.order_reference},
+            trace_id="payment-webhook",
+        )
+        await ctx.runner.deliver_signal(
+            workflow_id=instance.id, signal_key=REFUND_SIGNAL, payload={"order_id": order_id}
+        )
+        return "refund_signaled"
+    return "ignored"

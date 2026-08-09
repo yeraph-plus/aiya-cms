@@ -12,7 +12,7 @@ quarantined, never guessed.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import Any
 
 from sqlalchemy import and_, or_, select, update
@@ -25,6 +25,12 @@ from inc.kernel.events.registry import EventHandlerRegistry, EventSchemaRegistry
 from inc.kernel.observability import MetricRegistry
 from inc.kernel.time import Clock
 from inc.kernel.workflow.spec import RetryPolicy
+
+
+def _ensure_utc(value: Any) -> Any:
+    """SQLite drops tzinfo; persisted times are always UTC."""
+
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
 class OutboxWriter:
@@ -86,11 +92,18 @@ class OutboxRepository(Repository[OutboxMessage]):
             .where(OutboxMessage.id.in_(ids), due)
             .values(status="claimed", lease_owner=lease_owner, lease_expires_at=expires_at)
         )
+        # Re-select only rows this worker actually claimed: on non-PostgreSQL
+        # dialects a concurrent worker can select the same ids, and its
+        # conditional UPDATE then affects 0 rows. Filtering by lease_owner
+        # keeps each worker processing exactly the rows it owns.
         rows = (
             (
                 await self.session.execute(
                     select(OutboxMessage)
-                    .where(OutboxMessage.id.in_(ids))
+                    .where(
+                        OutboxMessage.id.in_(ids),
+                        OutboxMessage.lease_owner == lease_owner,
+                    )
                     .order_by(OutboxMessage.id)
                 )
             )
@@ -100,9 +113,16 @@ class OutboxRepository(Repository[OutboxMessage]):
         return list(rows)
 
     async def mark_delivered(self, message: OutboxMessage) -> None:
-        message.status = "delivered"
-        message.lease_owner = None
-        message.lease_expires_at = None
+        await self.session.execute(
+            update(OutboxMessage)
+            .where(
+                OutboxMessage.id == message.id,
+                OutboxMessage.status == "claimed",
+                OutboxMessage.lease_owner == message.lease_owner,
+            )
+            .values(status="delivered", lease_owner=None, lease_expires_at=None)
+            .execution_options(synchronize_session=False)
+        )
 
     async def mark_retry(
         self,
@@ -112,23 +132,45 @@ class OutboxRepository(Repository[OutboxMessage]):
         error_category: RetryCategory,
         error_summary: str,
     ) -> None:
-        message.status = "pending"
-        message.attempts += 1
-        message.next_attempt_at = next_attempt_at
-        message.lease_owner = None
-        message.lease_expires_at = None
-        message.last_error_category = error_category.value
-        message.error_summary = error_summary[:500]
+        await self.session.execute(
+            update(OutboxMessage)
+            .where(
+                OutboxMessage.id == message.id,
+                OutboxMessage.status == "claimed",
+                OutboxMessage.lease_owner == message.lease_owner,
+            )
+            .values(
+                status="pending",
+                attempts=OutboxMessage.attempts + 1,
+                next_attempt_at=next_attempt_at,
+                lease_owner=None,
+                lease_expires_at=None,
+                last_error_category=error_category.value,
+                error_summary=error_summary[:500],
+            )
+            .execution_options(synchronize_session=False)
+        )
 
     async def mark_dead(
         self, message: OutboxMessage, *, error_category: RetryCategory, error_summary: str
     ) -> None:
-        message.status = "dead"
-        message.attempts += 1
-        message.lease_owner = None
-        message.lease_expires_at = None
-        message.last_error_category = error_category.value
-        message.error_summary = error_summary[:500]
+        await self.session.execute(
+            update(OutboxMessage)
+            .where(
+                OutboxMessage.id == message.id,
+                OutboxMessage.status == "claimed",
+                OutboxMessage.lease_owner == message.lease_owner,
+            )
+            .values(
+                status="dead",
+                attempts=OutboxMessage.attempts + 1,
+                lease_owner=None,
+                lease_expires_at=None,
+                last_error_category=error_category.value,
+                error_summary=error_summary[:500],
+            )
+            .execution_options(synchronize_session=False)
+        )
 
     async def count_by_status(self, status: str) -> int:
         result = await self.session.execute(
@@ -188,10 +230,22 @@ class OutboxDispatcher:
             await claim_uow.commit()
 
         for message in messages:
-            await self._process(message)
+            await self._process(message, lease_owner=lease_owner)
         return len(messages)
 
-    async def _process(self, message: OutboxMessage) -> None:
+    async def _process(self, message: OutboxMessage, *, lease_owner: str) -> None:
+        # A stale claim (lease expired/re-claimed by another worker) must not
+        # execute the handler: running it would duplicate side effects and
+        # overwrite the new lease holder's state.
+        async with self._uow_factory() as uow:
+            current = await uow.session.get(OutboxMessage, message.id)
+            if (
+                current is None
+                or current.lease_owner != lease_owner
+                or current.status != "claimed"
+                or _ensure_utc(current.lease_expires_at) < self._clock.utc_now()
+            ):
+                return
         if self._schema_registry.schema_for(message.event_key) is None:
             await self._quarantine(message, "unknown event schema or version")
             return

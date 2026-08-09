@@ -20,7 +20,8 @@ except ImportError:  # pragma: no cover
     SecretStr = ()  # type: ignore[assignment,misc]
 
 _SECRET_KEY = re.compile(
-    r"(password|passwd|secret|token|api[_-]?key|apikey|authorization|cookie|"
+    r"(password|passwd|passphrase|passcode|pwd|secret|token|api[_-]?key|"
+    r"access[_-]?key|consumer[_-]?key|apikey|authorization|cookie|"
     r"client[_-]?secret|signature|credential|private[_-]?key|refresh[_-]?token)",  # noqa: S105
     re.IGNORECASE,
 )

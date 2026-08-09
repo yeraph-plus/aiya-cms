@@ -57,13 +57,10 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
     )
 
 
-def _target_exists(ctx: AppContext, services: Any) -> Any:
-    async def _exists(target_type: str, target_id: str) -> bool:
-        if target_type == "content":
-            return await services.content_queries.get(target_id) is not None
-        return False
-
-    return _exists
+def _target_exists(ctx: AppContext, services: Services) -> Any:
+    # the manifest-bound adapter (taxonomy.target_exists); REQUIRED_PORTS
+    # fails boot when taxonomy is enabled without a binding (adapters.md §5)
+    return services.adapters["taxonomy.target_exists"]
 
 
 REQUIRED_PERMISSIONS: tuple[str, ...] = (
@@ -77,7 +74,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-taxonomy"])
 
     @router.get("/taxonomy/dimensions", response_model=list[DimensionDTO])
     async def list_dimensions(

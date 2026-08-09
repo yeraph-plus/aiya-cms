@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 
 from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped]
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from inc.kernel.db import UoWFactory
 from inc.kernel.tasks.models import CronState, TaskInstance, TaskPayload
@@ -72,8 +73,17 @@ class CronScheduler:
                     first_fire = trigger.get_next_fire_time(None, current)
                     if first_fire is None:
                         continue
-                    uow.session.add(CronState(cron_key=cron_key, next_run_at=first_fire))
-                    await uow.commit()
+                    # CronTrigger returns datetimes in spec.timezone; persist UTC
+                    # so non-UTC schedules are not re-read as UTC wall time.
+                    uow.session.add(
+                        CronState(cron_key=cron_key, next_run_at=first_fire.astimezone(UTC))
+                    )
+                    try:
+                        await uow.commit()
+                    except IntegrityError:
+                        # A concurrent tick created the state first; re-read it
+                        # so this tick continues from the stored anchor.
+                        await uow.rollback()
                     continue
 
                 anchor = _ensure_utc(state.next_run_at)

@@ -1,75 +1,38 @@
 name: aiya-cms
 
-x-infra-profiles: &infra_profiles [runtime, dev, test, review, ops]
-
-# anchor kept for reference
+# Application compose: the single backend image build. PostgreSQL and Redis
+# live in compose.infra.yaml (or an external panel); the backend only
+# connects through the decomposed AIYA_PG_*/AIYA_REDIS_* env vars.
+#
+# One-shot maintenance and quality gates are internalized in inc.cli and run
+# through this same image, e.g.:
+#   docker compose run --rm backend python -m inc.cli migrate
+#   docker compose run --rm backend python -m inc.cli install
+#   docker compose run --rm backend python -m inc.cli quality
+#   docker compose run --rm backend python -m inc.cli test
+#   docker compose run --rm backend python -m inc.cli openapi-check
+#   docker compose run --rm backend python -m inc.cli migration-check
 
 services:
-  postgres:
-    image: postgres:16.4-alpine
-    profiles: [runtime, dev, test, review, ops]
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-aiya}
-      POSTGRES_USER: ${POSTGRES_USER:-aiya}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiya}
-    ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-aiya} -d $${POSTGRES_DB:-aiya}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  redis:
-    image: redis:7.4-alpine
-    profiles: [runtime, dev, test, review, ops]
-    ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-
-  migrate:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
       target: runtime
-    profiles: [runtime, dev, test, ops]
-    env_file: [.env]
-    command: ["alembic", "upgrade", "head"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [runtime, test]
     env_file: [.env]
     command: ["uvicorn", "inc.main:get_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_HOST_PORT:-8000}:8000"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)\""]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  api-dev:
+  backend-dev:
     build:
       context: .
       dockerfile: Dockerfile
@@ -77,89 +40,9 @@ services:
     profiles: [dev]
     env_file: [.env]
     command: ["uvicorn", "inc.main:get_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./inc:/app/inc:ro
       - ./alembic:/app/alembic:ro
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-
-
-
-  backend-quality:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [test]
-    command: ["sh", "-c", "ruff check . && ruff format --check . && mypy inc && pip check"]
-
-  backend-test:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [test]
-    env_file: [.env]
-    command: ["python", "-m", "pytest", "-q"]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  openapi-check:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [test, ops]
-    command: ["python", "-m", "inc.main", "openapi-check"]
-
-  migration-check:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [test, ops]
-    env_file: [.env]
-    command: ["sh", "-c", "alembic downgrade base && alembic upgrade head"]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-
-
-  opencode-review:
-    image: node:24.4.1-bookworm-slim
-    profiles: [review]
-    working_dir: /workspace
-    environment:
-      OCR_MODEL: ${OCR_MODEL:-}
-      OCR_API_KEY: ${OCR_API_KEY:-}
-      OCR_BASE_URL: ${OCR_BASE_URL:-}
-    command: ["sh", "-c", "npm install --global @alibaba-group/open-code-review@1.8.9 && ocr scan"]
-    volumes:
-      - .:/workspace:ro
-      - .git:/workspace/.git:ro
-      - .reports:/workspace/.reports
-
-  create-admin:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [ops]
-    env_file: [.env]
-    entrypoint: ["python", "-m", "inc.cli", "create-admin"]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-volumes:
-  postgres-data:
-  redis-data:
+    restart: unless-stopped

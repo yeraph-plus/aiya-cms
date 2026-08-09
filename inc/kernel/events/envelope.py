@@ -11,7 +11,7 @@ sensitive data or raw provider webhooks.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -47,8 +47,10 @@ class EventEnvelope(BaseModel):
     @field_validator("occurred_at")
     @classmethod
     def _validate_occurred_at(cls, value: datetime) -> datetime:
-        if value.tzinfo is None:
+        if value.utcoffset() is None:
             raise ValueError("occurred_at must be tz-aware UTC")
+        if value.utcoffset() != timedelta(0):
+            raise ValueError(f"occurred_at must be UTC, got offset {value.utcoffset()}")
         return value
 
 

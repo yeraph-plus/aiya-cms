@@ -17,7 +17,7 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from inc.api.adapters import ContentBatchExists, InMemoryObjectStorage, resolve_adapters
+from inc.adapters import ContentBatchExists, InMemoryObjectStorage, resolve_adapters
 from inc.capabilities.access import (
     AccessDiagnostics,
     AccessQueries,
@@ -46,6 +46,14 @@ from inc.capabilities.identity import (
     IdentityDiagnostics,
     IdentityQueries,
 )
+from inc.capabilities.membership import (
+    CommandContext as MembershipCommandContext,
+)
+from inc.capabilities.membership import (
+    MembershipDiagnostics,
+    MembershipLevelRegistry,
+    MembershipQueries,
+)
 from inc.capabilities.oidc_provider import (
     AuthorizationService,
     InMemorySigningKeyStore,
@@ -58,6 +66,22 @@ from inc.capabilities.oidc_provider import (
     ServiceContext,
     TokenService,
     UserInfoService,
+)
+from inc.capabilities.payments import (
+    CommandContext as PaymentsCommandContext,
+)
+from inc.capabilities.payments import (
+    PaymentsDiagnostics,
+    PaymentsQueries,
+)
+from inc.capabilities.points import (
+    CommandContext as PointsCommandContext,
+)
+from inc.capabilities.points import (
+    ExpireBuckets,
+    PointBehaviorRegistry,
+    PointsDiagnostics,
+    PointsQueries,
 )
 from inc.capabilities.settings import (
     SettingGroupRegistry,
@@ -94,6 +118,9 @@ for _module, _attr in (
     ("inc.capabilities.content.definition", "spec"),
     ("inc.capabilities.taxonomy.definition", "spec"),
     ("inc.capabilities.assets.definition", "spec"),
+    ("inc.capabilities.points.definition", "spec"),
+    ("inc.capabilities.payments.definition", "spec"),
+    ("inc.capabilities.membership.definition", "spec"),
 ):
     _spec = getattr(importlib.import_module(_module), _attr)
     CAPABILITY_SPECS[_module.rsplit(".", 2)[1]] = _spec
@@ -102,6 +129,9 @@ for _module, _attr in (
     ("inc.features.post.definition", "spec"),
     ("inc.features.page.definition", "spec"),
     ("inc.features.site_settings.definition", "spec"),
+    ("inc.features.check_in.definition", "spec"),
+    ("inc.features.point_purchase.definition", "spec"),
+    ("inc.features.membership_purchase.definition", "spec"),
 ):
     _spec = getattr(importlib.import_module(_module), _attr)
     FEATURE_SPECS[_module.rsplit(".", 2)[1]] = _spec
@@ -115,6 +145,8 @@ REQUIRED_PORTS: dict[str, tuple[str, ...]] = {
     ),
     "taxonomy": ("taxonomy.target_exists",),
     "assets": ("assets.object_storage",),
+    "payments": ("payments.provider",),
+    "membership": ("membership.subject_exists", "membership.points_ledger"),
 }
 
 AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
@@ -131,6 +163,12 @@ KNOWN_ROUTERS = frozenset(
         "assets",
         "audit",
         "oidc",
+        "check_in",
+        "points",
+        "points_admin",
+        "point_purchase",
+        "payments",
+        "membership_purchase",
     }
 )
 KNOWN_WORKERS = frozenset({"outbox", "workflow"})
@@ -162,12 +200,19 @@ class Services:
     taxonomy_queries: TaxonomyQueries
     settings_queries: SettingsQueries
     audit_queries: AuditQueries
+    behaviors: PointBehaviorRegistry
+    points_queries: PointsQueries
+    payments_queries: PaymentsQueries
+    membership_levels: MembershipLevelRegistry | None = None
+    membership_queries: MembershipQueries | None = None
     adapters: dict[str, Any] = field(default_factory=dict)
     settings: Any = None
     asset_queries: AssetQueries | None = None
     scanner: ContentPublishScanner | None = None
     oidc: dict[str, Any] | None = None
     dev_storage: Any = None
+    payment_providers: dict[str, Any] = field(default_factory=dict)
+    payment_webhook_secrets: dict[str, str] = field(default_factory=dict)
 
 
 class ApplicationContainer:
@@ -188,6 +233,7 @@ class ApplicationContainer:
         self._frozen = False
         self._started = False
         self._tasks: list[asyncio.Task[Any]] = []
+        self._points_expire: ExpireBuckets | None = None
         self.schema_registry = EventSchemaRegistry()
         self.handler_registry = EventHandlerRegistry()
         self.workflow_registry = WorkflowRegistry()
@@ -195,6 +241,8 @@ class ApplicationContainer:
         self.content_types = ContentTypeRegistry(permission_keys=self.permission_registry)
         self.dimensions = DimensionRegistry(permission_keys=self.permission_registry)
         self.settings_groups = SettingGroupRegistry()
+        self.behaviors = PointBehaviorRegistry()
+        self.membership_levels = MembershipLevelRegistry()
         self.diagnostic_registry = DiagnosticRegistry()
         self.admin_summary_registry = AdminSummaryRegistry()
         self.services: Services | None = None
@@ -263,6 +311,21 @@ class ApplicationContainer:
 
             for key, schema in SETTINGS_EVENT_SCHEMAS.items():
                 self.schema_registry.register(key, schema)
+        if "points" in capabilities:
+            from inc.capabilities.points.events import POINTS_EVENT_SCHEMAS
+
+            for key, schema in POINTS_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
+        if "payments" in capabilities:
+            from inc.capabilities.payments.schemas import PAYMENT_EVENT_SCHEMAS
+
+            for key, schema in PAYMENT_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
+        if "membership" in capabilities:
+            from inc.capabilities.membership.events import MEMBERSHIP_EVENT_SCHEMAS
+
+            for key, schema in MEMBERSHIP_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
         from inc.capabilities.audit.schemas import AuditEntryRecorded
 
         if "audit" in capabilities:
@@ -281,6 +344,10 @@ class ApplicationContainer:
                 self.content_types.register(content_type)
             for dimension in getattr(module, "dimension_specs", ()):
                 self.dimensions.register(dimension)
+            for behavior in getattr(module, "behavior_specs", ()):
+                self.behaviors.register(behavior)
+            for level in getattr(module, "level_specs", ()):
+                self.membership_levels.register(level)
         if "site_settings" in self._manifest.features:
             from inc.features.site_settings.definition import (
                 build_site_setting_group_specs,
@@ -313,23 +380,30 @@ class ApplicationContainer:
         asset_queries: AssetQueries | None = None
         asset_command_ctx: AssetCommandContext | None = None
         if "assets" in capabilities:
-            if getattr(self._settings, "environment", "dev") == "production" and _binds_dev_storage(
-                self._manifest
-            ):
+            binds_dev = _binds_dev_storage(self._manifest)
+            if getattr(self._settings, "environment", "dev") == "production" and binds_dev:
                 raise _fail(
                     "kernel.adapter_production_denied",
                     "assets.dev_memory must not be bound in production",
                 )
-            dev_storage = InMemoryObjectStorage()
+            if binds_dev:
+                dev_storage = InMemoryObjectStorage()
             asset_command_ctx = AssetCommandContext(
                 uow_factory=self._uow_factory,
                 clock=self._clock,
                 outbox=outbox,
-                providers={"dev_memory": dev_storage},
+                providers={"dev_memory": dev_storage} if binds_dev else {},
                 runner=runner,
             )
             register_asset_workflows(self.workflow_registry, ctx=asset_command_ctx)
             asset_queries = AssetQueries(ctx=asset_command_ctx, clock=self._clock)
+
+        if "payments" in capabilities and _binds_dev_payment(self._manifest):
+            if getattr(self._settings, "environment", "dev") == "production":
+                raise _fail(
+                    "kernel.adapter_production_denied",
+                    "payments.dev_fake must not be bound in production",
+                )
 
         scanner: ContentPublishScanner | None = None
         if "content" in capabilities:
@@ -358,6 +432,147 @@ class ApplicationContainer:
         )
         self._validate_required_ports(adapters)
 
+        payment_providers: dict[str, Any] = {}
+        payment_webhook_secrets: dict[str, str] = {}
+        bound_provider = adapters.get("payments.provider")
+        if bound_provider is not None:
+            from inc.adapters.payments.dev_fake import DEV_FAKE_WEBHOOK_SECRET
+
+            payment_providers[bound_provider.key] = bound_provider
+            if bound_provider.key == "dev_fake":
+                payment_webhook_secrets[bound_provider.key] = DEV_FAKE_WEBHOOK_SECRET
+
+        points_queries = PointsQueries(uow_factory=self._uow_factory, behaviors=self.behaviors)
+        payments_queries = PaymentsQueries(uow_factory=self._uow_factory)
+
+        points_expire: ExpireBuckets | None = None
+        if "points" in capabilities:
+            points_expire = ExpireBuckets(
+                PointsCommandContext(
+                    uow_factory=self._uow_factory,
+                    clock=self._clock,
+                    outbox=outbox,
+                    behaviors=self.behaviors,
+                    actor_id="system",
+                )
+            )
+            self._points_expire = points_expire
+
+        features = set(self._manifest.features)
+        if "check_in" in features:
+            from inc.features.check_in.workflows import (
+                CheckInContext,
+                build_check_in_workflow_spec,
+            )
+
+            points_ctx = PointsCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                behaviors=self.behaviors,
+                actor_id="feature:check_in",
+            )
+            self.workflow_registry.register(
+                build_check_in_workflow_spec(
+                    ctx=CheckInContext(points_ctx=points_ctx, clock=self._clock)
+                )
+            )
+        if "point_purchase" in features:
+            from inc.features.point_purchase.workflows import (
+                PointPurchaseContext,
+                build_purchase_workflow_spec,
+                build_refund_workflow_spec,
+            )
+
+            purchase_ctx = PointPurchaseContext(
+                payments_ctx=PaymentsCommandContext(
+                    uow_factory=self._uow_factory,
+                    clock=self._clock,
+                    outbox=outbox,
+                    providers=payment_providers,
+                    permissions=frozenset(
+                        {
+                            "payments.create",
+                            "payments.cancel",
+                            "payments.refund",
+                            "payments.reconcile",
+                        }
+                    ),
+                    actor_id="feature:point_purchase",
+                ),
+                points_ctx=PointsCommandContext(
+                    uow_factory=self._uow_factory,
+                    clock=self._clock,
+                    outbox=outbox,
+                    behaviors=self.behaviors,
+                    actor_id="feature:point_purchase",
+                ),
+                points_queries=points_queries,
+                payments_queries=payments_queries,
+            )
+            self.workflow_registry.register(build_purchase_workflow_spec(ctx=purchase_ctx))
+            self.workflow_registry.register(build_refund_workflow_spec(ctx=purchase_ctx))
+
+        membership_queries: MembershipQueries | None = None
+        membership_ctx: MembershipCommandContext | None = None
+        if "membership" in capabilities:
+            membership_ctx = MembershipCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                levels=self.membership_levels,
+                subject_exists=adapters["membership.subject_exists"],
+                points_ledger=adapters["membership.points_ledger"],
+                permissions=frozenset(),
+                actor_id="system",
+                trace_id="membership",
+            )
+            membership_queries = MembershipQueries(
+                uow_factory=self._uow_factory, levels=self.membership_levels
+            )
+            self.diagnostic_registry.register(
+                MembershipDiagnostics(
+                    uow_factory=self._uow_factory,
+                    levels=self.membership_levels,
+                    clock=self._clock,
+                )
+            )
+        if "membership_purchase" in features:
+            from inc.features.membership_purchase.workflows import (
+                MembershipPurchaseContext,
+            )
+            from inc.features.membership_purchase.workflows import (
+                build_purchase_workflow_spec as build_membership_purchase_workflow_spec,
+            )
+
+            if membership_ctx is None:
+                raise _fail(
+                    "kernel.feature_requires_missing",
+                    "membership_purchase requires the membership capability",
+                )
+            membership_purchase_ctx = MembershipPurchaseContext(
+                payments_ctx=PaymentsCommandContext(
+                    uow_factory=self._uow_factory,
+                    clock=self._clock,
+                    outbox=outbox,
+                    providers=payment_providers,
+                    permissions=frozenset(
+                        {
+                            "payments.create",
+                            "payments.cancel",
+                            "payments.refund",
+                            "payments.reconcile",
+                        }
+                    ),
+                    actor_id="feature:membership_purchase",
+                ),
+                membership_ctx=membership_ctx,
+                payments_queries=payments_queries,
+            )
+            self.workflow_registry.register(
+                build_membership_purchase_workflow_spec(ctx=membership_purchase_ctx)
+            )
+
         keys = KeyService(
             uow_factory=self._uow_factory,
             store=InMemorySigningKeyStore(),
@@ -373,7 +588,7 @@ class ApplicationContainer:
                 authenticator=adapters["oidc.subject_authenticator"],
                 claims_reader=adapters["oidc.subject_claims"],
                 authorization_reader=adapters["oidc.authorization_decision"],
-                issuer=getattr(self._settings, "issuer", "http://localhost:8080"),
+                issuer=getattr(self._settings, "issuer", "http://127.0.0.1:8080"),
             )
             oidc = {
                 "authorization": AuthorizationService(service_ctx),
@@ -439,6 +654,18 @@ class ApplicationContainer:
                     providers={"dev_memory": dev_storage} if dev_storage is not None else {},
                 )
             )
+        if "points" in capabilities:
+            self.diagnostic_registry.register(
+                PointsDiagnostics(
+                    uow_factory=self._uow_factory,
+                    behaviors=self.behaviors,
+                    clock=self._clock,
+                )
+            )
+        if "payments" in capabilities:
+            self.diagnostic_registry.register(
+                PaymentsDiagnostics(uow_factory=self._uow_factory, clock=self._clock)
+            )
 
         self.services = Services(
             uow_factory=self._uow_factory,
@@ -462,9 +689,16 @@ class ApplicationContainer:
             settings_queries=settings_queries,
             asset_queries=asset_queries,
             audit_queries=audit_queries,
+            behaviors=self.behaviors,
+            points_queries=points_queries,
+            payments_queries=payments_queries,
+            membership_levels=self.membership_levels,
+            membership_queries=membership_queries,
             scanner=scanner,
             oidc=oidc,
             dev_storage=dev_storage,
+            payment_providers=payment_providers,
+            payment_webhook_secrets=payment_webhook_secrets,
         )
         return self.services
 
@@ -508,6 +742,8 @@ class ApplicationContainer:
             self.content_types,
             self.dimensions,
             self.settings_groups,
+            self.behaviors,
+            self.membership_levels,
             self.diagnostic_registry,
             self.admin_summary_registry,
         ):
@@ -555,6 +791,16 @@ class ApplicationContainer:
                     )
                 )
             )
+        if self._manifest.cron_enabled and self._points_expire is not None:
+            self._tasks.append(
+                asyncio.create_task(
+                    self._loop(
+                        "points-expire",
+                        self._points_expire,
+                        max(sleep, 5.0),
+                    )
+                )
+            )
         self._started = True
 
     async def _loop(self, name: str, call: Any, sleep_seconds: float) -> None:
@@ -586,6 +832,13 @@ class ApplicationContainer:
 def _binds_dev_storage(manifest: AppManifest) -> bool:
     return any(
         port == "assets.object_storage" and adapter == "assets.dev_memory"
+        for port, adapter in manifest.adapters
+    )
+
+
+def _binds_dev_payment(manifest: AppManifest) -> bool:
+    return any(
+        port == "payments.provider" and adapter == "payments.dev_fake"
         for port, adapter in manifest.adapters
     )
 

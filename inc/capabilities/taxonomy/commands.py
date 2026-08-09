@@ -72,6 +72,14 @@ def _require_permission(ctx: CommandContext, key: str) -> None:
         raise _forbidden("taxonomy.forbidden", f"requires permission {key}")
 
 
+def _has_any_manage_permission(ctx: CommandContext) -> bool:
+    """True when the caller holds the generic taxonomy.manage or any
+    dimension-scoped taxonomy.<dimension>.manage key."""
+    return PERMISSION_MANAGE in ctx.permissions or any(
+        key.startswith("taxonomy.") and key.endswith(".manage") for key in ctx.permissions
+    )
+
+
 def _require_dimension(ctx: CommandContext, dimension_key: str) -> DimensionSpec:
     """Client-supplied dimensions are validation errors, not internal ones."""
 
@@ -226,6 +234,10 @@ class UpdateTerm:
         async with ctx.uow_factory() as uow:
             row: TaxonomyTerm | None = await uow.session.get(TaxonomyTerm, term_id)
             if row is None:
+                # Require the permission before leaking existence, so
+                # unprivileged callers cannot use error category as an oracle.
+                if not _has_any_manage_permission(ctx):
+                    raise _forbidden("taxonomy.forbidden", "requires a taxonomy manage permission")
                 raise KernelError(
                     code="taxonomy.term_not_found",
                     category=ErrorCategory.NOT_FOUND,
@@ -277,6 +289,10 @@ class ArchiveTerm:
         async with ctx.uow_factory() as uow:
             row: TaxonomyTerm | None = await uow.session.get(TaxonomyTerm, term_id)
             if row is None:
+                # Require the permission before leaking existence, so
+                # unprivileged callers cannot use error category as an oracle.
+                if not _has_any_manage_permission(ctx):
+                    raise _forbidden("taxonomy.forbidden", "requires a taxonomy manage permission")
                 raise KernelError(
                     code="taxonomy.term_not_found",
                     category=ErrorCategory.NOT_FOUND,
@@ -360,11 +376,13 @@ class AssignTerms:
             existing = (
                 (
                     await uow.session.execute(
-                        select(TaxonomyAssignment).where(
+                        select(TaxonomyAssignment)
+                        .where(
                             TaxonomyAssignment.dimension_key == dimension_key,
                             TaxonomyAssignment.target_type == input_.target_type,
                             TaxonomyAssignment.target_id == input_.target_id,
                         )
+                        .with_for_update()
                     )
                 )
                 .scalars()
@@ -372,7 +390,17 @@ class AssignTerms:
             )
             for row in existing:
                 await uow.session.delete(row)
-            await uow.session.flush()
+            try:
+                await uow.session.flush()
+            except IntegrityError as exc:
+                # A concurrent replacement interleaved; the unique constraint
+                # surfaced the overlap. Roll back and retry once so this
+                # caller re-reads the winning set before replacing.
+                await uow.rollback()
+                raise _conflict(
+                    "taxonomy.assignments_conflict",
+                    "assignments changed concurrently; retry",
+                ) from exc
             for position, term_id in enumerate(input_.term_ids):
                 uow.session.add(
                     TaxonomyAssignment(

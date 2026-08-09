@@ -22,9 +22,19 @@ ALL_CAPABILITIES = (
     "content",
     "taxonomy",
     "assets",
+    "points",
+    "payments",
+    "membership",
 )
 
-ALL_FEATURES = ("post", "page", "site_settings")
+ALL_FEATURES = (
+    "post",
+    "page",
+    "site_settings",
+    "check_in",
+    "point_purchase",
+    "membership_purchase",
+)
 
 
 def test_manifest_fixtures_are_immutable_and_named() -> None:

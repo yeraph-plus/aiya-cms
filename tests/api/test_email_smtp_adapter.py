@@ -2,20 +2,22 @@
 
 Contract source: context/spec/capabilities/notification.md §8.
 
-Requires a mailpit instance on localhost:1025 (started ad hoc for the
-integration run, e.g. ``docker run --rm -p 1025:1025 -p 8025:8025
-axllent/mailpit:v1.21``). Tests skip when no SMTP endpoint is reachable so
-the default suite never depends on an external service.
+Requires the mailpit container from compose.infra (host SMTP port
+``MAILPIT_SMTP_PORT``, default 2525, mapped to container 1025; web UI on
+``MAILPIT_UI_PORT``, default 8025). Tests skip when the endpoint does not
+serve the SMTP banner, so the default suite never depends on the container.
 """
 
 from __future__ import annotations
 
+import os
 import socket
+import urllib.request
 from typing import Any
 
 import pytest
 
-from inc.api.adapters.notification.email_smtp import SmtpEmailAdapter, SmtpSettings
+from inc.adapters.notification.email_smtp import SmtpEmailAdapter, SmtpSettings
 from inc.capabilities.notification.ports import (
     ProviderError,
     ProviderResult,
@@ -23,20 +25,35 @@ from inc.capabilities.notification.ports import (
 )
 
 MAILPIT_HOST = "127.0.0.1"
-MAILPIT_PORT = 2525
+MAILPIT_SMTP_PORT = int(os.environ.get("MAILPIT_SMTP_PORT", "2525"))
+MAILPIT_UI_PORT = int(os.environ.get("MAILPIT_UI_PORT", "8025"))
 
 
-def _mailpit_reachable() -> bool:
+def _mailpit_serving() -> bool:
+    """True only when the SMTP port is mapped AND mailpit is actually ready.
+
+    The SMTP listener alone is not enough: the Docker userland proxy on
+    Windows can accept the connection and delay the 220 banner for tens of
+    seconds, so the reliable service check is mailpit's own readiness
+    endpoint (the same probe the compose healthcheck uses).
+    """
     try:
-        with socket.create_connection((MAILPIT_HOST, MAILPIT_PORT), timeout=2):
-            return True
+        with socket.create_connection((MAILPIT_HOST, MAILPIT_SMTP_PORT), timeout=2):
+            pass
     except OSError:
+        return False
+    try:
+        with urllib.request.urlopen(
+            f"http://{MAILPIT_HOST}:{MAILPIT_UI_PORT}/readyz", timeout=2
+        ) as resp:
+            return resp.status == 200
+    except Exception:  # noqa: BLE001 - probe failures just mean "not ready"
         return False
 
 
 pytestmark = pytest.mark.skipif(
-    not _mailpit_reachable(),
-    reason="mailpit SMTP endpoint not reachable; start it ad hoc to run adapter integration",
+    not _mailpit_serving(),
+    reason="mailpit SMTP endpoint not serving; start compose.infra to run adapter integration",
 )
 
 
@@ -45,9 +62,14 @@ def _target(address: str = "recipient@example.com") -> RecipientTarget:
 
 
 async def test_smtp_send_delivers() -> None:
+    # The Docker userland proxy on Windows can delay the SMTP banner well past
+    # the adapter's default 15s timeout, so use a generous per-test timeout.
     adapter = SmtpEmailAdapter(
         settings=SmtpSettings(
-            host=MAILPIT_HOST, port=MAILPIT_PORT, from_address="sender@example.com"
+            host=MAILPIT_HOST,
+            port=MAILPIT_SMTP_PORT,
+            from_address="sender@example.com",
+            timeout_seconds=30.0,
         )
     )
     result = await adapter.send(
@@ -77,7 +99,7 @@ async def test_smtp_connection_error_classified_transient(monkeypatch: Any) -> N
 async def test_smtp_auth_error_classified_permanent(monkeypatch: Any) -> None:
     import aiosmtplib
 
-    adapter = SmtpEmailAdapter(settings=SmtpSettings(host=MAILPIT_HOST, port=MAILPIT_PORT))
+    adapter = SmtpEmailAdapter(settings=SmtpSettings(host=MAILPIT_HOST, port=MAILPIT_SMTP_PORT))
 
     async def _boom(*args: Any, **kwargs: Any) -> str:
         raise aiosmtplib.SMTPAuthenticationError(535, b"authentication failed")

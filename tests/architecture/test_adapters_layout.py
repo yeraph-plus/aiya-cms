@@ -2,11 +2,11 @@
 
 Contract source: context/spec/adapters.md §2/§4/§6.
 
-Adapters live under ``inc/api/adapters/<capability>/``; planned
-integrations are side-effect-free placeholders that declare their target
-Port. Importing any adapter directory must not start connections,
-threads, routers or registries, and the planned ones must not import
-provider SDKs.
+Adapters live under ``inc/adapters/<capability>/`` and are usable by both
+``inc/api`` and ``inc/features``; planned integrations are side-effect-free
+placeholders that declare their target Port. Importing any adapter
+directory must not start connections, threads, routers or registries, and
+the planned ones must not import provider SDKs.
 """
 
 from __future__ import annotations
@@ -21,18 +21,28 @@ ADAPTER_DIRS = (
 )
 
 PLACEHOLDERS = (
-    "inc.api.adapters.notification.smtp2go",
-    "inc.api.adapters.payments.paypal",
-    "inc.api.adapters.payments.epay",
-    "inc.api.adapters.content.s3",
-    "inc.api.adapters.content.openlist",
+    "inc.adapters.notification.smtp2go",
+    "inc.adapters.payments.paypal",
+    "inc.adapters.content.s3",
 )
 
-IMPLEMENTED = ("inc.api.adapters.notification.email_smtp",)
+IMPLEMENTED = (
+    "inc.adapters.notification.email_smtp",
+    "inc.adapters.payments.epay",
+    "inc.adapters.content.openlist",
+)
+
+
+def test_adapters_live_at_inc_root() -> None:
+    root = Path(__file__).resolve().parents[2] / "inc" / "adapters"
+    assert root.is_dir(), "inc/adapters skeleton missing"
+    assert not (Path(__file__).resolve().parents[2] / "inc" / "api" / "adapters").exists(), (
+        "inc/api/adapters must not return; adapters moved to inc/adapters"
+    )
 
 
 def test_adapter_directories_match_spec_layout() -> None:
-    root = Path(__file__).resolve().parents[2] / "inc" / "api" / "adapters"
+    root = Path(__file__).resolve().parents[2] / "inc" / "adapters"
     for capability, modules in ADAPTER_DIRS:
         directory = root / capability
         assert directory.is_dir(), f"missing adapter directory {directory}"
@@ -50,7 +60,7 @@ def test_placeholder_imports_are_side_effect_free() -> None:
 
 
 def test_email_smtp_adapter_imports_only_expected_dependencies() -> None:
-    import inc.api.adapters.notification.email_smtp as adapter
+    import inc.adapters.notification.email_smtp as adapter
 
     source = Path(adapter.__file__).read_text(encoding="utf-8")
     assert "aiosmtplib" in source

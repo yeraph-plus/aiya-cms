@@ -191,6 +191,34 @@ class WorkflowRunner:
             await uow.commit()
             return instance
 
+    async def find_by_business_key(  # type: ignore[return]
+        self,
+        *,
+        workflow_key: str,
+        idempotency_key: str,
+    ) -> WorkflowInstance | None:
+        """Read-only lookup by business idempotency key (spec §4).
+
+        Signal bridges (e.g. a payment webhook locating the waiting
+        purchase workflow) use this to find the instance to signal; the
+        lookup never writes.
+        """
+
+        async with self._uow_factory() as uow:
+            instance: WorkflowInstance | None = (
+                (
+                    await uow.session.execute(
+                        select(WorkflowInstance).where(
+                            WorkflowInstance.workflow_key == workflow_key,
+                            WorkflowInstance.business_idempotency_key == idempotency_key,
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            return instance
+
     async def deliver_signal(  # type: ignore[return]
         self,
         *,

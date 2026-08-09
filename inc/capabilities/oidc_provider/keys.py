@@ -102,7 +102,9 @@ class KeyService:
             row = (
                 (
                     await uow.session.execute(
-                        select(OidcSigningKey).where(OidcSigningKey.status == "active")
+                        select(OidcSigningKey)
+                        .where(OidcSigningKey.status == "active")
+                        .with_for_update()
                     )
                 )
                 .scalars()
@@ -117,6 +119,10 @@ class KeyService:
                 # Private material lost: retire and generate a replacement.
                 row.status = "retired"
                 row.retire_at = self._clock.utc_now()
+                # Retention is anchored to retirement, not creation: the
+                # replacement must keep verifying tokens signed by this key
+                # for the full retention window after it stops signing.
+                row.delete_at = row.retire_at + timedelta(seconds=KEY_RETENTION_SECONDS)
                 await uow.commit()
             return await self._rotate(uow, initial=True)
 
@@ -136,14 +142,19 @@ class KeyService:
                 status="active",
                 not_before_at=now,
                 retire_at=None,
-                delete_at=now + timedelta(seconds=KEY_RETENTION_SECONDS),
+                # Active keys are retained indefinitely; delete_at is anchored
+                # to retirement so an active key can never be cleaned up while
+                # tokens it signed are still within their maximum lifetime.
+                delete_at=None,
             )
         )
         if not initial:
             active = (
                 (
                     await uow.session.execute(
-                        select(OidcSigningKey).where(OidcSigningKey.status == "active")
+                        select(OidcSigningKey)
+                        .where(OidcSigningKey.status == "active")
+                        .with_for_update()
                     )
                 )
                 .scalars()
@@ -234,7 +245,10 @@ def verify_jwt(
 ) -> dict[str, Any]:
     """Verify signature, issuer, audience and algorithm allowlist."""
 
-    header = pyjwt.get_unverified_header(token)
+    try:
+        header = pyjwt.get_unverified_header(token)
+    except pyjwt.PyJWTError as exc:
+        raise OidcError("invalid_token", "malformed token") from exc
     algorithm = header.get("alg")
     if algorithm not in ALGORITHM_ALLOWLIST:
         raise OidcError("invalid_token", f"unacceptable signing algorithm {algorithm!r}")

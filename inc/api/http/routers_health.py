@@ -3,13 +3,17 @@
 Contract source: context/spec/http-openapi.md §2.
 
 ``/healthz`` is process liveness without dependencies; ``/api/v1/health``
-reports manifest readiness.
+reports manifest readiness by probing the database with a strict timeout.
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
+
+ReadinessProbe = Callable[[], Awaitable[bool]]
 
 
 class HealthDTO(BaseModel):
@@ -22,9 +26,13 @@ class HealthDTO(BaseModel):
 
 
 def build_router(
-    *, manifest_name: str, capabilities: tuple[str, ...], routers: tuple[str, ...]
+    *,
+    manifest_name: str,
+    capabilities: tuple[str, ...],
+    routers: tuple[str, ...],
+    readiness: ReadinessProbe | None = None,
 ) -> APIRouter:
-    router = APIRouter()
+    router = APIRouter(tags=["system"])
 
     @router.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -32,8 +40,14 @@ def build_router(
 
     @router.get("/api/v1/health", response_model=HealthDTO)
     async def health() -> HealthDTO:
+        ready = True
+        if readiness is not None:
+            try:
+                ready = await readiness()
+            except Exception:  # noqa: BLE001 - any probe failure means not ready
+                ready = False
         return HealthDTO(
-            status="ok",
+            status="ok" if ready else "degraded",
             manifest=manifest_name,
             capabilities=sorted(capabilities),
             routers=sorted(routers),

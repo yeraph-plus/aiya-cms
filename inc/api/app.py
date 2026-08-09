@@ -10,6 +10,7 @@ module creates nothing; only ``create_app`` does.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import re
 import uuid
@@ -21,6 +22,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inc.api.container import ApplicationContainer, Services, build_container
@@ -50,6 +52,12 @@ _ROUTER_FACTORIES: dict[str, Any] = {
     "assets": importlib.import_module("inc.api.http.routers_assets"),
     "audit": importlib.import_module("inc.api.http.routers_audit"),
     "auth": importlib.import_module("inc.api.http.routers_auth"),
+    "check_in": importlib.import_module("inc.api.http.routers_check_in"),
+    "points": importlib.import_module("inc.api.http.routers_points"),
+    "points_admin": importlib.import_module("inc.api.http.routers_points_admin"),
+    "point_purchase": importlib.import_module("inc.api.http.routers_point_purchase"),
+    "payments": importlib.import_module("inc.api.http.routers_payments"),
+    "membership_purchase": importlib.import_module("inc.api.http.routers_membership_purchase"),
 }
 
 _REQUEST_ID_HEADER = "x-request-id"
@@ -76,7 +84,7 @@ class _RequestIdMiddleware:
 
         headers = Headers(raw=scope.get("headers", []))
         raw = headers.get(_REQUEST_ID_HEADER)
-        request_id = raw if raw and _REQUEST_ID_PATTERN.match(raw) else uuid.uuid4().hex
+        request_id = raw if raw and _REQUEST_ID_PATTERN.fullmatch(raw) else uuid.uuid4().hex
         scope["state"] = dict(scope.get("state", {}))
         scope["state"]["request_id"] = request_id
 
@@ -100,6 +108,36 @@ _DEFAULT_HTTP_MESSAGES = {
     429: "too many requests",
     500: "internal error",
 }
+
+
+_OPENAPI_TAGS: list[dict[str, str]] = [
+    {"name": "system", "description": "Liveness and readiness probes."},
+    {"name": "auth", "description": "Authentication and account self-service."},
+    {"name": "oidc", "description": "OIDC provider protocol endpoints."},
+    {"name": "check-in", "description": "Daily check-in; rewards points."},
+    {"name": "points", "description": "Points balance self-service reads."},
+    {"name": "point-purchase", "description": "Buy points via the trusted offer catalog."},
+    {
+        "name": "membership-purchase",
+        "description": "Buy membership via the trusted offer catalog.",
+    },
+    {"name": "webhooks", "description": "Provider webhook callbacks (signature verified)."},
+    {
+        "name": "admin",
+        "description": (
+            "Administrator management endpoints; each requires backend capability grants."
+        ),
+    },
+    {"name": "admin-users", "description": "User administration."},
+    {"name": "admin-access", "description": "Roles, grants and permission keys."},
+    {"name": "admin-content", "description": "Content lifecycle management."},
+    {"name": "admin-taxonomy", "description": "Taxonomy dimensions and terms."},
+    {"name": "admin-settings", "description": "Setting group management."},
+    {"name": "admin-assets", "description": "Asset upload and metadata management."},
+    {"name": "admin-audit", "description": "Audit log queries."},
+    {"name": "admin-payments", "description": "Payment order administration."},
+    {"name": "admin-points", "description": "Points balance and ledger administration."},
+]
 
 
 def _http_exception_response(request: Request, exc: Any) -> Any:
@@ -134,7 +172,7 @@ def create_app(
     services: Services = container.services  # type: ignore[assignment]
     verifier = BearerVerifier(
         services=services,
-        issuer=getattr(settings, "issuer", "http://localhost:8080"),
+        issuer=getattr(settings, "issuer", "http://127.0.0.1:8080"),
         api_audience=getattr(settings, "api_audience", "aiya-admin"),
     )
     require_capability = make_require_capability(verifier=verifier)
@@ -142,19 +180,21 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
-        if start_workers:
-            await container.start()
         try:
+            if start_workers:
+                await container.start()
             yield
         finally:
             await container.stop()
 
+    env = getattr(settings, "environment", "dev")
     app = FastAPI(
         title=f"aiya-cms ({manifest.name})",
         version="0.1.0",
-        docs_url=None,
-        redoc_url=None,
+        docs_url="/docs" if env != "production" else None,
+        redoc_url="/redoc" if env != "production" else None,
         openapi_url="/openapi.json",
+        openapi_tags=_OPENAPI_TAGS,
         lifespan=lifespan,
     )
 
@@ -172,11 +212,20 @@ def create_app(
     _register_error_handlers(app)
 
     # liveness/readiness always exist regardless of manifest scope
+    async def _db_readiness() -> bool:
+        async with uow_factory() as uow:
+            await asyncio.wait_for(
+                uow.session.execute(select(1)),
+                timeout=2.0,
+            )
+        return True
+
     app.include_router(
         build_health_router(
             manifest_name=manifest.name,
             capabilities=manifest.capabilities,
             routers=manifest.routers,
+            readiness=_db_readiness,
         )
     )
 
@@ -197,7 +246,7 @@ def create_app(
         from inc.capabilities.oidc_provider.api import OidcHttpServices, build_router
 
         oidc_services = OidcHttpServices(
-            issuer=getattr(settings, "issuer", "http://localhost:8080"),
+            issuer=getattr(settings, "issuer", "http://127.0.0.1:8080"),
             uow_factory=services.uow_factory,
             clock=services.clock,
             keys=services.oidc["keys"],

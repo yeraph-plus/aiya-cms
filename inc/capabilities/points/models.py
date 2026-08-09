@@ -3,28 +3,38 @@
 Contract source: context/spec/capabilities/points.md §2/§3.
 
 The ledger is the source of truth; balance is a same-transaction snapshot.
-Subject/source/actor are opaque references with no cross-capability FKs.
+Buckets are the consumption/expiration layer: perpetual (at most one per
+account) holds non-expiring points, expiring buckets group credits by
+(expiration_identity, expires_at). Debit allocations record exactly which
+buckets each consumption drew from. Subject/source/actor are opaque
+references with no cross-capability FKs.
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
     Uuid,
+    column,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inc.kernel.db import Base, JsonBModel, TableOwnership, TimestampMixin, UUIDPrimaryKeyMixin
 
 ACCOUNT_STATES = ("active", "frozen", "debt")
-ENTRY_TYPES = ("credit", "debit", "adjustment", "reversal")
+ENTRY_TYPES = ("credit", "debit", "adjustment", "reversal", "expiration")
+BUCKET_TYPES = ("perpetual", "expiring")
 
 
 class LedgerMetadata(BaseModel):
@@ -82,6 +92,90 @@ class PointsBalance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     balance: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+@TableOwnership.owned_by("capability:points")
+class PointsBucket(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Consumption/expiration layer; not 1:1 with credit ledger entries.
+
+    Perpetual: at most one per account, ``expires_at`` is NULL.
+    Expiring: unique on ``(account_id, expiration_identity, expires_at)``;
+    credits sharing identity and expiry share the bucket. ``amount`` is the
+    current remaining quantity (>= 0); ``version`` is an optimistic lock.
+    """
+
+    __tablename__ = "points_buckets"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("points_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    bucket_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    expiration_identity: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        CheckConstraint(
+            "amount >= 0",
+            name="ck_points_buckets_amount_nonneg",
+        ),
+        CheckConstraint(
+            "bucket_type IN ('perpetual', 'expiring')",
+            name="ck_points_buckets_type_valid",
+        ),
+        CheckConstraint(
+            "(bucket_type = 'perpetual') = (expiration_identity IS NULL AND expires_at IS NULL)",
+            name="ck_points_buckets_type_shape",
+        ),
+        Index(
+            "uq_points_buckets_account_perpetual",
+            "account_id",
+            unique=True,
+            postgresql_where=column("bucket_type") == "perpetual",
+            sqlite_where=column("bucket_type") == "perpetual",
+        ),
+        Index(
+            "uq_points_buckets_account_expiring",
+            "account_id",
+            "expiration_identity",
+            "expires_at",
+            unique=True,
+            postgresql_where=column("bucket_type") == "expiring",
+            sqlite_where=column("bucket_type") == "expiring",
+        ),
+        Index(
+            "ix_points_buckets_expiry_due",
+            "bucket_type",
+            "expires_at",
+            "amount",
+        ),
+    )
+
+
+@TableOwnership.owned_by("capability:points")
+class PointsDebitAllocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Which bucket(s) a debit/expiration drew from (or a reversal restored).
+
+    ``amount`` is a positive absolute value. A consumption entry (debit,
+    expiration, credit-reversal) records its drawn buckets here; reversing a
+    debit restores the exact buckets via the original entry's allocations.
+    """
+
+    __tablename__ = "points_debit_allocations"
+
+    entry_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("points_ledger_entries.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    bucket_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("points_buckets.id"), nullable=False, index=True
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_points_allocations_amount_positive"),
+        UniqueConstraint("entry_id", "bucket_id", name="uq_points_allocations_entry_bucket"),
+    )
 
 
 @TableOwnership.owned_by("capability:points")

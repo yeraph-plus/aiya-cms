@@ -979,6 +979,59 @@ def upgrade() -> None:
         sa.UniqueConstraint("account_id"),
     )
     op.create_table(
+        "points_buckets",
+        sa.Column("account_id", sa.Uuid(), nullable=False),
+        sa.Column("bucket_type", sa.String(length=16), nullable=False),
+        sa.Column("expiration_identity", sa.String(length=200), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "amount >= 0",
+            name="ck_points_buckets_amount_nonneg",
+        ),
+        sa.CheckConstraint(
+            "bucket_type IN ('perpetual', 'expiring')",
+            name="ck_points_buckets_type_valid",
+        ),
+        sa.CheckConstraint(
+            "(bucket_type = 'perpetual') = (expiration_identity IS NULL AND expires_at IS NULL)",
+            name="ck_points_buckets_type_shape",
+        ),
+        sa.ForeignKeyConstraint(
+            ["account_id"],
+            ["points_accounts.id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_points_buckets_account_id"), "points_buckets", ["account_id"], unique=False
+    )
+    op.create_index(
+        "ix_points_buckets_expiry_due",
+        "points_buckets",
+        ["bucket_type", "expires_at", "amount"],
+        unique=False,
+    )
+    op.create_index(
+        "uq_points_buckets_account_perpetual",
+        "points_buckets",
+        ["account_id"],
+        unique=True,
+        postgresql_where=sa.text("bucket_type = 'perpetual'"),
+    )
+    op.create_index(
+        "uq_points_buckets_account_expiring",
+        "points_buckets",
+        ["account_id", "expiration_identity", "expires_at"],
+        unique=True,
+        postgresql_where=sa.text("bucket_type = 'expiring'"),
+    )
+    op.create_table(
         "points_ledger_entries",
         sa.Column("program_id", sa.Uuid(), nullable=False),
         sa.Column("account_id", sa.Uuid(), nullable=False),
@@ -1031,16 +1084,139 @@ def upgrade() -> None:
         ["reversal_of"],
         unique=False,
     )
+    op.create_table(
+        "points_debit_allocations",
+        sa.Column("entry_id", sa.Uuid(), nullable=False),
+        sa.Column("bucket_id", sa.Uuid(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("amount > 0", name="ck_points_allocations_amount_positive"),
+        sa.ForeignKeyConstraint(
+            ["bucket_id"],
+            ["points_buckets.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["entry_id"],
+            ["points_ledger_entries.id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("entry_id", "bucket_id", name="uq_points_allocations_entry_bucket"),
+    )
+    op.create_index(
+        op.f("ix_points_debit_allocations_bucket_id"),
+        "points_debit_allocations",
+        ["bucket_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_points_debit_allocations_entry_id"),
+        "points_debit_allocations",
+        ["entry_id"],
+        unique=False,
+    )
+    op.create_table(
+        "membership_levels",
+        sa.Column("level_key", sa.String(length=100), nullable=False),
+        sa.Column("display_name", sa.String(length=200), nullable=False),
+        sa.Column("tier_rank", sa.Integer(), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("cycle_days", sa.Integer(), nullable=False),
+        sa.Column("grant_points", sa.Integer(), nullable=False),
+        sa.Column("renewal_allowed", sa.Boolean(), nullable=False),
+        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("level_key"),
+    )
+    op.create_table(
+        "membership_subscriptions",
+        sa.Column("subject_type", sa.String(length=32), nullable=False),
+        sa.Column("subject_id", sa.String(length=200), nullable=False),
+        sa.Column("level_key", sa.String(length=100), nullable=False),
+        sa.Column("cycle_start", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("cycle_end", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("auto_renew", sa.Boolean(), nullable=False),
+        sa.Column("granted_points", sa.Integer(), nullable=False),
+        sa.Column("renewal_count", sa.Integer(), nullable=False),
+        sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("expired_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "subject_type", "subject_id", name="uq_membership_subscription_subject"
+        ),
+    )
+    op.create_index(
+        op.f("ix_membership_subscriptions_subject_id"),
+        "membership_subscriptions",
+        ["subject_id"],
+        unique=False,
+    )
+    op.create_table(
+        "membership_renewal_records",
+        sa.Column("subscription_id", sa.Uuid(), nullable=False),
+        sa.Column("cycle_start", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("cycle_end", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("granted_points", sa.Integer(), nullable=False),
+        sa.Column("points_source_id", sa.String(length=200), nullable=False),
+        sa.Column("points_entry_id", sa.Uuid(), nullable=True),
+        sa.Column("outcome", sa.String(length=16), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["subscription_id"],
+            ["membership_subscriptions.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_membership_renewal_records_subscription_id"),
+        "membership_renewal_records",
+        ["subscription_id"],
+        unique=False,
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
 
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index(
+        op.f("ix_membership_renewal_records_subscription_id"),
+        table_name="membership_renewal_records",
+    )
+    op.drop_table("membership_renewal_records")
+    op.drop_index(
+        op.f("ix_membership_subscriptions_subject_id"),
+        table_name="membership_subscriptions",
+    )
+    op.drop_table("membership_subscriptions")
+    op.drop_table("membership_levels")
+    op.drop_index(
+        op.f("ix_points_debit_allocations_entry_id"), table_name="points_debit_allocations"
+    )
+    op.drop_index(
+        op.f("ix_points_debit_allocations_bucket_id"), table_name="points_debit_allocations"
+    )
+    op.drop_table("points_debit_allocations")
     op.drop_index(op.f("ix_points_ledger_entries_reversal_of"), table_name="points_ledger_entries")
     op.drop_index(op.f("ix_points_ledger_entries_program_id"), table_name="points_ledger_entries")
     op.drop_index(op.f("ix_points_ledger_entries_account_id"), table_name="points_ledger_entries")
     op.drop_table("points_ledger_entries")
+    op.drop_index("uq_points_buckets_account_expiring", table_name="points_buckets")
+    op.drop_index("uq_points_buckets_account_perpetual", table_name="points_buckets")
+    op.drop_index("ix_points_buckets_expiry_due", table_name="points_buckets")
+    op.drop_index(op.f("ix_points_buckets_account_id"), table_name="points_buckets")
+    op.drop_table("points_buckets")
     op.drop_table("points_balances")
     op.drop_index(op.f("ix_points_accounts_subject_id"), table_name="points_accounts")
     op.drop_index(op.f("ix_points_accounts_program_id"), table_name="points_accounts")

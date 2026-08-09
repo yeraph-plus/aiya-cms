@@ -641,6 +641,64 @@ async def test_public_list_excludes_drafts(ctx: CommandContext, queries: Content
     assert page.total == 1
 
 
+# --- explicit sort (spec §7.1) -------------------------------------------
+
+
+async def test_explicit_sort_orders_by_title_with_stable_tiebreak(
+    ctx: CommandContext, queries: ContentQueries
+) -> None:
+    banana = await create_post(ctx, title="banana")
+    apple1 = await create_post(ctx, title="apple")
+    apple2 = await create_post(ctx, title="apple")
+
+    asc = await queries.list_contents(page=1, size=10, type_name="post", sort="title")
+    assert [item.title for item in asc.items] == ["apple", "apple", "banana"]
+    # stable tiebreak: id DESC within the same title
+    assert [item.id for item in asc.items[:2]] == [apple2.id, apple1.id]
+    assert banana.id in {item.id for item in asc.items}
+
+    desc = await queries.list_contents(page=1, size=10, type_name="post", sort="-title")
+    assert [item.title for item in desc.items] == ["banana", "apple", "apple"]
+
+
+async def test_explicit_sort_rejects_unknown_or_unallowed_fields(
+    ctx: CommandContext, queries: ContentQueries
+) -> None:
+    await create_post(ctx)
+    with pytest.raises(KernelError) as excinfo:
+        await queries.list_contents(page=1, size=10, type_name="post", sort="bogus")
+    assert excinfo.value.code == "content.invalid_sort"
+    # slug is a real column but not in the type's sort_options allowlist
+    with pytest.raises(KernelError) as excinfo:
+        await queries.list_contents(page=1, size=10, type_name="post", sort="slug")
+    assert excinfo.value.code == "content.invalid_sort"
+    with pytest.raises(KernelError) as excinfo:
+        await queries.list_contents(page=1, size=10, type_name="post", sort="")
+    assert excinfo.value.code == "content.invalid_sort"
+
+
+async def test_explicit_sort_overrides_default_pin_order(
+    ctx: CommandContext, queries: ContentQueries
+) -> None:
+    first = await create_post(ctx, title="aaa-first")
+    second = await create_post(ctx, title="zzz-second")
+    await SetContentPin(ctx)(uuid.UUID(first.id), SetContentPinInput(is_pinned=True, pin_rank=1))
+
+    default = await queries.list_contents(page=1, size=10, type_name="post")
+    assert default.items[0].id == first.id  # pinned first by default
+
+    by_published = await queries.list_contents(
+        page=1, size=10, type_name="post", sort="-published_at"
+    )
+    # explicit sort overrides the pin-first default; both published_at are
+    # NULL so the id DESC stable key orders newest first
+    assert by_published.items[0].id == second.id
+    assert by_published.total == 2
+
+    cross_type = await queries.list_contents(page=1, size=10, sort="title")
+    assert [item.title for item in cross_type.items] == ["aaa-first", "zzz-second"]
+
+
 # --- references & purge --------------------------------------------------
 
 

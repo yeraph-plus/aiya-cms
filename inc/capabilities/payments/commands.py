@@ -152,6 +152,7 @@ def _to_order(row: PaymentOrder) -> OrderDTO:
         subject_id=row.subject_id,
         provider_key=row.provider_key,
         order_reference=row.order_reference,
+        idempotency_key=row.idempotency_key,
         offer_key=row.offer.offer_key,
         offer_version=row.offer.offer_version,
         description=row.offer.description,
@@ -402,15 +403,21 @@ class ProcessVerifiedWebhook:
                 .first()
             )
             if receipt is not None:
-                return {"duplicate": True, "event_id": event.event_id}
+                return {
+                    "duplicate": True,
+                    "event_id": event.event_id,
+                    "order_id": str(receipt.order_id) if receipt.order_id is not None else None,
+                }
 
             order = (
                 (
                     await uow.session.execute(
-                        select(PaymentOrder).where(
+                        select(PaymentOrder)
+                        .where(
                             PaymentOrder.order_reference == event.order_reference,
                             PaymentOrder.provider_key == provider_key,
                         )
+                        .with_for_update()
                     )
                 )
                 .scalars()
@@ -445,7 +452,13 @@ class ProcessVerifiedWebhook:
                         .first()
                     )
                 if existing is not None:
-                    return {"duplicate": True, "event_id": event.event_id}
+                    return {
+                        "duplicate": True,
+                        "event_id": event.event_id,
+                        "order_id": (
+                            str(existing.order_id) if existing.order_id is not None else None
+                        ),
+                    }
                 raise
 
             if order is None:
@@ -542,8 +555,9 @@ async def _apply_refund_event(
     candidate.completed_at = ctx.clock.utc_now()
     order.refunded_amount += candidate.amount
     target = "refunded" if order.refunded_amount >= order.captured_amount else "partially_refunded"
-    _transition(order, target)
-    order.state = target
+    if target != order.state:
+        _transition(order, target)
+        order.state = target
     await _emit(
         ctx,
         uow,

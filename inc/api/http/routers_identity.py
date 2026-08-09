@@ -20,6 +20,7 @@ from inc.capabilities.identity.commands import (
     BanUser,
     CommandContext,
     DeleteUser,
+    UnbanUser,
 )
 from inc.capabilities.identity.schemas import SubjectDTO
 from inc.kernel.db import Page
@@ -45,6 +46,7 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
 REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "identity.users.read",
     "identity.users.ban",
+    "identity.users.unban",
     "identity.users.delete",
 )
 
@@ -54,7 +56,7 @@ def build_router(
     require_capability: RequireCapability,
     require_authenticated: Any = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/admin")
+    router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-users"])
 
     @router.get("/users", response_model=Page[SubjectDTO])
     async def list_users(
@@ -88,6 +90,13 @@ def build_router(
         ctx: AppContext = Depends(require_capability("identity.users.ban")),
     ) -> SubjectDTO:
         return await BanUser(_ctx(ctx, services))(user_id=str(user_id), reason=body.reason)
+
+    @router.post("/users/{user_id}/unban", response_model=SubjectDTO)
+    async def unban_user(
+        user_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("identity.users.unban")),
+    ) -> SubjectDTO:
+        return await UnbanUser(_ctx(ctx, services))(user_id=str(user_id))
 
     @router.delete("/users/{user_id}", status_code=204)
     async def delete_user(

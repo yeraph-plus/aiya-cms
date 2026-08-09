@@ -137,3 +137,45 @@ async def test_scheduled_publish_via_scanner(client: Any, admin_token: str, cloc
     await app.state.container.services.runner.run_due()
     fetched = await client.get(f"/api/v1/admin/content/{content_id}", headers=headers)
     assert fetched.json()["status"] == "published"
+
+
+async def test_explicit_sort_via_api(client: Any, admin_token: str) -> None:
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for title, slug in (("banana", "sort-b"), ("apple", "sort-a"), ("cherry", "sort-c")):
+        created = await client.post(
+            "/api/v1/admin/content",
+            json={"type_name": "post", "title": title, "slug": slug, "data": {"summary": "s"}},
+            headers=headers,
+        )
+        assert created.status_code == 200, created.text
+
+    asc = await client.get(
+        "/api/v1/admin/content",
+        params={"type_name": "post", "sort": "title"},
+        headers=headers,
+    )
+    assert asc.status_code == 200, asc.text
+    assert [item["title"] for item in asc.json()["items"]] == ["apple", "banana", "cherry"]
+
+    desc = await client.get(
+        "/api/v1/admin/content",
+        params={"type_name": "post", "sort": "-title"},
+        headers=headers,
+    )
+    assert [item["title"] for item in desc.json()["items"]] == ["cherry", "banana", "apple"]
+
+    # default order is unchanged when sort is omitted (pin-first spec §7)
+    default = await client.get("/api/v1/admin/content", headers=headers)
+    assert default.status_code == 200
+
+    unknown = await client.get("/api/v1/admin/content", params={"sort": "bogus"}, headers=headers)
+    assert unknown.status_code == 422
+    assert unknown.json()["code"] == "content.invalid_sort"
+
+    not_allowlisted = await client.get(
+        "/api/v1/admin/content",
+        params={"type_name": "post", "sort": "slug"},
+        headers=headers,
+    )
+    assert not_allowlisted.status_code == 422
+    assert not_allowlisted.json()["code"] == "content.invalid_sort"

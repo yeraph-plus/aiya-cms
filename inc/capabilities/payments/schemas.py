@@ -20,6 +20,7 @@ class OrderDTO(BaseModel):
     subject_id: str
     provider_key: str
     order_reference: str
+    idempotency_key: str
     offer_key: str
     offer_version: str
     description: str

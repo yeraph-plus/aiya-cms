@@ -63,9 +63,11 @@ class AuthorizeService:
         granted = {key for key, _ in rows}
         if permission_key not in granted:
             return AuthorizationDecision(allowed=False, reason="deny.no_grant")
-        if scope == "global":
-            return AuthorizationDecision(allowed=True, reason="allow.global")
         scopes = {grant_scope for key, grant_scope in rows if key == permission_key}
+        if scope == "global":
+            if "global" in scopes:
+                return AuthorizationDecision(allowed=True, reason="allow.global")
+            return AuthorizationDecision(allowed=False, reason="deny.scope")
         if "global" in scopes or "own" in scopes:
             return AuthorizationDecision(allowed=True, reason=f"allow.{scope}")
         return AuthorizationDecision(allowed=False, reason="deny.scope")

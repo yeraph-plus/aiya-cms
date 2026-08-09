@@ -10,6 +10,7 @@ duplicate bindings fail startup.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from inc.capabilities.access import AuthorizeService
@@ -102,15 +103,23 @@ def _scope_capabilities(scopes: set[str]) -> set[str] | None:
 
 
 class TaxonomyContentExists:
-    """Target existence check implemented over the content capability."""
+    """Target existence check implemented over the content capability.
+
+    The opaque taxonomy ``target_type`` is interpreted as a content type
+    name: a target exists when the content row exists and its
+    ``type_name`` matches (the post feature declares
+    ``target_types=("post",)``).
+    """
 
     def __init__(self, *, queries: ContentQueries) -> None:
         self._queries = queries
 
     async def __call__(self, target_type: str, target_id: str) -> bool:
-        if target_type != "content":
+        parsed = _parse_uuid(target_id)
+        if parsed is None:
             return False
-        return await self._queries.get(target_id) is not None
+        content = await self._queries.get(parsed)
+        return content is not None and content.type_name == target_type
 
 
 class ContentBatchExists:
@@ -122,12 +131,17 @@ class ContentBatchExists:
     async def __call__(self, target_type: str, target_ids: list[str]) -> dict[str, bool]:
         out: dict[str, bool] = {}
         for target_id in target_ids:
-            out[target_id] = (
-                await self._queries.get(target_id) is not None
-                if target_type == "content"
-                else False
-            )
+            parsed = _parse_uuid(target_id)
+            content = await self._queries.get(parsed) if parsed is not None else None
+            out[target_id] = content is not None and content.type_name == target_type
         return out
+
+
+def _parse_uuid(value: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return None
 
 
 class InMemoryObjectStorage:
@@ -234,6 +248,23 @@ def resolve_adapters(
             resolved[port] = ContentBatchExists(queries=content_queries)  # type: ignore[arg-type]
         elif adapter == "assets.dev_memory":
             resolved[port] = dev_storage
+        elif adapter == "payments.dev_fake":
+            from inc.adapters.payments.dev_fake import DevFakePaymentProvider
+
+            resolved[port] = DevFakePaymentProvider()
+        elif adapter == "membership.subject_exists":
+            from inc.adapters.membership import IdentitySubjectExists
+
+            resolved[port] = IdentitySubjectExists(queries=identity_queries)
+        elif adapter == "membership.points_ledger":
+            from inc.adapters.membership import PointsGrantLedger
+
+            resolved[port] = PointsGrantLedger(
+                uow_factory=container._uow_factory,
+                clock=container._clock,
+                outbox=container._outbox,
+                behaviors=container.behaviors,
+            )
         else:
             raise KernelError(
                 code="kernel.adapter_unknown",

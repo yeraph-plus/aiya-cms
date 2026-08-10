@@ -186,9 +186,15 @@ async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience
     from inc.capabilities.oidc_provider.clients import (
         ClientCommandContext,
         RegisterClient,
+        UpdateClient,
     )
     from inc.capabilities.oidc_provider.models import OidcClient
     from inc.kernel.events import EventSchemaRegistry, OutboxWriter
+
+    base = public_base_url.rstrip("/")
+    redirect_uris = [f"{base}/callback"]
+    post_logout_redirect_uris = [f"{base}/logged-out"]
+    allowed_scopes = ["openid", "profile", "email", "offline_access"]
 
     async with factory() as uow:
         existing = (
@@ -196,9 +202,6 @@ async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience
             .scalars()
             .first()
         )
-    if existing is not None:
-        print("  OIDC client 'admin' already exists, skipping")
-        return
 
     sr = EventSchemaRegistry()
     sr.register(AUDIT_EVENT_KEY, AuditEntryRecorded)
@@ -210,13 +213,23 @@ async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience
         audit_actor_id="cli",
         audit_trace_id="install",
     )
-    base = public_base_url.rstrip("/")
+    if existing is not None:
+        await UpdateClient(client_ctx)(
+            client_id="admin",
+            redirect_uris=redirect_uris,
+            post_logout_redirect_uris=post_logout_redirect_uris,
+            allowed_scopes=allowed_scopes,
+            allowed_audiences=[api_audience],
+        )
+        print("  OIDC client 'admin' updated")
+        return
+
     await RegisterClient(client_ctx)(
         name="Admin SPA",
         client_type="public",
-        redirect_uris=[f"{base}/callback"],
-        post_logout_redirect_uris=[f"{base}/logged-out"],
-        allowed_scopes=["openid", "profile", "email", "offline_access"],
+        redirect_uris=redirect_uris,
+        post_logout_redirect_uris=post_logout_redirect_uris,
+        allowed_scopes=allowed_scopes,
         allowed_audiences=[api_audience],
         client_id="admin",
     )
@@ -378,7 +391,7 @@ def main() -> None:
     )
     install_parser.add_argument(
         "--public-base-url",
-        default=_env_str("AIYA_PUBLIC_BASE_URL", "http://127.0.0.1:7000"),
+        default=_env_str("AIYA_PUBLIC_BASE_URL", "http://127.0.0.1:5173"),
         help="admin SPA base URL for OIDC redirects (env: AIYA_PUBLIC_BASE_URL)",
     )
     install_parser.add_argument(

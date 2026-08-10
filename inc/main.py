@@ -9,11 +9,14 @@ frozen HTTP contract.
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from inc.api.config import load_api_settings
+from inc.api.config import DEFAULT_ISSUER, ApiSettings, load_api_settings
 from inc.api.manifest import cms
 from inc.kernel.config import load_settings
 from inc.kernel.db import create_engine, create_session_factory
@@ -40,23 +43,50 @@ def _parse_bool(value: str | None, default: bool = False) -> bool:
     return default
 
 
-def _build_app() -> Any:
-    import os
+def _parse_cors_origins(value: str | None) -> tuple[str, ...]:
+    """Parse the documented CSV or JSON-array CORS environment value."""
 
-    kernel_settings = load_settings()
-    api_settings = load_api_settings(
+    if value is None or not value.strip():
+        return ()
+
+    raw = value.strip()
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("AIYA_CORS_ORIGINS must be CSV or a JSON string array") from exc
+        if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+            raise ValueError("AIYA_CORS_ORIGINS JSON value must be an array of strings")
+        values = parsed
+    else:
+        values = raw.split(",")
+
+    return tuple(item.strip() for item in values if item.strip())
+
+
+def _api_settings_from_env(environ: Mapping[str, str] | None = None) -> ApiSettings:
+    """Build API settings once, with deployment keys visible in one place."""
+
+    values = os.environ if environ is None else environ
+    if values.get("AIYA_CROS_ORIGINS") and not values.get("AIYA_CORS_ORIGINS"):
+        raise ValueError("AIYA_CROS_ORIGINS is not recognized; use AIYA_CORS_ORIGINS")
+
+    environment = values.get("AIYA_ENVIRONMENT") or values.get("AIYA_ENV") or "dev"
+    return load_api_settings(
         {
-            "environment": os.environ.get("AIYA_ENVIRONMENT", "dev"),
-            "issuer": os.environ.get("AIYA_ISSUER", "http://127.0.0.1:8080"),
-            "api_audience": os.environ.get("AIYA_API_AUDIENCE", "aiya-admin"),
-            "secure_cookies": _parse_bool(os.environ.get("AIYA_SECURE_COOKIES")),
-            "cors_origins": tuple(
-                origin.strip()
-                for origin in os.environ.get("AIYA_CORS_ORIGINS", "").split(",")
-                if origin.strip()
-            ),
+            "environment": environment,
+            "issuer": values.get("AIYA_ISSUER") or DEFAULT_ISSUER,
+            "api_audience": values.get("AIYA_API_AUDIENCE") or "aiya-admin",
+            "secure_cookies": _parse_bool(values.get("AIYA_SECURE_COOKIES")),
+            "cors_origins": _parse_cors_origins(values.get("AIYA_CORS_ORIGINS")),
         }
     )
+
+
+def _build_app() -> Any:
+    environment = os.environ.get("AIYA_ENVIRONMENT") or os.environ.get("AIYA_ENV") or "dev"
+    kernel_settings = load_settings(overrides={"environment": environment})
+    api_settings = _api_settings_from_env()
     engine = create_engine(kernel_settings.database_url.get_secret_value())
     session_factory = create_session_factory(engine)
     from inc.api.app import create_app
@@ -103,7 +133,7 @@ def main() -> None:
         sys.exit(2)
     import uvicorn
 
-    uvicorn.run(get_app(), host="0.0.0.0", port=8080)
+    uvicorn.run(get_app(), host="0.0.0.0", port=8000)
 
 
 if __name__ == "__main__":

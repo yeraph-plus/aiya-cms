@@ -38,6 +38,7 @@ def api_settings() -> ApiSettings:
     return ApiSettings(
         issuer=TEST_ISSUER,
         api_audience=TEST_AUDIENCE,
+        cors_origins=("http://admin.test",),
         worker_sleep_seconds=0.01,
     )
 

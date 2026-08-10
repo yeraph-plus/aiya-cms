@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -160,6 +161,54 @@ async def test_discovery_and_jwks(client: httpx.AsyncClient) -> None:
     jwks = await client.get("/oidc/jwks")
     assert jwks.status_code == 200
     assert jwks.json()["keys"]
+
+
+async def test_json_login_returns_frontend_callback_and_protocol_errors(
+    client: httpx.AsyncClient,
+) -> None:
+    verifier, challenge = _pkce()
+    params = _authorize_params(challenge=challenge)
+    form = {
+        "username": "alice",
+        "password": "pw-alice",
+        **params,
+    }
+
+    invalid = await client.post(
+        "/oidc/login",
+        data={**form, "redirect_uri": "http://127.0.0.1:3000/not-registered"},
+        headers={"Accept": "application/json"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json() == {
+        "error": "invalid_request",
+        "error_description": "redirect uri is not registered",
+    }
+
+    valid = await client.post(
+        "/oidc/login",
+        data=form,
+        headers={"Accept": "application/json"},
+    )
+    assert valid.status_code == 200
+    callback = valid.json()["redirect_uri"]
+    assert callback.startswith(f"{REDIRECT_URI}?code=")
+    assert valid.cookies.get("aiya_oidc_session") is not None
+    assert valid.headers["cache-control"] == "no-store"
+    assert valid.headers["pragma"] == "no-cache"
+
+    callback_query = parse_qs(urlsplit(callback).query)
+    token = await client.post(
+        "/oidc/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": "spa",
+            "code": callback_query["code"][0],
+            "redirect_uri": REDIRECT_URI,
+            "code_verifier": verifier,
+        },
+    )
+    assert token.status_code == 200
 
 
 async def test_full_browser_flow(client: httpx.AsyncClient) -> None:

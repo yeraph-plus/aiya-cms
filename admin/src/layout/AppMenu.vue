@@ -1,262 +1,79 @@
-<script setup>
-import { ref } from 'vue';
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 import AppMenuItem from './AppMenuItem.vue';
+import type { MenuItem } from '@/layout/composables/layout';
+import { productMenu } from '@/navigation/menu';
+import { filterMenu } from '@/navigation/visibility';
+import { sessionCapabilities } from '@/auth/session';
 
-const model = ref([
-    {
-        label: 'Home',
-        items: [
-            {
-                label: 'Dashboard',
-                icon: 'pi pi-fw pi-home',
-                to: '/'
-            }
-        ]
-    },
-    {
-        label: 'UI Components',
-        path: '/uikit',
-        items: [
-            {
-                label: 'Form Layout',
-                icon: 'pi pi-fw pi-id-card',
-                to: '/uikit/formlayout'
-            },
-            {
-                label: 'Input',
-                icon: 'pi pi-fw pi-check-square',
-                to: '/uikit/input'
-            },
-            {
-                label: 'Button',
-                icon: 'pi pi-fw pi-mobile',
-                to: '/uikit/button',
-                class: 'rotated-icon'
-            },
-            {
-                label: 'Table',
-                icon: 'pi pi-fw pi-table',
-                to: '/uikit/table'
-            },
-            {
-                label: 'List',
-                icon: 'pi pi-fw pi-list',
-                to: '/uikit/list'
-            },
-            {
-                label: 'Tree',
-                icon: 'pi pi-fw pi-share-alt',
-                to: '/uikit/tree'
-            },
-            {
-                label: 'Panel',
-                icon: 'pi pi-fw pi-tablet',
-                to: '/uikit/panel'
-            },
-            {
-                label: 'Overlay',
-                icon: 'pi pi-fw pi-clone',
-                to: '/uikit/overlay'
-            },
-            {
-                label: 'Media',
-                icon: 'pi pi-fw pi-image',
-                to: '/uikit/media'
-            },
-            {
-                label: 'Menu',
-                icon: 'pi pi-fw pi-bars',
-                to: '/uikit/menu'
-            },
-            {
-                label: 'Message',
-                icon: 'pi pi-fw pi-comment',
-                to: '/uikit/message'
-            },
-            {
-                label: 'File',
-                icon: 'pi pi-fw pi-file',
-                to: '/uikit/file'
-            },
-            {
-                label: 'Chart',
-                icon: 'pi pi-fw pi-chart-bar',
-                to: '/uikit/charts'
-            },
-            {
-                label: 'Timeline',
-                icon: 'pi pi-fw pi-calendar',
-                to: '/uikit/timeline'
-            },
-            {
-                label: 'Misc',
-                icon: 'pi pi-fw pi-circle',
-                to: '/uikit/misc'
-            }
-        ]
-    },
-    {
-        label: 'Prime Blocks',
-        icon: 'pi pi-fw pi-prime',
-        path: '/blocks',
-        items: [
-            {
-                label: 'Free Blocks',
-                icon: 'pi pi-fw pi-eye',
-                to: '/blocks/free'
-            },
-            {
-                label: 'All Blocks',
-                icon: 'pi pi-fw pi-globe',
-                url: 'https://blocks.primevue.org/',
-                target: '_blank'
-            }
-        ]
-    },
-    {
-        label: 'Pages',
-        icon: 'pi pi-fw pi-briefcase',
-        path: '/pages',
-        items: [
-            {
-                label: 'Landing',
-                icon: 'pi pi-fw pi-globe',
-                to: '/landing'
-            },
-            {
-                label: 'Auth',
-                icon: 'pi pi-fw pi-user',
-                path: '/auth',
-                items: [
-                    {
-                        label: 'Login',
-                        icon: 'pi pi-fw pi-sign-in',
-                        to: '/auth/login'
-                    },
-                    {
-                        label: 'Error',
-                        icon: 'pi pi-fw pi-times-circle',
-                        to: '/auth/error'
-                    },
-                    {
-                        label: 'Access Denied',
-                        icon: 'pi pi-fw pi-lock',
-                        to: '/auth/access'
-                    }
-                ]
-            },
-            {
-                label: 'Crud',
-                icon: 'pi pi-fw pi-pencil',
-                to: '/pages/crud'
-            },
-            {
-                label: 'Not Found',
-                icon: 'pi pi-fw pi-exclamation-circle',
-                to: '/pages/notfound'
-            },
-            {
-                label: 'Empty',
-                icon: 'pi pi-fw pi-circle-off',
-                to: '/pages/empty'
-            }
-        ]
-    },
-    {
-        label: 'Hierarchy',
-        icon: 'pi pi-fw pi-align-left',
-        path: '/hierarchy',
-        items: [
-            {
-                label: 'Submenu 1',
-                icon: 'pi pi-fw pi-align-left',
-                path: '/submenu_1',
-                items: [
-                    {
-                        label: 'Submenu 1.1',
-                        icon: 'pi pi-fw pi-align-left',
-                        path: '/submenu_1_1',
-                        items: [
-                            {
-                                label: 'Submenu 1.1.1',
-                                icon: 'pi pi-fw pi-align-left'
-                            },
-                            {
-                                label: 'Submenu 1.1.2',
-                                icon: 'pi pi-fw pi-align-left'
-                            },
-                            {
-                                label: 'Submenu 1.1.3',
-                                icon: 'pi pi-fw pi-align-left'
-                            }
-                        ]
-                    },
-                    {
-                        label: 'Submenu 1.2',
-                        icon: 'pi pi-fw pi-align-left',
-                        path: '/submenu_1_2',
-                        items: [
-                            {
-                                label: 'Submenu 1.2.1',
-                                icon: 'pi pi-fw pi-align-left'
-                            }
-                        ]
-                    }
-                ]
-            },
-            {
-                label: 'Submenu 2',
-                icon: 'pi pi-fw pi-align-left',
-                path: '/submenu_2',
-                items: [
-                    {
-                        label: 'Submenu 2.1',
-                        icon: 'pi pi-fw pi-align-left',
-                        path: '/submenu_2_1',
-                        items: [
-                            {
-                                label: 'Submenu 2.1.1',
-                                icon: 'pi pi-fw pi-align-left'
-                            },
-                            {
-                                label: 'Submenu 2.1.2',
-                                icon: 'pi pi-fw pi-align-left'
-                            }
-                        ]
-                    },
-                    {
-                        label: 'Submenu 2.2',
-                        icon: 'pi pi-fw pi-align-left',
-                        path: '/submenu_2_2',
-                        items: [
-                            {
-                                label: 'Submenu 2.2.1',
-                                icon: 'pi pi-fw pi-align-left'
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        label: 'Get Started',
-        path: '/start',
-        items: [
-            {
-                label: 'Documentation',
-                icon: 'pi pi-fw pi-book',
-                to: '/start/documentation'
-            },
-            {
-                label: 'View Source',
-                icon: 'pi pi-fw pi-github',
-                url: 'https://github.com/primefaces/sakai-vue',
-                target: '_blank'
-            }
-        ]
-    }
-]);
+const router = useRouter();
+
+const model = computed<MenuItem[]>(() => {
+    const visible = filterMenu(productMenu, {
+        capabilities: sessionCapabilities.value,
+        isRouteRegistered: (name) => (name ? router.hasRoute(name) : true)
+    });
+
+    if (!import.meta.env.DEV) return visible;
+
+    return [
+        ...visible,
+        {
+            label: 'Demo Gallery',
+            icon: 'pi pi-fw pi-window-maximize',
+            path: '/demo',
+            items: [
+                {
+                    label: 'Dashboard',
+                    icon: 'pi pi-fw pi-home',
+                    to: '/demo/dashboard'
+                },
+                {
+                    label: 'UI Kit',
+                    icon: 'pi pi-fw pi-palette',
+                    items: [
+                        { label: 'Buttons', icon: 'pi pi-fw pi-bolt', to: '/demo/uikit/button' },
+                        { label: 'Form Layout', icon: 'pi pi-fw pi-th-large', to: '/demo/uikit/formlayout' },
+                        { label: 'Input', icon: 'pi pi-fw pi-pencil', to: '/demo/uikit/input' },
+                        { label: 'Table', icon: 'pi pi-fw pi-table', to: '/demo/uikit/table' },
+                        { label: 'List', icon: 'pi pi-fw pi-list', to: '/demo/uikit/list' },
+                        { label: 'Tree', icon: 'pi pi-fw pi-sitemap', to: '/demo/uikit/tree' },
+                        { label: 'Panel', icon: 'pi pi-fw pi-window-maximize', to: '/demo/uikit/panel' },
+                        { label: 'Overlay', icon: 'pi pi-fw pi-eye', to: '/demo/uikit/overlay' },
+                        { label: 'Media', icon: 'pi pi-fw pi-images', to: '/demo/uikit/media' },
+                        { label: 'Message', icon: 'pi pi-fw pi-comment', to: '/demo/uikit/message' },
+                        { label: 'File', icon: 'pi pi-fw pi-file', to: '/demo/uikit/file' },
+                        { label: 'Menu', icon: 'pi pi-fw pi-bars', to: '/demo/uikit/menu' },
+                        { label: 'Charts', icon: 'pi pi-fw pi-chart-bar', to: '/demo/uikit/charts' },
+                        { label: 'Misc', icon: 'pi pi-fw pi-circle', to: '/demo/uikit/misc' },
+                        { label: 'Timeline', icon: 'pi pi-fw pi-calendar', to: '/demo/uikit/timeline' }
+                    ]
+                },
+                {
+                    label: 'CRUD',
+                    icon: 'pi pi-fw pi-database',
+                    to: '/demo/crud'
+                },
+                {
+                    label: 'Blocks',
+                    icon: 'pi pi-fw pi-th-large',
+                    to: '/demo/blocks'
+                },
+                {
+                    label: 'Landing',
+                    icon: 'pi pi-fw pi-home',
+                    to: '/demo/landing'
+                },
+                {
+                    label: 'Documentation',
+                    icon: 'pi pi-fw pi-book',
+                    to: '/demo/documentation'
+                }
+            ]
+        }
+    ];
+});
 </script>
 
 <template>
@@ -267,5 +84,3 @@ const model = ref([
         </template>
     </ul>
 </template>
-
-<style lang="scss" scoped></style>

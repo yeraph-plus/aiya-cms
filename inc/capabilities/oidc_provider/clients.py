@@ -34,7 +34,7 @@ from inc.kernel.time import Clock
 
 AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
 
-_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "local.host"}
 
 
 def _digest(value: str) -> str:
@@ -191,6 +191,70 @@ class RegisterClient:
             )
             await uow.commit()
             return ClientRegistrationResult(client=_to_dto(client), client_secret=client_secret)
+
+
+class UpdateClient:
+    """Updates an existing static client without changing its secret."""
+
+    def __init__(self, ctx: ClientCommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(  # type: ignore[return]
+        self,
+        *,
+        client_id: str,
+        redirect_uris: list[str],
+        post_logout_redirect_uris: list[str] | None = None,
+        allowed_scopes: list[str] | None = None,
+        allowed_audiences: list[str] | None = None,
+    ) -> ClientDTO:
+        if not redirect_uris:
+            raise OidcError("invalid_request", "at least one redirect uri is required")
+        for uri in redirect_uris + (post_logout_redirect_uris or []):
+            _require_valid_redirect_uri(uri)
+        if allowed_scopes is not None:
+            unknown_scopes = set(allowed_scopes) - {
+                "openid",
+                "profile",
+                "email",
+                "offline_access",
+            }
+            if unknown_scopes:
+                raise OidcError(
+                    "invalid_scope", f"unsupported scopes: {', '.join(sorted(unknown_scopes))}"
+                )
+
+        async with self._ctx.uow_factory() as uow:
+            client = (
+                (
+                    await uow.session.execute(
+                        select(OidcClient).where(OidcClient.client_id == client_id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if client is None:
+                raise OidcError("invalid_request", "unknown client")
+
+            client.redirect_uris = StringList(items=redirect_uris)
+            client.post_logout_redirect_uris = StringList(items=post_logout_redirect_uris or [])
+            if allowed_scopes is not None:
+                client.allowed_scopes = StringList(items=allowed_scopes)
+            if allowed_audiences is not None:
+                client.allowed_audiences = StringList(items=allowed_audiences)
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="oidc.client.updated",
+                client_id=client_id,
+                details={
+                    "redirect_uris": redirect_uris,
+                    "post_logout_redirect_uris": post_logout_redirect_uris or [],
+                },
+            )
+            await uow.commit()
+            return _to_dto(client)
 
 
 class DisableClient:

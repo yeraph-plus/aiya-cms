@@ -22,6 +22,7 @@ from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
 from inc.capabilities.oidc_provider.clients import (
     ClientCommandContext,
     RegisterClient,
+    UpdateClient,
 )
 from inc.capabilities.oidc_provider.handlers import OidcDiagnostics
 from inc.capabilities.oidc_provider.keys import (
@@ -343,6 +344,29 @@ async def test_register_client_rejects_malformed_redirect_uris(
             client_id=f"good-{index}",
         )
         assert uri in result.client.redirect_uris
+
+
+async def test_update_client_replaces_registered_redirect_uris(
+    client_ctx: ClientCommandContext,
+) -> None:
+    await RegisterClient(client_ctx)(
+        name="Admin SPA",
+        client_type="public",
+        redirect_uris=["http://127.0.0.1:7000/callback"],
+        post_logout_redirect_uris=["http://127.0.0.1:7000/logged-out"],
+        client_id="admin",
+    )
+
+    result = await UpdateClient(client_ctx)(
+        client_id="admin",
+        redirect_uris=["http://127.0.0.1:5173/callback"],
+        post_logout_redirect_uris=["http://127.0.0.1:5173/logged-out"],
+        allowed_scopes=["openid", "profile", "email", "offline_access"],
+        allowed_audiences=["aiya-admin"],
+    )
+
+    assert result.redirect_uris == ["http://127.0.0.1:5173/callback"]
+    assert result.post_logout_redirect_uris == ["http://127.0.0.1:5173/logged-out"]
 
 
 async def test_pkce_downgrade_attempts_are_rejected(

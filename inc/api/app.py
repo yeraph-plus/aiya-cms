@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from inc.api.config import DEFAULT_ISSUER
 from inc.api.container import ApplicationContainer, Services, build_container
 from inc.api.http.context import (
     BearerVerifier,
@@ -172,7 +173,7 @@ def create_app(
     services: Services = container.services  # type: ignore[assignment]
     verifier = BearerVerifier(
         services=services,
-        issuer=getattr(settings, "issuer", "http://127.0.0.1:8080"),
+        issuer=getattr(settings, "issuer", DEFAULT_ISSUER),
         api_audience=getattr(settings, "api_audience", "aiya-admin"),
     )
     require_capability = make_require_capability(verifier=verifier)
@@ -203,7 +204,7 @@ def create_app(
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(cors_origins),
-            allow_credentials=False,
+            allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
@@ -246,7 +247,7 @@ def create_app(
         from inc.capabilities.oidc_provider.api import OidcHttpServices, build_router
 
         oidc_services = OidcHttpServices(
-            issuer=getattr(settings, "issuer", "http://127.0.0.1:8080"),
+            issuer=getattr(settings, "issuer", DEFAULT_ISSUER),
             uow_factory=services.uow_factory,
             clock=services.clock,
             keys=services.oidc["keys"],

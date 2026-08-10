@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from inc.adapters import ContentBatchExists, InMemoryObjectStorage, resolve_adapters
+from inc.api.config import DEFAULT_ISSUER
 from inc.capabilities.access import (
     AccessDiagnostics,
     AccessQueries,
@@ -588,7 +589,7 @@ class ApplicationContainer:
                 authenticator=adapters["oidc.subject_authenticator"],
                 claims_reader=adapters["oidc.subject_claims"],
                 authorization_reader=adapters["oidc.authorization_decision"],
-                issuer=getattr(self._settings, "issuer", "http://127.0.0.1:8080"),
+                issuer=getattr(self._settings, "issuer", DEFAULT_ISSUER),
             )
             oidc = {
                 "authorization": AuthorizationService(service_ctx),

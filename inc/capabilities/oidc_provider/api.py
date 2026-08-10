@@ -141,6 +141,10 @@ def _required(form: dict[str, Any], key: str) -> str:
     return value
 
 
+def _wants_json(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "").lower()
+
+
 def _login_form(params: dict[str, str]) -> str:
     hidden = "".join(
         f'<input type="hidden" name="{_html_escape(k)}" value="{_html_escape(v)}"/>'
@@ -205,21 +209,56 @@ def build_router(services: OidcHttpServices) -> APIRouter:
     @router.post("/oidc/login")
     async def login(request: Request) -> Response:
         form = dict(await request.form())
+        wants_json = _wants_json(request)
         username = _required(form, "username")
         password = _required(form, "password")
         client_id = _first(form, "client_id") or "browser"
         subject_id = await services.authenticator.authenticate(username, password)
         if subject_id is None:
+            if wants_json:
+                return _error_response(
+                    OidcError("access_denied", "invalid username or password", http_status=401)
+                )
             # Never echo the typed password back into the 401 page.
             redacted = {k: str(v) for k, v in form.items() if k != "password"}
             return HTMLResponse(_login_form(redacted), status_code=401)
-        handle = await services.establish_session(subject_id, client_id)
         # Preserve the original authorize parameters so the follow-up GET can
         # issue a code; only the credentials are stripped.
         authorize_params = {k: str(v) for k, v in form.items() if k not in ("username", "password")}
         query = urlencode(authorize_params, doseq=True)
-        response = RedirectResponse(f"/oidc/authorize?{query}", status_code=302)
-        response.set_cookie(
+        if wants_json:
+            try:
+                callback = await services.authorization.issue_code(
+                    client_id=_required(form, "client_id"),
+                    redirect_uri=_required(form, "redirect_uri"),
+                    response_type=_required(form, "response_type"),
+                    scope=_required(form, "scope"),
+                    state=_first(form, "state"),
+                    nonce=_first(form, "nonce"),
+                    code_challenge=_first(form, "code_challenge"),
+                    code_challenge_method=_first(form, "code_challenge_method"),
+                    subject_id=subject_id,
+                    session_handle=None,
+                )
+            except OidcError as error:
+                return _error_response(error)
+            handle = await services.establish_session(subject_id, client_id)
+            json_response = JSONResponse({"redirect_uri": callback})
+            json_response.headers["Cache-Control"] = "no-store"
+            json_response.headers["Pragma"] = "no-cache"
+            json_response.set_cookie(
+                SESSION_COOKIE_NAME,
+                value=handle,
+                httponly=True,
+                samesite="lax",
+                secure=services.secure_cookies,
+                max_age=SESSION_LIFETIME_SECONDS,
+            )
+            return json_response
+
+        handle = await services.establish_session(subject_id, client_id)
+        redirect_response = RedirectResponse(f"/oidc/authorize?{query}", status_code=302)
+        redirect_response.set_cookie(
             SESSION_COOKIE_NAME,
             value=handle,
             httponly=True,
@@ -227,7 +266,7 @@ def build_router(services: OidcHttpServices) -> APIRouter:
             secure=services.secure_cookies,
             max_age=SESSION_LIFETIME_SECONDS,
         )
-        return response
+        return redirect_response
 
     @router.post("/oidc/token")
     async def token(request: Request) -> Response:

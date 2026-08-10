@@ -1,14 +1,16 @@
-<script setup>
+<script setup lang="ts">
 import { useLayout } from '@/layout/composables/layout';
 import { $t, updatePreset, updateSurfacePalette } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 import Lara from '@primeuix/themes/lara';
 import Nora from '@primeuix/themes/nora';
+import type { Preset } from '@primeuix/themes/types';
 import { ref } from 'vue';
+import type { MenuMode } from '@/layout/composables/layout';
 
 const { layoutConfig, isDarkTheme, changeMenuMode } = useLayout();
 
-const presets = {
+const presets: Record<string, Preset> = {
     Aura,
     Lara,
     Nora
@@ -16,13 +18,18 @@ const presets = {
 const preset = ref(layoutConfig.preset);
 const presetOptions = ref(Object.keys(presets));
 
-const menuMode = ref(layoutConfig.menuMode);
+const menuMode = ref<MenuMode>(layoutConfig.menuMode);
 const menuModeOptions = ref([
     { label: 'Static', value: 'static' },
     { label: 'Overlay', value: 'overlay' }
 ]);
 
-const primaryColors = ref([
+interface ColorOption {
+    name: string;
+    palette: Record<string, string>;
+}
+
+const primaryColors = ref<ColorOption[]>([
     { name: 'noir', palette: {} },
     { name: 'emerald', palette: { 50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7', 400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b', 950: '#022c22' } },
     { name: 'green', palette: { 50: '#f0fdf4', 100: '#dcfce7', 200: '#bbf7d0', 300: '#86efac', 400: '#4ade80', 500: '#22c55e', 600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d', 950: '#052e16' } },
@@ -42,7 +49,7 @@ const primaryColors = ref([
     { name: 'rose', palette: { 50: '#fff1f2', 100: '#ffe4e6', 200: '#fecdd3', 300: '#fda4af', 400: '#fb7185', 500: '#f43f5e', 600: '#e11d48', 700: '#be123c', 800: '#9f1239', 900: '#881337', 950: '#4c0519' } }
 ]);
 
-const surfaces = ref([
+const surfaces = ref<ColorOption[]>([
     {
         name: 'slate',
         palette: { 0: '#ffffff', 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
@@ -77,8 +84,8 @@ const surfaces = ref([
     }
 ]);
 
-function getPresetExt() {
-    const color = primaryColors.value.find((c) => c.name === layoutConfig.primary);
+function getPresetExt(): Preset {
+    const color = primaryColors.value.find((c) => c.name === layoutConfig.primary) ?? primaryColors.value[0];
 
     if (color.name === 'noir') {
         return {
@@ -167,7 +174,7 @@ function getPresetExt() {
     }
 }
 
-function updateColors(type, color) {
+function updateColors(type: 'primary' | 'surface', color: ColorOption) {
     if (type === 'primary') {
         layoutConfig.primary = color.name;
     } else if (type === 'surface') {
@@ -177,7 +184,7 @@ function updateColors(type, color) {
     applyTheme(type, color);
 }
 
-function applyTheme(type, color) {
+function applyTheme(type: 'primary' | 'surface', color: ColorOption) {
     if (type === 'primary') {
         updatePreset(getPresetExt());
     } else if (type === 'surface') {
@@ -190,7 +197,11 @@ function onPresetChange() {
     const presetValue = presets[preset.value];
     const surfacePalette = surfaces.value.find((s) => s.name === layoutConfig.surface)?.palette;
 
-    $t().preset(presetValue).preset(getPresetExt()).surfacePalette(surfacePalette).use({ useDefaultOptions: true });
+    $t()
+        .preset(presetValue)
+        .preset(getPresetExt())
+        .surfacePalette(surfacePalette ?? {})
+        .use({ useDefaultOptions: true });
 }
 </script>
 

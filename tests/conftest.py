@@ -18,7 +18,7 @@ from sqlalchemy.pool import StaticPool
 from inc.kernel.db import Base, SqlAlchemyUnitOfWork, UoWFactory
 from inc.kernel.time.fake import FakeClock
 
-os.environ.setdefault("AIYA_ENV", "test")
+os.environ.setdefault("AIYA_ENVIRONMENT", "test")
 
 
 @pytest.fixture

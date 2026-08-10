@@ -1,31 +1,30 @@
-<script setup>
+<script setup lang="ts">
 import { useLayout } from '@/layout/composables/layout';
 import { computed } from 'vue';
+import type { MenuItem } from '@/layout/composables/layout';
 
 const { layoutState, isDesktop } = useLayout();
 
-const props = defineProps({
-    item: {
-        type: Object,
-        default: () => ({})
-    },
-    root: {
-        type: Boolean,
-        default: true
-    },
-    parentPath: {
-        type: String,
-        default: null
+const props = withDefaults(
+    defineProps<{
+        item?: MenuItem;
+        root?: boolean;
+        parentPath?: string | null;
+    }>(),
+    {
+        item: () => ({}),
+        root: true,
+        parentPath: null
     }
-});
+);
 
 const fullPath = computed(() => (props.item.path ? (props.parentPath ? props.parentPath + props.item.path : props.item.path) : null));
 
 const isActive = computed(() => {
-    return props.item.path ? layoutState.activePath?.startsWith(fullPath.value) : layoutState.activePath === props.item.to;
+    return props.item.path ? layoutState.activePath?.startsWith(fullPath.value ?? '') : layoutState.activePath === props.item.to;
 });
 
-const itemClick = (event, item) => {
+const itemClick = (event: MouseEvent, item: MenuItem) => {
     if (item.disabled) {
         event.preventDefault();
         return;
@@ -37,7 +36,7 @@ const itemClick = (event, item) => {
 
     if (item.items) {
         if (isActive.value) {
-            layoutState.activePath = layoutState.activePath.replace(item.path, '');
+            layoutState.activePath = layoutState.activePath?.replace(item.path ?? '', '') ?? null;
         } else {
             layoutState.activePath = fullPath.value;
             layoutState.menuHoverActive = true;

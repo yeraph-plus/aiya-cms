@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="aiya-cms-mark-title aiya-cms-mark-description" color="#151515">
+  <title id="aiya-cms-mark-title">AIYA-CMS mark</title>
+  <desc id="aiya-cms-mark-description">An open tilted ring with two dots, a curved smile, a floating dot, and a directional tail.</desc>
+  <g id="aiya-cms-mark" transform="rotate(7 120 120)">
+    <path d="M177.4 57.4C158.8 35.4 128.4 24.2 96.2 29.7C56.6 36.5 28.6 65.7 24.4 103.9" fill="none" stroke="currentColor" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M24.4 103.9C19.8 145.1 41.3 182.9 78.2 199.3C112.4 214.5 151.9 205.8 178.2 180.8" fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M177.2 179C187.6 185.9 192.2 196.2 204.9 200.6" fill="none" stroke="currentColor" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M202.8 200.1C208.9 201.9 215.3 199.8 219.1 195.6" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+    <path d="M87.9 105.6C87.8 110.1 84.6 113.2 80.5 113.1C76.3 113 73.4 109.8 73.6 105.6C73.7 101.2 76.9 98.2 81 98.3C85.1 98.4 88 101.5 87.9 105.6Z" fill="currentColor" />
+    <path d="M145.8 96.2C145.6 100.6 142.4 103.6 138.3 103.5C134.2 103.4 131.3 100.2 131.5 96C131.7 91.6 134.8 88.6 139 88.7C143.1 88.8 146 91.9 145.8 96.2Z" fill="currentColor" />
+    <path d="M83.7 137.3C101.2 151.9 126.9 156.1 151.2 137.9" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" />
+    <circle cx="194" cy="31" r="8.5" fill="currentColor" />
+  </g>
+</svg>

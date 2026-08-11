@@ -523,10 +523,24 @@ class UpdateProfile:
             user = await uow.session.get(IdentityUser, uuid.UUID(user_id))
             if user is None:
                 raise _not_found("user not found")
-            if changes.display_name is not None:
+            changed: list[str] = []
+            if "display_name" in changes.model_fields_set:
                 user.display_name = changes.display_name
-            if changes.avatar_asset_id is not None:
-                user.avatar_asset_id = uuid.UUID(changes.avatar_asset_id)
+                changed.append("display_name")
+            if "avatar_asset_id" in changes.model_fields_set:
+                user.avatar_asset_id = (
+                    uuid.UUID(changes.avatar_asset_id) if changes.avatar_asset_id else None
+                )
+                changed.append("avatar_asset_id")
+            if changed:
+                await _append_audit(
+                    uow,
+                    self._ctx,
+                    action="identity.profile.updated",
+                    target_type="user",
+                    target_id=user_id,
+                    details={"changed": changed},
+                )
             await uow.commit()
             return to_subject(user)
 

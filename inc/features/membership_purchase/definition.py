@@ -67,7 +67,7 @@ behavior_specs = (
     PointBehaviorSpec(
         key=GRANT_BEHAVIOR,
         version="1",
-        program_key="default",
+        program_key="credit",
         direction="credit",
         min_amount=1,
         max_amount=1_000_000,

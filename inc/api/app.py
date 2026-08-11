@@ -52,6 +52,7 @@ _ROUTER_FACTORIES: dict[str, Any] = {
     "settings": importlib.import_module("inc.api.http.routers_settings"),
     "assets": importlib.import_module("inc.api.http.routers_assets"),
     "audit": importlib.import_module("inc.api.http.routers_audit"),
+    "execution": importlib.import_module("inc.api.http.routers_execution"),
     "auth": importlib.import_module("inc.api.http.routers_auth"),
     "check_in": importlib.import_module("inc.api.http.routers_check_in"),
     "points": importlib.import_module("inc.api.http.routers_points"),
@@ -116,7 +117,7 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "auth", "description": "Authentication and account self-service."},
     {"name": "oidc", "description": "OIDC provider protocol endpoints."},
     {"name": "check-in", "description": "Daily check-in; rewards points."},
-    {"name": "points", "description": "Points balance self-service reads."},
+    {"name": "points", "description": "Points self-service ledger reads."},
     {"name": "point-purchase", "description": "Buy points via the trusted offer catalog."},
     {
         "name": "membership-purchase",
@@ -136,6 +137,7 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-settings", "description": "Setting group management."},
     {"name": "admin-assets", "description": "Asset upload and metadata management."},
     {"name": "admin-audit", "description": "Audit log queries."},
+    {"name": "admin-execution", "description": "Kernel execution log queries."},
     {"name": "admin-payments", "description": "Payment order administration."},
     {"name": "admin-points", "description": "Points balance and ledger administration."},
 ]

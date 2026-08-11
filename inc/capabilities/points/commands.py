@@ -22,6 +22,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from inc.capabilities.points.behaviors import PointBehaviorRegistry, PointBehaviorSpec
+from inc.capabilities.points.constants import DEFAULT_PROGRAM_KEY
 from inc.capabilities.points.events import POINTS_EVENT_SCHEMAS
 from inc.capabilities.points.models import (
     LedgerMetadata,
@@ -163,6 +164,50 @@ async def _get_account(
     )
     if account is None:
         raise _not_found("points.account_not_opened", "points account is not opened")
+    return account
+
+
+async def _ensure_account(
+    ctx: CommandContext,
+    uow: UnitOfWork,
+    program: PointsProgram,
+    subject_type: str,
+    subject_id: str,
+) -> PointsAccount:
+    """Create the account inside the first points write transaction."""
+
+    account: PointsAccount | None = (
+        (
+            await uow.session.execute(
+                select(PointsAccount).where(
+                    PointsAccount.program_id == program.id,
+                    PointsAccount.subject_type == subject_type,
+                    PointsAccount.subject_id == subject_id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if account is not None:
+        await _bucket_target(uow, account, bucket_type="perpetual")
+        return account
+
+    account = PointsAccount(
+        program_id=program.id,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        state="active",
+        version=1,
+    )
+    uow.session.add(account)
+    try:
+        await uow.session.flush()
+    except IntegrityError as exc:
+        raise _conflict("points.account_exists", "account already exists for this subject") from exc
+    uow.session.add(PointsBalance(account_id=account.id, balance=0, version=1))
+    await _bucket_target(uow, account, bucket_type="perpetual")
+    await _emit(ctx, uow, key="points.account_opened.v1", account=account, program=program)
     return account
 
 
@@ -545,6 +590,9 @@ def _to_entry(row: PointsLedgerEntry, program_key: str) -> LedgerEntryDTO:
         behavior_version=row.behavior_version,
         source_type=row.source_type,
         source_id=row.source_id,
+        actor_type=row.actor_type,
+        actor_id=row.actor_id,
+        metadata=dict(row.entry_metadata.values),
         reversal_of=str(row.reversal_of) if row.reversal_of is not None else None,
         created_at=_ensure_utc(row.created_at),
     )
@@ -580,42 +628,8 @@ class OpenPointsAccount:
         ctx = self._ctx
         async with ctx.uow_factory() as uow:
             program = await _require_program(uow, program_key)
-            existing: PointsAccount | None = (
-                (
-                    await uow.session.execute(
-                        select(PointsAccount).where(
-                            PointsAccount.program_id == program.id,
-                            PointsAccount.subject_type == subject_type,
-                            PointsAccount.subject_id == subject_id,
-                        )
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if existing is not None:
-                await _bucket_target(uow, existing, bucket_type="perpetual")
-                balance = await _get_balance(uow, existing.id)
-                await uow.commit()
-                return _to_balance(existing, balance, program_key)
-            account = PointsAccount(
-                program_id=program.id,
-                subject_type=subject_type,
-                subject_id=subject_id,
-                state="active",
-                version=1,
-            )
-            uow.session.add(account)
-            try:
-                await uow.session.flush()
-            except IntegrityError as exc:
-                raise _conflict(
-                    "points.account_exists", "account already exists for this subject"
-                ) from exc
-            balance = PointsBalance(account_id=account.id, balance=0, version=1)
-            uow.session.add(balance)
-            await _bucket_target(uow, account, bucket_type="perpetual")
-            await _emit(ctx, uow, key="points.account_opened.v1", account=account, program=program)
+            account = await _ensure_account(ctx, uow, program, subject_type, subject_id)
+            balance = await _get_balance(uow, account.id)
             await uow.commit()
             return _to_balance(account, balance, program_key)
 
@@ -651,7 +665,9 @@ class CreditPoints:
                         "idempotency key already used by a non-credit entry",
                     )
                 return _to_entry(existing, program.program_key)
-            account = await _get_account(uow, program.id, input_.subject_type, input_.subject_id)
+            account = await _ensure_account(
+                ctx, uow, program, input_.subject_type, input_.subject_id
+            )
             if account.state == "frozen":
                 raise _conflict("points.account_frozen", "points account is frozen")
             await _validate_limits(ctx, uow, spec=spec, account=account, amount=input_.amount)
@@ -753,7 +769,9 @@ class DebitPoints:
                         "idempotency key already used by a non-debit entry",
                     )
                 return _to_entry(existing, program.program_key)
-            account = await _get_account(uow, program.id, input_.subject_type, input_.subject_id)
+            account = await _ensure_account(
+                ctx, uow, program, input_.subject_type, input_.subject_id
+            )
             if account.state in ("frozen", "debt"):
                 raise _conflict(
                     "points.account_not_debitable", f"points account is {account.state}"
@@ -936,8 +954,11 @@ class AdjustPoints:
         if input_.amount == 0:
             raise _validation("points.zero_amount", "adjustment amount must be nonzero")
         async with ctx.uow_factory() as uow:
-            program = await _require_program(uow, input_.program_key)
-            account = await _get_account(uow, program.id, input_.subject_type, input_.subject_id)
+            program_key = input_.program_key or DEFAULT_PROGRAM_KEY
+            program = await _require_program(uow, program_key)
+            account = await _ensure_account(
+                ctx, uow, program, input_.subject_type, input_.subject_id
+            )
             existing = await _find_idempotent(uow, program.id, input_.idempotency_key)
             if existing is not None:
                 if existing.entry_type != "adjustment":

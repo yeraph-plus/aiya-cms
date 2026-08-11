@@ -10,7 +10,13 @@ declares groups of its own.
 
 from __future__ import annotations
 
-from inc.capabilities.settings.groups import SettingGroupRegistry, SettingGroupSpec
+from inc.capabilities.settings.groups import (
+    SettingFieldMetadata,
+    SettingFieldSpec,
+    SettingGroupRegistry,
+    SettingGroupSpec,
+    SettingOption,
+)
 from inc.capabilities.settings.service import (
     CommandContext,
     ResetSettingGroup,
@@ -21,8 +27,11 @@ from inc.capabilities.settings.service import (
 __all__ = [
     "CommandContext",
     "ResetSettingGroup",
+    "SettingFieldMetadata",
+    "SettingFieldSpec",
     "SettingGroupRegistry",
     "SettingGroupSpec",
+    "SettingOption",
     "SettingsQueries",
     "UpdateSettingGroup",
 ]

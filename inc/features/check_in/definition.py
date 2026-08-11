@@ -18,7 +18,7 @@ behavior_specs = (
     PointBehaviorSpec(
         key="daily_check_in.reward",
         version="1",
-        program_key="default",
+        program_key="credit",
         direction="credit",
         fixed_amount=10,
         daily_limit=1,

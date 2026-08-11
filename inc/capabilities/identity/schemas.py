@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SubjectDTO(BaseModel):
@@ -72,5 +72,14 @@ class UpdateProfileInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    display_name: str | None = None
+    display_name: str | None = Field(default=None, max_length=200)
     avatar_asset_id: str | None = None
+
+    @field_validator("avatar_asset_id")
+    @classmethod
+    def _avatar_id(cls, value: str | None) -> str | None:
+        if value is not None:
+            import uuid
+
+            uuid.UUID(value)
+        return value

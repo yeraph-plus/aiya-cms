@@ -7,8 +7,9 @@ business capability, ``identity_provider`` activates the OIDC ring, ``cms``
 activates the full product.
 
 The ``cms`` manifest is the **development profile**: it binds the dev-only
-adapters ``payments.dev_fake`` and ``assets.dev_memory`` so the full loop runs
-locally. These are rejected at container build when
+adapter ``payments.dev_fake`` and the S3-compatible assets adapter so the full
+loop runs against the Compose RustFS service. The payment adapter is rejected
+at container build when
 ``ApiSettings.environment == "production"`` (``kernel.adapter_production_denied``),
 so production must either set ``AIYA_ENVIRONMENT=production`` (fail-closed) or
 mount a manifest that binds only audited providers. Do not deploy ``cms`` with
@@ -55,6 +56,7 @@ cms = AppManifest(
         "post",
         "page",
         "site_settings",
+        "site_cleanup",
         "check_in",
         "point_purchase",
         "membership_purchase",
@@ -65,7 +67,7 @@ cms = AppManifest(
         ("oidc.authorization_decision", "access.authorize"),
         ("oidc.security_events", "oidc.session_revoker"),
         ("taxonomy.target_exists", "content.exists"),
-        ("assets.object_storage", "assets.dev_memory"),
+        ("assets.object_storage", "assets.s3"),
         ("payments.provider", "payments.dev_fake"),
         ("membership.subject_exists", "membership.subject_exists"),
         ("membership.points_ledger", "membership.points_ledger"),
@@ -80,6 +82,7 @@ cms = AppManifest(
         "settings",
         "assets",
         "audit",
+        "execution",
         "oidc",
         "check_in",
         "points",
@@ -88,6 +91,6 @@ cms = AppManifest(
         "payments",
         "membership_purchase",
     ),
-    workers=("outbox", "workflow"),
+    workers=("outbox", "workflow", "task"),
     cron_enabled=True,
 )

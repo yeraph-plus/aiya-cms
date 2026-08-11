@@ -112,6 +112,17 @@ def build_router(
     ) -> TermDTO:
         return await ArchiveTerm(_ctx(ctx, services))(term_id)
 
+    @router.get(
+        "/taxonomy/targets/{target_type}/{target_id}/terms",
+        response_model=dict[str, list[TermDTO]],
+    )
+    async def get_target_terms(
+        target_type: str = Path(...),
+        target_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("taxonomy.read")),
+    ) -> dict[str, list[TermDTO]]:
+        return await services.taxonomy_queries.get_target_terms(target_type, target_id)
+
     @router.put("/taxonomy/targets/{target_type}/{target_id}/terms", status_code=204)
     async def assign_terms(
         body: AssignBody,

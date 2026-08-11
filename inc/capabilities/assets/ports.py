@@ -49,6 +49,7 @@ class ObjectStat:
     byte_size: int
     mime_type: str
     checksum_sha256: str | None = None
+    bucket: str | None = None
 
 
 @runtime_checkable
@@ -60,6 +61,7 @@ class ObjectStorageProvider(Protocol):
     async def create_upload_intent(
         self,
         *,
+        bucket: str | None,
         object_key: str,
         content_length_max: int,
         mime_types: tuple[str, ...],
@@ -67,11 +69,13 @@ class ObjectStorageProvider(Protocol):
         expires_at: datetime,
     ) -> UploadIntentCredentials: ...
 
-    async def stat(self, *, object_key: str) -> ObjectStat: ...
+    async def stat(self, *, bucket: str | None, object_key: str) -> ObjectStat: ...
 
-    async def read_url(self, *, object_key: str, expires_in_seconds: int) -> str: ...
+    async def read_url(
+        self, *, bucket: str | None, object_key: str, expires_in_seconds: int
+    ) -> str: ...
 
-    async def delete(self, *, object_key: str) -> None:
+    async def delete(self, *, bucket: str | None, object_key: str) -> None:
         """Idempotent delete: deleting a missing object must succeed.
 
         The delete workflow retries its step after provider timeouts, so

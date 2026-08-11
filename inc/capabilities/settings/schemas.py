@@ -10,6 +10,29 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from inc.capabilities.settings.groups import SettingFieldType
+
+
+class SettingOptionDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    value: str | int | float | bool | None
+
+
+class SettingFieldDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str
+    title: str
+    desc: str
+    type: SettingFieldType
+    type_sub: str | None = None
+    default: Any
+    metadata: dict[str, Any]
+    public: bool
+    sensitive: bool
+
 
 class SettingGroupDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -17,6 +40,7 @@ class SettingGroupDTO(BaseModel):
     group_key: str
     schema_version: str
     version: int
+    fields: tuple[SettingFieldDTO, ...]
     values: dict[str, Any]
     updated_by: str | None = None
     updated_at: datetime | None = None
@@ -25,11 +49,11 @@ class SettingGroupDTO(BaseModel):
 class PublicSettingsDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    values: dict[str, Any]
+    values: dict[str, dict[str, Any]]
 
 
 class UpdateSettingGroupInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_version: int | None = None
+    expected_version: int
     values: dict[str, Any]

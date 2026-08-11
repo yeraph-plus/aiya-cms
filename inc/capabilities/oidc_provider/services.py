@@ -34,7 +34,12 @@ from inc.capabilities.oidc_provider.ports import (
     SubjectAuthenticator,
     SubjectClaimsReader,
 )
-from inc.capabilities.oidc_provider.schemas import IntrospectionResult, OidcError, TokenResponse
+from inc.capabilities.oidc_provider.schemas import (
+    GrantConsentDTO,
+    IntrospectionResult,
+    OidcError,
+    TokenResponse,
+)
 from inc.kernel.db import UnitOfWork, UoWFactory
 from inc.kernel.events import EventEnvelope, OutboxWriter
 from inc.kernel.time import Clock
@@ -93,6 +98,99 @@ class ServiceContext:
     access_token_lifetime_seconds: int = 300
     refresh_absolute_lifetime_seconds: int = 30 * 24 * 3600
     refresh_inactivity_lifetime_seconds: int = 7 * 24 * 3600
+
+
+class GrantConsentService:
+    """Read and revoke the current subject's OIDC application consents."""
+
+    def __init__(self, ctx: ServiceContext) -> None:
+        self._ctx = ctx
+
+    async def list_for_subject(self, subject_id: str) -> list[GrantConsentDTO]:  # type: ignore[return]
+        async with self._ctx.uow_factory() as uow:
+            rows = (
+                await uow.session.execute(
+                    select(OidcGrantConsent, OidcClient.name)
+                    .outerjoin(OidcClient, OidcClient.client_id == OidcGrantConsent.client_id)
+                    .where(
+                        OidcGrantConsent.subject_id == subject_id,
+                        OidcGrantConsent.revoked_at.is_(None),
+                    )
+                    .order_by(OidcGrantConsent.client_id, OidcGrantConsent.id)
+                )
+            ).all()
+            return [
+                GrantConsentDTO(
+                    client_id=consent.client_id,
+                    client_name=client_name,
+                    scopes=sorted(consent.scopes.items),
+                    audiences=sorted(consent.audiences.items),
+                    granted_at=_ensure_utc(consent.granted_at),
+                )
+                for consent, client_name in rows
+            ]
+
+    async def revoke(self, *, subject_id: str, client_id: str) -> None:
+        """Revoke consent and every renewable/login state for one client."""
+
+        async with self._ctx.uow_factory() as uow:
+            consent = (
+                (
+                    await uow.session.execute(
+                        select(OidcGrantConsent).where(
+                            OidcGrantConsent.subject_id == subject_id,
+                            OidcGrantConsent.client_id == client_id,
+                            OidcGrantConsent.revoked_at.is_(None),
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if consent is None:
+                return
+
+            now = self._ctx.clock.utc_now()
+            consent.revoked_at = now
+            await uow.session.execute(
+                update(OidcSession)
+                .where(
+                    OidcSession.subject_id == subject_id,
+                    OidcSession.client_id == client_id,
+                    OidcSession.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            await uow.session.execute(
+                update(OidcRefreshFamily)
+                .where(
+                    OidcRefreshFamily.subject_id == subject_id,
+                    OidcRefreshFamily.client_id == client_id,
+                    OidcRefreshFamily.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            await uow.session.execute(
+                update(OidcRefreshToken)
+                .where(
+                    OidcRefreshToken.revoked_at.is_(None),
+                    OidcRefreshToken.family_id.in_(
+                        select(OidcRefreshFamily.id).where(
+                            OidcRefreshFamily.subject_id == subject_id,
+                            OidcRefreshFamily.client_id == client_id,
+                        )
+                    ),
+                )
+                .values(revoked_at=now)
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="oidc.grant.revoked",
+                client_id=client_id,
+                subject_id=subject_id,
+            )
+            await uow.commit()
 
 
 async def _append_audit(

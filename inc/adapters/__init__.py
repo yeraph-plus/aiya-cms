@@ -15,7 +15,6 @@ from inc.adapters.registry import (
     ContentBatchExists,
     IdentityClaimsReader,
     IdentityCredentialAuthenticator,
-    InMemoryObjectStorage,
     TaxonomyContentExists,
     resolve_adapters,
 )
@@ -25,7 +24,6 @@ __all__ = [
     "ContentBatchExists",
     "IdentityClaimsReader",
     "IdentityCredentialAuthenticator",
-    "InMemoryObjectStorage",
     "TaxonomyContentExists",
     "resolve_adapters",
 ]

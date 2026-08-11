@@ -17,11 +17,13 @@ from inc.capabilities.points.commands import (
     CommandContext,
     ExpireBuckets,
 )
+from inc.capabilities.points.constants import DEFAULT_PROGRAM_KEY
 from inc.capabilities.points.diagnostics import PointsDiagnostics
 from inc.capabilities.points.queries import PointsQueries
 
 __all__ = [
     "CommandContext",
+    "DEFAULT_PROGRAM_KEY",
     "ExpireBuckets",
     "PointBehaviorRegistry",
     "PointBehaviorSpec",

@@ -2,21 +2,21 @@
 
 Contract source: context/spec/features.md §4.3, capabilities/points.md §6.
 
-Read-only: an unopened account returns an explicit empty view; the read
-path never opens accounts or writes.
+Read-only: an unopened account returns an empty ledger page; the read path
+never opens accounts or writes.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
-from inc.features.check_in.schemas import BalanceViewDTO
+from inc.capabilities.points.schemas import LedgerEntryDTO
 from inc.features.check_in.workflows import REWARD_BEHAVIOR
-from inc.kernel.errors import KernelError
+from inc.kernel.db import Page
 
 REQUIRED_PERMISSIONS: tuple[str, ...] = ()
 
@@ -28,21 +28,19 @@ def build_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["points"])
 
-    @router.get("/points/balance", response_model=BalanceViewDTO)
-    async def balance(
+    @router.get("/me/points/ledger", response_model=Page[LedgerEntryDTO])
+    async def ledger(
+        page: int = Query(default=1, ge=1),
+        size: int = Query(default=20, ge=1, le=100),
         ctx: AppContext = Depends(require_authenticated()),
-    ) -> BalanceViewDTO:
+    ) -> Page[LedgerEntryDTO]:
         program_key = services.behaviors.require(REWARD_BEHAVIOR).program_key
-        try:
-            result = await services.points_queries.get_balance(
-                program_key=program_key,
-                subject_type="identity",
-                subject_id=ctx.principal.subject_id,
-            )
-        except KernelError as exc:
-            if exc.code == "points.account_not_opened":
-                return BalanceViewDTO(opened=False, program_key=program_key, balance=0)
-            raise
-        return BalanceViewDTO(opened=True, program_key=result.program_key, balance=result.balance)
+        return await services.points_queries.list_ledger(
+            program_key=program_key,
+            subject_type="identity",
+            subject_id=ctx.principal.subject_id,
+            page=page,
+            size=size,
+        )
 
     return router

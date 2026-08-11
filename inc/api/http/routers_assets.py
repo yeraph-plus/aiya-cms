@@ -24,6 +24,7 @@ from inc.capabilities.assets.commands import (
     UpdateAssetMetadata,
 )
 from inc.capabilities.assets.schemas import (
+    AssetPageDTO,
     AssetRefDTO,
     CreateUploadIntentInput,
     CreateUploadIntentResult,
@@ -39,9 +40,7 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
         uow_factory=ctx.uow_factory,
         clock=ctx.clock,
         outbox=services.outbox,
-        providers=(
-            {"dev_memory": services.dev_storage} if services.dev_storage is not None else {}
-        ),
+        providers=services.asset_providers,
         runner=services.runner,
         permissions=frozenset(ctx.principal.capabilities),
         actor_id=ctx.principal.subject_id,
@@ -63,6 +62,27 @@ def build_router(
     require_authenticated: Any = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/admin", tags=["admin", "admin-assets"])
+
+    @router.get("/assets", response_model=AssetPageDTO)
+    async def list_assets(
+        page: int = Query(default=1, ge=1),
+        size: int = Query(default=20, ge=1, le=100),
+        state: str | None = Query(default=None, max_length=16),
+        provider_key: str | None = Query(default=None, max_length=64),
+        bucket: str | None = Query(default=None, max_length=200),
+        search: str | None = Query(default=None, max_length=200),
+        ctx: AppContext = Depends(require_capability("assets.read")),
+    ) -> AssetPageDTO:
+        assert services.asset_queries is not None
+        return await services.asset_queries.list(
+            page=page,
+            size=size,
+            state=state,
+            provider_key=provider_key,
+            bucket=bucket,
+            search=search,
+            permissions=frozenset(ctx.principal.capabilities),
+        )
 
     @router.post("/assets/upload-intents", response_model=CreateUploadIntentResult)
     async def create_upload_intent(

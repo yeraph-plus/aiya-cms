@@ -3,7 +3,7 @@
 Contract source: context/spec/features.md §4.5.
 
 The site_settings feature declares the site-level settings groups
-(general, seo, notification). settings stays a passive host; the
+(general, seo, notification and operations). settings stays a passive host; the
 composition root registers the returned specs explicitly and freezes the
 registry.
 """

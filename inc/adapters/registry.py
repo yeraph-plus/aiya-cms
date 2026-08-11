@@ -15,7 +15,6 @@ from typing import Any
 
 from inc.capabilities.access import AuthorizeService
 from inc.capabilities.access.schemas import Principal
-from inc.capabilities.assets.ports import ObjectStat, UploadIntentCredentials
 from inc.capabilities.content import ContentQueries
 from inc.capabilities.identity import CredentialAuthenticator, IdentityQueries
 from inc.capabilities.oidc_provider import OidcSessionRevoker
@@ -144,75 +143,6 @@ def _parse_uuid(value: str) -> uuid.UUID | None:
         return None
 
 
-class InMemoryObjectStorage:
-    """Development adapter: in-process object store, no persistence.
-
-    Never used in production manifests; exists so the assets capability
-    can be exercised end to end without an external provider.
-    """
-
-    key = "dev_memory"
-
-    def __init__(self) -> None:
-        self._objects: dict[str, bytes] = {}
-        self._mimes: dict[str, str] = {}
-
-    async def create_upload_intent(
-        self,
-        *,
-        object_key: str,
-        content_length_max: int,
-        mime_types: tuple[str, ...],
-        checksum_sha256: str | None,
-        expires_at: Any,
-    ) -> UploadIntentCredentials:
-        if mime_types:
-            self._mimes[object_key] = mime_types[0]
-        return UploadIntentCredentials(
-            upload_url=f"memory://{object_key}", headers={"x-dev-upload": "1"}
-        )
-
-    async def stat(self, *, object_key: str) -> ObjectStat:
-        data = self._objects.get(object_key)
-        if data is None:
-            from inc.capabilities.assets.ports import StorageError
-
-            raise StorageError(
-                code="assets.object_missing",
-                category=ErrorCategory.NOT_FOUND,
-                message="object missing",
-            )
-        import hashlib
-
-        return ObjectStat(
-            byte_size=len(data),
-            mime_type=self._mimes.get(object_key) or _guess_mime(object_key),
-            checksum_sha256=hashlib.sha256(data).hexdigest(),
-        )
-
-    async def read_url(self, *, object_key: str, expires_in_seconds: int) -> str:
-        if object_key not in self._objects:
-            from inc.capabilities.assets.ports import StorageError
-
-            raise StorageError(
-                code="assets.object_missing",
-                category=ErrorCategory.NOT_FOUND,
-                message="object missing",
-            )
-        return f"memory://{object_key}?expires={expires_in_seconds}"
-
-    async def delete(self, *, object_key: str) -> None:
-        self._objects.pop(object_key, None)
-
-
-def _guess_mime(object_key: str) -> str:
-    if object_key.endswith(".png"):
-        return "image/png"
-    if object_key.endswith(".jpg") or object_key.endswith(".jpeg"):
-        return "image/jpeg"
-    return "application/octet-stream"
-
-
 def resolve_adapters(
     container: Any,
     *,
@@ -222,7 +152,7 @@ def resolve_adapters(
     authorize: AuthorizeService,
     content_queries: ContentQueries | None,
     session_revoker: OidcSessionRevoker | None,
-    dev_storage: Any,
+    settings_queries: Any,
 ) -> dict[str, Any]:
     """Resolve manifest (port, adapter) bindings into concrete objects."""
 
@@ -246,8 +176,12 @@ def resolve_adapters(
             resolved[port] = TaxonomyContentExists(queries=content_queries)  # type: ignore[arg-type]
         elif adapter == "content.batch_exists":
             resolved[port] = ContentBatchExists(queries=content_queries)  # type: ignore[arg-type]
-        elif adapter == "assets.dev_memory":
-            resolved[port] = dev_storage
+        elif adapter == "assets.s3":
+            from inc.adapters.assets import S3ObjectStorage
+
+            resolved[port] = S3ObjectStorage(
+                settings_queries=settings_queries, clock=container._clock
+            )
         elif adapter == "payments.dev_fake":
             from inc.adapters.payments.dev_fake import DevFakePaymentProvider
 

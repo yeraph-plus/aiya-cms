@@ -17,7 +17,7 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from inc.adapters import ContentBatchExists, InMemoryObjectStorage, resolve_adapters
+from inc.adapters import ContentBatchExists, resolve_adapters
 from inc.api.config import DEFAULT_ISSUER
 from inc.capabilities.access import (
     AccessDiagnostics,
@@ -33,7 +33,7 @@ from inc.capabilities.assets import (
 from inc.capabilities.assets import (
     CommandContext as AssetCommandContext,
 )
-from inc.capabilities.audit import AuditInboxHandler, AuditQueries
+from inc.capabilities.audit import AuditInboxHandler, AuditQueries, AuditRetentionActivity
 from inc.capabilities.content import (
     ContentDiagnostics,
     ContentPublishScanner,
@@ -51,12 +51,14 @@ from inc.capabilities.membership import (
     CommandContext as MembershipCommandContext,
 )
 from inc.capabilities.membership import (
+    ExpireSubscription,
     MembershipDiagnostics,
     MembershipLevelRegistry,
     MembershipQueries,
 )
 from inc.capabilities.oidc_provider import (
     AuthorizationService,
+    GrantConsentService,
     InMemorySigningKeyStore,
     KeyService,
     LogoutService,
@@ -104,6 +106,16 @@ from inc.kernel.events import (
 )
 from inc.kernel.observability import AdminSummaryRegistry, DiagnosticRegistry
 from inc.kernel.security import Argon2PasswordHasher
+from inc.kernel.tasks import (
+    CronRegistry,
+    CronScheduler,
+    CronSpec,
+    ExecutionLogCleaner,
+    ExecutionLogQueries,
+    TaskRegistry,
+    TaskSpec,
+    TaskWorker,
+)
 from inc.kernel.time import Clock
 from inc.kernel.workflow import WorkflowRegistry, WorkflowRunner
 
@@ -133,6 +145,7 @@ for _module, _attr in (
     ("inc.features.check_in.definition", "spec"),
     ("inc.features.point_purchase.definition", "spec"),
     ("inc.features.membership_purchase.definition", "spec"),
+    ("inc.features.site_cleanup.definition", "spec"),
 ):
     _spec = getattr(importlib.import_module(_module), _attr)
     FEATURE_SPECS[_module.rsplit(".", 2)[1]] = _spec
@@ -163,6 +176,7 @@ KNOWN_ROUTERS = frozenset(
         "settings",
         "assets",
         "audit",
+        "execution",
         "oidc",
         "check_in",
         "points",
@@ -172,11 +186,28 @@ KNOWN_ROUTERS = frozenset(
         "membership_purchase",
     }
 )
-KNOWN_WORKERS = frozenset({"outbox", "workflow"})
+KNOWN_WORKERS = frozenset({"outbox", "workflow", "task"})
 
 
 def _fail(code: str, message: str) -> KernelError:
     return KernelError(code=code, category=ErrorCategory.INTERNAL, message=message)
+
+
+def _task_handler(call: Any) -> Any:
+    """Adapt a no-argument maintenance call to the kernel TaskHandler shape."""
+
+    async def handler(uow: Any, data: dict[str, Any], context: Any) -> dict[str, Any]:
+        del uow, data, context
+        result = await call()
+        if isinstance(result, dict):
+            return dict(result)
+        if isinstance(result, (list, tuple, set)):
+            return {"processed": len(result)}
+        if isinstance(result, int):
+            return {"processed": result}
+        return {"processed": 1}
+
+    return handler
 
 
 @dataclass(slots=True)
@@ -201,6 +232,7 @@ class Services:
     taxonomy_queries: TaxonomyQueries
     settings_queries: SettingsQueries
     audit_queries: AuditQueries
+    execution_queries: ExecutionLogQueries
     behaviors: PointBehaviorRegistry
     points_queries: PointsQueries
     payments_queries: PaymentsQueries
@@ -208,12 +240,15 @@ class Services:
     membership_queries: MembershipQueries | None = None
     adapters: dict[str, Any] = field(default_factory=dict)
     settings: Any = None
+    asset_providers: dict[str, Any] = field(default_factory=dict)
     asset_queries: AssetQueries | None = None
     scanner: ContentPublishScanner | None = None
     oidc: dict[str, Any] | None = None
-    dev_storage: Any = None
+    oidc_grants: GrantConsentService | None = None
     payment_providers: dict[str, Any] = field(default_factory=dict)
     payment_webhook_secrets: dict[str, str] = field(default_factory=dict)
+    task_worker: TaskWorker | None = None
+    cron_scheduler: CronScheduler | None = None
 
 
 class ApplicationContainer:
@@ -238,6 +273,8 @@ class ApplicationContainer:
         self.schema_registry = EventSchemaRegistry()
         self.handler_registry = EventHandlerRegistry()
         self.workflow_registry = WorkflowRegistry()
+        self.task_registry = TaskRegistry()
+        self.cron_registry = CronRegistry()
         self.permission_registry = PermissionRegistry()
         self.content_types = ContentTypeRegistry(permission_keys=self.permission_registry)
         self.dimensions = DimensionRegistry(permission_keys=self.permission_registry)
@@ -267,6 +304,14 @@ class ApplicationContainer:
                         "kernel.feature_requires_missing",
                         f"feature {name!r} requires capability {required!r}",
                     )
+        if (
+            "site_cleanup" in self._manifest.features
+            and "site_settings" not in self._manifest.features
+        ):
+            raise _fail(
+                "kernel.feature_requires_missing",
+                "feature 'site_cleanup' requires feature 'site_settings'",
+            )
         for group_name, group, known in (
             ("capability", self._manifest.capabilities, set(CAPABILITY_SPECS)),
             ("feature", self._manifest.features, set(FEATURE_SPECS)),
@@ -284,6 +329,24 @@ class ApplicationContainer:
                     "kernel.registry_unknown",
                     f"unknown {group_name} in manifest: {sorted(unknown)}",
                 )
+        if self._manifest.cron_enabled and "task" not in self._manifest.workers:
+            raise _fail(
+                "kernel.cron_worker_missing",
+                "cron_enabled requires the task worker",
+            )
+
+    def _register_cron(self, *, key: str, schedule: str, handler: Any) -> None:
+        """Register one CronSpec and its persistent TaskInstance handler."""
+
+        self.cron_registry.register(
+            CronSpec(
+                key=key,
+                schedule=schedule,
+                timezone="UTC",
+                handler=handler,
+            )
+        )
+        self.task_registry.register(TaskSpec(key=f"{key}.tick", handler=handler))
 
     def _register_event_schemas(self) -> None:
         capabilities = set(self._manifest.capabilities)
@@ -373,31 +436,14 @@ class ApplicationContainer:
             uow_factory=self._uow_factory, groups=self.settings_groups
         )
         audit_queries = AuditQueries(uow_factory=self._uow_factory)
+        execution_queries = ExecutionLogQueries(uow_factory=self._uow_factory)
+        execution_cleaner = ExecutionLogCleaner(self._uow_factory)
         runner = WorkflowRunner(
             uow_factory=self._uow_factory, registry=self.workflow_registry, clock=self._clock
         )
 
-        dev_storage: Any = None
         asset_queries: AssetQueries | None = None
         asset_command_ctx: AssetCommandContext | None = None
-        if "assets" in capabilities:
-            binds_dev = _binds_dev_storage(self._manifest)
-            if getattr(self._settings, "environment", "dev") == "production" and binds_dev:
-                raise _fail(
-                    "kernel.adapter_production_denied",
-                    "assets.dev_memory must not be bound in production",
-                )
-            if binds_dev:
-                dev_storage = InMemoryObjectStorage()
-            asset_command_ctx = AssetCommandContext(
-                uow_factory=self._uow_factory,
-                clock=self._clock,
-                outbox=outbox,
-                providers={"dev_memory": dev_storage} if binds_dev else {},
-                runner=runner,
-            )
-            register_asset_workflows(self.workflow_registry, ctx=asset_command_ctx)
-            asset_queries = AssetQueries(ctx=asset_command_ctx, clock=self._clock)
 
         if "payments" in capabilities and _binds_dev_payment(self._manifest):
             if getattr(self._settings, "environment", "dev") == "production":
@@ -415,6 +461,11 @@ class ApplicationContainer:
             scanner = ContentPublishScanner(
                 uow_factory=self._uow_factory, clock=self._clock, runner=runner
             )
+            self._register_cron(
+                key="content.publish.scan.v1",
+                schedule="* * * * *",
+                handler=_task_handler(scanner.scan_once),
+            )
 
         session_revoker = (
             OidcSessionRevoker(uow_factory=self._uow_factory, clock=self._clock)
@@ -429,9 +480,23 @@ class ApplicationContainer:
             authorize=authorize,
             content_queries=content_queries,
             session_revoker=session_revoker,
-            dev_storage=dev_storage,
+            settings_queries=settings_queries,
         )
         self._validate_required_ports(adapters)
+
+        asset_providers: dict[str, Any] = {}
+        if "assets" in capabilities:
+            asset_provider = adapters["assets.object_storage"]
+            asset_providers[asset_provider.key] = asset_provider
+            asset_command_ctx = AssetCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                providers=asset_providers,
+                runner=runner,
+            )
+            register_asset_workflows(self.workflow_registry, ctx=asset_command_ctx)
+            asset_queries = AssetQueries(ctx=asset_command_ctx, clock=self._clock)
 
         payment_providers: dict[str, Any] = {}
         payment_webhook_secrets: dict[str, str] = {}
@@ -458,6 +523,11 @@ class ApplicationContainer:
                 )
             )
             self._points_expire = points_expire
+            self._register_cron(
+                key="points.buckets.expire.v1",
+                schedule="* * * * *",
+                handler=_task_handler(points_expire),
+            )
 
         features = set(self._manifest.features)
         if "check_in" in features:
@@ -538,6 +608,11 @@ class ApplicationContainer:
                     clock=self._clock,
                 )
             )
+            self._register_cron(
+                key="membership.subscription.expire.v1",
+                schedule="* * * * *",
+                handler=_task_handler(ExpireSubscription(membership_ctx)),
+            )
         if "membership_purchase" in features:
             from inc.features.membership_purchase.workflows import (
                 MembershipPurchaseContext,
@@ -579,7 +654,32 @@ class ApplicationContainer:
             store=InMemorySigningKeyStore(),
             clock=self._clock,
         )
+        if "site_cleanup" in features:
+            from inc.features.site_cleanup import SiteCleanupActivity
+            from inc.features.site_cleanup.definition import RETENTION_CRON_KEY
+
+            if "audit" not in capabilities:
+                raise _fail(
+                    "kernel.feature_requires_missing",
+                    "feature 'site_cleanup' requires the audit capability",
+                )
+            cleanup_activity = SiteCleanupActivity(
+                settings=settings_queries,
+                execution_logs=execution_cleaner,
+                audit=AuditRetentionActivity(
+                    uow_factory=self._uow_factory,
+                    outbox=outbox,
+                    clock=self._clock,
+                ),
+                clock=self._clock,
+            )
+            self._register_cron(
+                key=RETENTION_CRON_KEY,
+                schedule="0 4 * * *",
+                handler=cleanup_activity,
+            )
         oidc: dict[str, Any] | None = None
+        oidc_grants: GrantConsentService | None = None
         if "oidc_provider" in capabilities:
             service_ctx = ServiceContext(
                 uow_factory=self._uow_factory,
@@ -600,6 +700,12 @@ class ApplicationContainer:
                 "keys": keys,
                 "ctx": service_ctx,
             }
+            oidc_grants = GrantConsentService(service_ctx)
+            self._register_cron(
+                key="oidc.keys.cleanup.v1",
+                schedule="0 3 * * *",
+                handler=_task_handler(keys.cleanup_expired_keys),
+            )
             for event_key in SECURITY_EVENT_KEYS:
                 self.handler_registry.register(
                     event_key,
@@ -652,7 +758,7 @@ class ApplicationContainer:
                 AssetDiagnostics(
                     uow_factory=self._uow_factory,
                     clock=self._clock,
-                    providers={"dev_memory": dev_storage} if dev_storage is not None else {},
+                    providers=asset_providers,
                 )
             )
         if "points" in capabilities:
@@ -668,6 +774,16 @@ class ApplicationContainer:
                 PaymentsDiagnostics(uow_factory=self._uow_factory, clock=self._clock)
             )
 
+        cron_scheduler = CronScheduler(
+            uow_factory=self._uow_factory,
+            registry=self.cron_registry,
+            clock=self._clock,
+        )
+        task_worker = TaskWorker(
+            uow_factory=self._uow_factory,
+            registry=self.task_registry,
+            clock=self._clock,
+        )
         self.services = Services(
             uow_factory=self._uow_factory,
             clock=self._clock,
@@ -685,11 +801,13 @@ class ApplicationContainer:
             settings_groups=self.settings_groups,
             adapters=adapters,
             settings=self._settings,
+            asset_providers=asset_providers,
             content_queries=content_queries,
             taxonomy_queries=taxonomy_queries,
             settings_queries=settings_queries,
             asset_queries=asset_queries,
             audit_queries=audit_queries,
+            execution_queries=execution_queries,
             behaviors=self.behaviors,
             points_queries=points_queries,
             payments_queries=payments_queries,
@@ -697,9 +815,11 @@ class ApplicationContainer:
             membership_queries=membership_queries,
             scanner=scanner,
             oidc=oidc,
-            dev_storage=dev_storage,
+            oidc_grants=oidc_grants,
             payment_providers=payment_providers,
             payment_webhook_secrets=payment_webhook_secrets,
+            task_worker=task_worker,
+            cron_scheduler=cron_scheduler,
         )
         return self.services
 
@@ -739,6 +859,8 @@ class ApplicationContainer:
             self.schema_registry,
             self.handler_registry,
             self.workflow_registry,
+            self.task_registry,
+            self.cron_registry,
             self.permission_registry,
             self.content_types,
             self.dimensions,
@@ -782,23 +904,23 @@ class ApplicationContainer:
                     )
                 )
             )
-        if self._manifest.cron_enabled and services.scanner is not None:
+        if "task" in self._manifest.workers and services.task_worker is not None:
             self._tasks.append(
                 asyncio.create_task(
                     self._loop(
-                        "content-publish-scan",
-                        services.scanner.scan_once,
-                        max(sleep, 5.0),
+                        "task",
+                        lambda: services.task_worker.run_cycle(batch=16),
+                        sleep,
                     )
                 )
             )
-        if self._manifest.cron_enabled and self._points_expire is not None:
+        if self._manifest.cron_enabled and services.cron_scheduler is not None:
             self._tasks.append(
                 asyncio.create_task(
                     self._loop(
-                        "points-expire",
-                        self._points_expire,
-                        max(sleep, 5.0),
+                        "cron",
+                        services.cron_scheduler.tick,
+                        max(sleep, 1.0),
                     )
                 )
             )
@@ -828,13 +950,6 @@ class ApplicationContainer:
                 pass
         self._tasks.clear()
         self._started = False
-
-
-def _binds_dev_storage(manifest: AppManifest) -> bool:
-    return any(
-        port == "assets.object_storage" and adapter == "assets.dev_memory"
-        for port, adapter in manifest.adapters
-    )
 
 
 def _binds_dev_payment(manifest: AppManifest) -> bool:

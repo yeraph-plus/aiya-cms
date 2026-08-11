@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
+
 from inc.capabilities.assets.commands import PERMISSION_READ, CommandContext, _provider, _to_ref
-from inc.capabilities.assets.models import AssetObject
+from inc.capabilities.assets.models import AssetObject, AssetUploadIntent
 from inc.capabilities.assets.ports import StorageError, storage_error
-from inc.capabilities.assets.schemas import AssetRefDTO, ResolvedAssetUrlDTO
+from inc.capabilities.assets.schemas import AssetPageDTO, AssetRefDTO, ResolvedAssetUrlDTO
+from inc.kernel.db import fetch_page
 from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.time import Clock
 
@@ -37,6 +40,42 @@ class AssetQueries:
         async with self._ctx.uow_factory() as uow:
             row: AssetObject | None = await uow.session.get(AssetObject, asset_id)
             return _to_ref(row) if row is not None else None
+
+    async def list(  # type: ignore[return]
+        self,
+        *,
+        page: int,
+        size: int,
+        permissions: frozenset[str],
+        state: str | None = None,
+        provider_key: str | None = None,
+        bucket: str | None = None,
+        search: str | None = None,
+    ) -> AssetPageDTO:
+        if PERMISSION_READ not in permissions:
+            raise KernelError(
+                code="assets.forbidden",
+                category=ErrorCategory.FORBIDDEN,
+                message=f"requires permission {PERMISSION_READ}",
+            )
+        async with self._ctx.uow_factory() as uow:
+            statement = select(AssetObject)
+            if state is not None:
+                statement = statement.where(AssetObject.state == state)
+            if provider_key is not None:
+                statement = statement.where(AssetObject.provider_key == provider_key)
+            if bucket is not None:
+                statement = statement.where(AssetObject.bucket == bucket)
+            if search is not None:
+                statement = statement.where(AssetObject.object_key.ilike(f"%{search}%"))
+            statement = statement.order_by(AssetObject.created_at.desc(), AssetObject.id.desc())
+            result = await fetch_page(uow.session, statement, page=page, size=size)
+            return AssetPageDTO(
+                items=[_to_ref(row) for row in result.items],
+                total=result.total,
+                page=result.page,
+                size=result.size,
+            )
 
     async def resolve_url(
         self,
@@ -74,6 +113,7 @@ class AssetQueries:
         provider = _provider(self._ctx, row.provider_key)
         try:
             url = await provider.read_url(
+                bucket=row.bucket,
                 object_key=row.object_key, expires_in_seconds=expires_in_seconds
             )
         except StorageError:
@@ -85,3 +125,35 @@ class AssetQueries:
             url=url,
             expires_in_seconds=expires_in_seconds,
         )
+
+    async def get_by_upload_intent(
+        self, intent_id: Any, *, permissions: frozenset[str]
+    ) -> AssetRefDTO | None:
+        """Return the ready asset created by an upload intent, if finalized."""
+
+        if PERMISSION_READ not in permissions:
+            raise KernelError(
+                code="assets.forbidden",
+                category=ErrorCategory.FORBIDDEN,
+                message=f"requires permission {PERMISSION_READ}",
+            )
+        async with self._ctx.uow_factory() as uow:
+            intent: AssetUploadIntent | None = await uow.session.get(AssetUploadIntent, intent_id)
+            if intent is None:
+                return None
+            row = (
+                (
+                    await uow.session.execute(
+                        select(AssetObject).where(
+                            AssetObject.provider_key == intent.provider_key,
+                            AssetObject.bucket == intent.bucket,
+                            AssetObject.object_key == intent.object_key,
+                            AssetObject.state == "ready",
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            return _to_ref(row) if row is not None else None
+        raise AssertionError("asset upload intent query exited without returning")

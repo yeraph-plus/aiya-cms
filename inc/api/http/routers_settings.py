@@ -37,6 +37,12 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
 REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "settings.read",
     "settings.update",
+    "settings.general.update",
+    "settings.seo.update",
+    "settings.notification.update",
+    "settings.entitlements.update",
+    "settings.object_storage.update",
+    "settings.operations.update",
 )
 
 

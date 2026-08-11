@@ -326,6 +326,9 @@ def _to_entry(row: PointsLedgerEntry, program_key: str) -> LedgerEntryDTO:
         behavior_version=row.behavior_version,
         source_type=row.source_type,
         source_id=row.source_id,
+        actor_type=row.actor_type,
+        actor_id=row.actor_id,
+        metadata=dict(row.entry_metadata.values),
         reversal_of=str(row.reversal_of) if row.reversal_of is not None else None,
         created_at=_ensure_utc(row.created_at),
     )

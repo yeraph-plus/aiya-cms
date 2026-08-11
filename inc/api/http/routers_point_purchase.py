@@ -18,12 +18,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
-from inc.capabilities.points.commands import (
-    CommandContext as PointsCommandContext,
-)
-from inc.capabilities.points.commands import (
-    OpenPointsAccount,
-)
 from inc.features.point_purchase.definition import POINT_OFFERS
 from inc.features.point_purchase.schemas import (
     OfferDTO,
@@ -92,18 +86,6 @@ def build_router(
             )
         provider_key = sorted(services.payment_providers)[0]
         subject_id = ctx.principal.subject_id
-        await OpenPointsAccount(
-            PointsCommandContext(
-                uow_factory=ctx.uow_factory,
-                clock=ctx.clock,
-                outbox=services.outbox,
-                behaviors=services.behaviors,
-                permissions=frozenset(ctx.principal.capabilities),
-                actor_id=subject_id,
-                trace_id=ctx.trace_id,
-            )
-        )(program_key="default", subject_type="identity", subject_id=subject_id)
-
         # Namespace the client-supplied key with the authenticated subject so
         # two different users sharing an Idempotency-Key header cannot collide
         # on (or read each other's) workflows and orders.

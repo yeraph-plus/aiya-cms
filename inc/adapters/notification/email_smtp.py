@@ -5,11 +5,12 @@ Contract source: context/spec/adapters.md §3.1, context/spec/capabilities/notif
 Thin wrapper over aiosmtplib: owns connection settings, credentials,
 timeout and error classification. Connection settings are filled through
 the ``site_settings`` ``notification`` settings group
-(``smtp_settings_from_group``); the composition root reads the group at
-wiring time and passes a frozen ``SmtpSettings`` in. SMTP has no native
-idempotency, so the stable delivery idempotency key is passed through
-for provider-side deduplication where supported, and the adapter never
-guesses outcomes on timeout (unknown).
+(``smtp_settings_from_group``). The adapter reads that group for each
+delivery and builds a per-call ``SmtpSettings`` snapshot, so committed
+settings changes apply to the next delivery without rebuilding the adapter.
+SMTP has no native idempotency, so the stable delivery idempotency key is
+passed through for provider-side deduplication where supported, and the
+adapter never guesses outcomes on timeout (unknown).
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from inc.capabilities.notification.ports import (
     ProviderResult,
     RecipientTarget,
 )
+from inc.capabilities.settings import SettingsQueries
 from inc.kernel.errors import ErrorCategory
 
 _SMTP_TIMEOUT = 15.0
@@ -52,18 +54,19 @@ class SmtpSettings:
         )
 
 
-def smtp_settings_from_group(value: dict[str, Any]) -> SmtpSettings:
+def smtp_settings_from_group(
+    value: dict[str, Any], *, timeout_seconds: float = _SMTP_TIMEOUT
+) -> SmtpSettings:
     """Build SmtpSettings from the site_settings ``notification`` group value.
 
-    Missing/empty host means the channel is not configured; the
-    composition root must fail before serving rather than bind an adapter
-    that can never connect.
+    Missing/empty host means the channel is not configured; the current
+    delivery is rejected rather than attempting a connection that cannot work.
     """
 
     host = value.get("smtp_host", "")
     if not host:
         raise ValueError(
-            "notification settings group has no smtp_host; SMTP adapter cannot be bound"
+            "notification settings group has no smtp_host; SMTP delivery cannot be sent"
         )
     return SmtpSettings(
         host=host,
@@ -73,6 +76,7 @@ def smtp_settings_from_group(value: dict[str, Any]) -> SmtpSettings:
         from_address=value.get("smtp_from_address", _DEFAULT_FROM_ADDRESS),
         use_tls=_parse_bool(value.get("smtp_use_tls", False)),
         starttls=_parse_bool(value.get("smtp_starttls", False)),
+        timeout_seconds=timeout_seconds,
     )
 
 
@@ -117,8 +121,15 @@ class SmtpEmailAdapter:
 
     key = "email.smtp"
 
-    def __init__(self, *, settings: SmtpSettings) -> None:
-        self._settings = settings
+    def __init__(
+        self, *, settings_queries: SettingsQueries, timeout_seconds: float = _SMTP_TIMEOUT
+    ) -> None:
+        self._settings_queries = settings_queries
+        self._timeout_seconds = timeout_seconds
+
+    async def _current_settings(self) -> SmtpSettings:
+        group = await self._settings_queries.get_group("notification")
+        return smtp_settings_from_group(group.values, timeout_seconds=self._timeout_seconds)
 
     async def send(
         self,
@@ -128,7 +139,15 @@ class SmtpEmailAdapter:
         body: str,
         idempotency_key: str,
     ) -> ProviderResult:
-        from_address = _validate_header_value(self._settings.from_address, "from_address")
+        try:
+            settings = await self._current_settings()
+        except ValueError as exc:
+            raise ProviderError(
+                message="SMTP settings are invalid",
+                category=ErrorCategory.VALIDATION,
+                permanent=True,
+            ) from exc
+        from_address = _validate_header_value(settings.from_address, "from_address")
         to_address = _validate_header_value(target.address, "recipient address")
         message = (
             f"From: {from_address}\r\n"
@@ -143,8 +162,8 @@ class SmtpEmailAdapter:
         ).encode()
         try:
             result = await asyncio.wait_for(
-                self._send_raw(message, to_address),
-                timeout=self._settings.timeout_seconds,
+                self._send_raw(settings, message, to_address),
+                timeout=settings.timeout_seconds,
             )
             return ProviderResult(status="delivered", provider_ref=result)
         except TimeoutError:
@@ -182,8 +201,7 @@ class SmtpEmailAdapter:
                 category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
             ) from exc
 
-    async def _send_raw(self, message: bytes, to_address: str) -> str:
-        settings = self._settings
+    async def _send_raw(self, settings: SmtpSettings, message: bytes, to_address: str) -> str:
         client = aiosmtplib.SMTP(
             hostname=settings.host,
             port=settings.port,

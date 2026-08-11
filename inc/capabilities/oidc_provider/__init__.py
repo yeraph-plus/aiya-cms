@@ -13,6 +13,7 @@ from inc.capabilities.oidc_provider.handlers import OidcDiagnostics, SecurityEve
 from inc.capabilities.oidc_provider.keys import InMemorySigningKeyStore, KeyService
 from inc.capabilities.oidc_provider.services import (
     AuthorizationService,
+    GrantConsentService,
     LogoutService,
     RevocationService,
     ServiceContext,
@@ -23,6 +24,7 @@ from inc.capabilities.oidc_provider.sessions import OidcSessionRevoker
 
 __all__ = [
     "AuthorizationService",
+    "GrantConsentService",
     "InMemorySigningKeyStore",
     "KeyService",
     "LogoutService",

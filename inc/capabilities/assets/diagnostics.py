@@ -96,7 +96,7 @@ class AssetDiagnostics:
                 missing += 1
                 continue
             try:
-                await provider.stat(object_key=row.object_key)
+                await provider.stat(bucket=row.bucket, object_key=row.object_key)
             except Exception:  # noqa: BLE001 - remote probe is best effort
                 missing += 1
         results.append(

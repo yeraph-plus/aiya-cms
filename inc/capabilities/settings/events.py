@@ -1,6 +1,6 @@
 """Settings events.
 
-Contract source: context/spec/capabilities/settings.md §6.
+Contract source: context/spec/capabilities/settings.md §8.
 
 The update event carries the group key, new version and a safe change
 summary; sensitive field values and diffs never enter the payload.

@@ -11,20 +11,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
+from inc.capabilities.points import DEFAULT_PROGRAM_KEY
 from inc.capabilities.points.commands import (
     AdjustPoints,
 )
 from inc.capabilities.points.commands import (
     CommandContext as PointsCommandContext,
 )
-from inc.capabilities.points.schemas import AdjustInput, LedgerEntryDTO
+from inc.capabilities.points.schemas import AdjustInput, AdminPointsViewDTO, LedgerEntryDTO
+from inc.kernel.errors import KernelError
 
-REQUIRED_PERMISSIONS: tuple[str, ...] = ("points.adjust",)
+REQUIRED_PERMISSIONS: tuple[str, ...] = ("points.adjust", "points.read")
 
 
 class PointsAdjustInput(BaseModel):
@@ -32,7 +34,7 @@ class PointsAdjustInput(BaseModel):
 
     subject_type: str = "identity"
     subject_id: str
-    program_key: str = Field(min_length=1, max_length=100)
+    program_key: str | None = Field(default=None, min_length=1, max_length=100)
     amount: int  # nonzero; negative is a debit-style adjustment
     reason: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=1, max_length=200)
@@ -74,5 +76,38 @@ def build_router(
                 metadata=body.metadata,
             )
         )
+
+    @router.get("/points/ledger", response_model=AdminPointsViewDTO)
+    async def list_ledger(
+        subject_id: str = Query(..., min_length=1, max_length=200),
+        subject_type: str = Query(default="identity", min_length=1, max_length=32),
+        program_key: str = Query(default=DEFAULT_PROGRAM_KEY, min_length=1, max_length=100),
+        page: int = Query(default=1, ge=1),
+        size: int = Query(default=20, ge=1, le=100),
+        ctx: AppContext = Depends(require_capability("points.read")),
+    ) -> AdminPointsViewDTO:
+        try:
+            balance = await services.points_queries.get_balance(
+                program_key=program_key,
+                subject_type=subject_type,
+                subject_id=subject_id,
+            )
+        except KernelError as exc:
+            if exc.code != "points.account_not_opened":
+                raise
+            balance = None
+        buckets = await services.points_queries.list_buckets(
+            program_key=program_key,
+            subject_type=subject_type,
+            subject_id=subject_id,
+        )
+        ledger = await services.points_queries.list_ledger(
+            program_key=program_key,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            page=page,
+            size=size,
+        )
+        return AdminPointsViewDTO(balance=balance, buckets=buckets, ledger=ledger)
 
     return router

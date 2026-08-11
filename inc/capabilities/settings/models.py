@@ -2,37 +2,43 @@
 
 Contract source: context/spec/capabilities/settings.md §3.
 
-Only one table in the first version: settings_values, validated against
-the registered group schema on every write. No secrets are stored here;
-infrastructure secrets stay in kernel config/secret providers.
+``settings_values`` stores one row per registered group field.  Group
+updates still use a shared group version so the physical row split does not
+weaken group-level atomicity or optimistic concurrency.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Integer, String
+from sqlalchemy import Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inc.kernel.db import Base, JsonBModel, TableOwnership, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class SettingsValueData(BaseModel):
-    """Schema-bound group value envelope."""
+class SettingValuePayload(BaseModel):
+    """Pydantic-bound payload for one field's database value."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str
-    values: dict[str, object] = {}
+    value: Any
 
 
 @TableOwnership.owned_by("capability:settings")
 class SettingsValue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "settings_values"
-
-    group_key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
-    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    value: Mapped[SettingsValueData] = mapped_column(
-        JsonBModel(SettingsValueData, "1"), nullable=False
+    __table_args__ = (
+        UniqueConstraint("group_key", "field_slug", name="uq_settings_values_group_field"),
+        Index("ix_settings_values_group_key", "group_key"),
     )
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    group_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    field_slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[SettingValuePayload] = mapped_column(
+        JsonBModel(SettingValuePayload, "1"), nullable=False
+    )
+    group_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_by: Mapped[str | None] = mapped_column(String(200), nullable=True)

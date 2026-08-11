@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from inc.kernel.db import Page
+
 
 class BalanceDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -54,9 +56,22 @@ class LedgerEntryDTO(BaseModel):
     behavior_version: str | None = None
     source_type: str | None = None
     source_id: str | None = None
+    actor_type: str | None = None
+    actor_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     reversal_of: str | None = None
     allocations: list[DebitAllocationDTO] = Field(default_factory=list)
     created_at: datetime
+
+
+class AdminPointsViewDTO(BaseModel):
+    """Administrator account snapshot together with its paged ledger."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    balance: BalanceDTO | None = None
+    buckets: list[BucketDTO] = Field(default_factory=list)
+    ledger: Page[LedgerEntryDTO]
 
 
 class BehaviorCatalogDTO(BaseModel):
@@ -95,7 +110,7 @@ class AdjustInput(BaseModel):
 
     subject_type: str
     subject_id: str
-    program_key: str = Field(min_length=1, max_length=100)
+    program_key: str | None = Field(default=None, min_length=1, max_length=100)
     amount: int  # nonzero; negative is a debit-style adjustment
     reason: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=1, max_length=200)

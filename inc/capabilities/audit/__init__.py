@@ -8,6 +8,6 @@ queries.
 
 from __future__ import annotations
 
-from inc.capabilities.audit.service import AuditInboxHandler, AuditQueries
+from inc.capabilities.audit.service import AuditInboxHandler, AuditQueries, AuditRetentionActivity
 
-__all__ = ["AuditInboxHandler", "AuditQueries"]
+__all__ = ["AuditInboxHandler", "AuditQueries", "AuditRetentionActivity"]

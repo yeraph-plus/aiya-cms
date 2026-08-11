@@ -10,15 +10,16 @@ a faulty producer cannot leak secrets into the audit table.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from inc.capabilities.audit.models import AuditEntry, AuditMetadata
 from inc.capabilities.audit.schemas import AuditEntryDTO, AuditEntryRecorded
 from inc.kernel.db import Page, UnitOfWork, UoWFactory, fetch_page
-from inc.kernel.events import EventEnvelope, InboxGuard
+from inc.kernel.events import EventEnvelope, InboxGuard, OutboxMessage, OutboxWriter
 from inc.kernel.security import redact
 from inc.kernel.time import Clock
 
@@ -62,6 +63,64 @@ class AuditInboxHandler:
             work=work,
             processed_at=self._clock.utc_now(),
         )
+
+
+class AuditRetentionActivity:
+    """Explicitly purge old audit entries and record the purge summary."""
+
+    def __init__(self, *, uow_factory: UoWFactory, outbox: OutboxWriter, clock: Clock) -> None:
+        self._uow_factory = uow_factory
+        self._outbox = outbox
+        self._clock = clock
+
+    async def cleanup_before(  # type: ignore[return]
+        self, *, cutoff: datetime, details: dict[str, int | str]
+    ) -> int:
+        async with self._uow_factory() as uow:
+            deleted = await self.cleanup_in_uow(uow, cutoff=cutoff, details=details)
+            await uow.commit()
+            return deleted
+
+    async def cleanup_in_uow(
+        self,
+        uow: UnitOfWork,
+        *,
+        cutoff: datetime,
+        details: dict[str, int | str],
+    ) -> int:
+        """Purge and enqueue the summary without committing the caller's UoW."""
+
+        result = await uow.session.execute(
+            delete(AuditEntry).where(AuditEntry.occurred_at < cutoff)
+        )
+        deleted = result.rowcount or 0
+        summary_key = str(details.get("run_key") or cutoff.isoformat())
+        summary_id = uuid.uuid5(uuid.NAMESPACE_URL, f"aiya-cms/audit-retention/{summary_key}")
+        existing = await uow.session.execute(
+            select(OutboxMessage.id).where(OutboxMessage.event_id == summary_id)
+        )
+        if existing.first() is None:
+            await self._outbox.append(
+                uow,
+                EventEnvelope(
+                    event_id=summary_id,
+                    event_key="audit.entry.recorded.v1",
+                    occurred_at=self._clock.utc_now(),
+                    producer="site_cleanup",
+                    aggregate_type="audit",
+                    aggregate_id="retention",
+                    payload={
+                        "action": "audit.retention.cleaned",
+                        "outcome": "success",
+                        "occurred_at": self._clock.utc_now().isoformat(),
+                        "actor_type": "system",
+                        "target_type": "audit",
+                        "target_id": "retention",
+                        "details": {**details, "audit_entries_deleted": deleted},
+                    },
+                ),
+            )
+        return deleted
 
 
 class AuditQueries:

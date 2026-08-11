@@ -41,10 +41,20 @@ class AssetRefDTO(BaseModel):
         return _validated_checksum(value)
 
 
+class AssetPageDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AssetRefDTO]
+    total: int
+    page: int
+    size: int
+
+
 class CreateUploadIntentInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider_key: str
+    bucket: str | None = Field(default=None, max_length=200)
     mime_types: tuple[str, ...] = Field(min_length=1)
     content_length_max: int = Field(gt=0, le=100 * 1024 * 1024)
     checksum_sha256: str | None = None

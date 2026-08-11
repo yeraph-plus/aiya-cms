@@ -2,8 +2,9 @@
 
 Contract source: context/spec/capabilities/audit.md §3.
 
-Entries are immutable: no update or delete is exposed. Deduplication is
-enforced by the unique envelope id plus the inbox receipt.
+Entries are immutable to normal commands: only the explicit retention
+activity may delete records under the registered operations policy.
+Deduplication is enforced by the unique envelope id plus the inbox receipt.
 """
 
 from __future__ import annotations

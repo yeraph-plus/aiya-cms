@@ -8,7 +8,7 @@ credential authenticator, command context and diagnostics.
 
 from __future__ import annotations
 
-from inc.capabilities.identity.commands import CommandContext
+from inc.capabilities.identity.commands import CommandContext, UpdateProfile
 from inc.capabilities.identity.diagnostics import IdentityDiagnostics
 from inc.capabilities.identity.queries import CredentialAuthenticator, IdentityQueries
 
@@ -17,4 +17,5 @@ __all__ = [
     "CredentialAuthenticator",
     "IdentityDiagnostics",
     "IdentityQueries",
+    "UpdateProfile",
 ]

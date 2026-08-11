@@ -179,6 +179,7 @@ class CreateUploadIntent:
         expires_at = ctx.clock.utc_now() + timedelta(seconds=INTENT_TTL_SECONDS)
         try:
             credentials = await provider.create_upload_intent(
+                bucket=input_.bucket,
                 object_key=object_key,
                 content_length_max=input_.content_length_max,
                 mime_types=input_.mime_types,
@@ -192,6 +193,8 @@ class CreateUploadIntent:
         async with ctx.uow_factory() as uow:
             intent = AssetUploadIntent(
                 provider_key=input_.provider_key,
+                owner_subject_id=ctx.actor_id,
+                bucket=input_.bucket,
                 object_key=object_key,
                 content_length_max=input_.content_length_max,
                 mime_types=",".join(input_.mime_types),
@@ -237,6 +240,12 @@ class FinalizeAsset:
                 category=ErrorCategory.NOT_FOUND,
                 message=f"upload intent {intent_id}",
             )
+        if (
+            intent.owner_subject_id is not None
+            and ctx.actor_id is not None
+            and intent.owner_subject_id != ctx.actor_id
+        ):
+            raise _forbidden("assets.forbidden", "upload intent belongs to another subject")
         if intent.consumed_at is not None:
             raise _conflict("assets.intent_consumed", "upload intent already consumed")
         if _ensure_utc(intent.expires_at) < ctx.clock.utc_now():
@@ -271,7 +280,7 @@ class RegisterExternalAsset:
         _require_permission(ctx, PERMISSION_MANAGE)
         provider = _provider(ctx, input_.provider_key)
         try:
-            stat = await provider.stat(object_key=input_.object_key)
+            stat = await provider.stat(bucket=input_.bucket, object_key=input_.object_key)
         except StorageError:
             raise
         except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors
@@ -301,7 +310,7 @@ class RegisterExternalAsset:
                 )
             row = AssetObject(
                 provider_key=input_.provider_key,
-                bucket=input_.bucket,
+                bucket=input_.bucket or stat.bucket,
                 object_key=input_.object_key,
                 mime_type=stat.mime_type,
                 byte_size=stat.byte_size,
@@ -453,7 +462,7 @@ class FinalizeActivity:
             return {"skipped": True}
         provider = _provider(ctx, intent.provider_key)
         try:
-            stat = await provider.stat(object_key=intent.object_key)
+            stat = await provider.stat(bucket=intent.bucket, object_key=intent.object_key)
         except StorageError:
             raise
         except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors
@@ -477,6 +486,7 @@ class FinalizeActivity:
         now = ctx.clock.utc_now()
         row = AssetObject(
             provider_key=intent.provider_key,
+            bucket=stat.bucket,
             object_key=intent.object_key,
             mime_type=stat.mime_type,
             byte_size=stat.byte_size,
@@ -534,7 +544,7 @@ class DeleteActivity:
             return {"skipped": True}
         provider = _provider(ctx, row.provider_key)
         try:
-            await provider.delete(object_key=row.object_key)
+            await provider.delete(bucket=row.bucket, object_key=row.object_key)
         except StorageError:
             raise
         except Exception as exc:  # noqa: BLE001 - provider errors map to storage errors

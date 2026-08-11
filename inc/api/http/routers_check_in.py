@@ -18,9 +18,6 @@ from inc.api.http.context import AppContext, RequireCapability
 from inc.capabilities.points.commands import (
     CommandContext as PointsCommandContext,
 )
-from inc.capabilities.points.commands import (
-    OpenPointsAccount,
-)
 from inc.features.check_in.schemas import CheckInResultDTO
 from inc.features.check_in.workflows import (
     CHECK_IN_WORKFLOW_KEY,
@@ -58,11 +55,6 @@ def build_router(
     ) -> CheckInResultDTO:
         behavior = services.behaviors.require(REWARD_BEHAVIOR)
         subject_id = ctx.principal.subject_id
-        await OpenPointsAccount(_points_ctx(ctx, services))(
-            program_key=behavior.program_key,
-            subject_type="identity",
-            subject_id=subject_id,
-        )
         business_date = business_date_for(ctx.clock, behavior.business_timezone)
         instance = await services.runner.start(
             workflow_key=CHECK_IN_WORKFLOW_KEY,

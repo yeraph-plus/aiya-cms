@@ -59,6 +59,8 @@ class AssetUploadIntent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "assets_upload_intents"
 
     provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner_subject_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    bucket: Mapped[str | None] = mapped_column(String(200), nullable=True)
     object_key: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     content_length_max: Mapped[int] = mapped_column(Integer, nullable=False)
     mime_types: Mapped[str] = mapped_column(String(500), nullable=False)  # comma-joined allowlist

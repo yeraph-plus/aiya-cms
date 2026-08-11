@@ -9,9 +9,10 @@ DTO. Details never leak tokens, codes or secrets.
 from __future__ import annotations
 
 from dataclasses import field
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 OidcErrorCode = Literal[
     "invalid_request",
@@ -97,3 +98,15 @@ class IntrospectionResult(BaseModel):
     active: bool
     subject_id: str | None = None
     client_id: str | None = None
+
+
+class GrantConsentDTO(BaseModel):
+    """User-visible consent for one registered OIDC client."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str
+    client_name: str | None = None
+    scopes: list[str] = Field(default_factory=list)
+    audiences: list[str] = Field(default_factory=list)
+    granted_at: datetime

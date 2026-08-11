@@ -7,7 +7,7 @@ quality-release.md.
 Compose entry for running ``alembic upgrade head``). ``python -m inc.cli
 install`` is the one-shot empty-database installation and the only path that
 creates the super administrator. In a single run it:
-applies migrations, seeds the default points program, registers the admin
+applies migrations, seeds the credit points program, registers the admin
 OIDC client, and bootstraps the single administrator user (creating the
 account and binding the ``administrator`` role). The password is generated
 when not provided and printed exactly once. Re-running is safe for the same
@@ -151,10 +151,25 @@ def _run_migrations() -> None:
 async def _seed_points_program(factory: Any) -> None:
     from sqlalchemy import select
 
+    from inc.capabilities.points.constants import DEFAULT_PROGRAM_KEY
     from inc.capabilities.points.models import PointsProgram
 
     async with factory() as uow:
         existing = (
+            (
+                await uow.session.execute(
+                    select(PointsProgram).where(
+                        PointsProgram.program_key == DEFAULT_PROGRAM_KEY
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if existing is not None:
+            print("  points program credit already exists, skipping")
+            return
+        legacy = (
             (
                 await uow.session.execute(
                     select(PointsProgram).where(PointsProgram.program_key == "default")
@@ -163,20 +178,23 @@ async def _seed_points_program(factory: Any) -> None:
             .scalars()
             .first()
         )
-        if existing is not None:
-            print("  points program default already exists, skipping")
+        if legacy is not None:
+            legacy.program_key = DEFAULT_PROGRAM_KEY
+            legacy.display_name = "Credit"
+            await uow.commit()
+            print("  legacy default points program renamed to credit")
             return
         uow.session.add(
             PointsProgram(
-                program_key="default",
-                display_name="Default",
+                program_key=DEFAULT_PROGRAM_KEY,
+                display_name="Credit",
                 unit="points",
                 status="active",
                 allow_admin_reversal=True,
             )
         )
         await uow.commit()
-    print("  default points program seeded")
+    print("  credit points program seeded")
 
 
 async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience: str) -> None:
@@ -254,7 +272,7 @@ async def _install_async(
         return SqlAlchemyUnitOfWork(session_factory)
 
     try:
-        print("[2/4] seeding default points program ...")
+        print("[2/4] seeding credit points program ...")
         await _seed_points_program(factory)
 
         print("[3/4] registering OIDC clients ...")

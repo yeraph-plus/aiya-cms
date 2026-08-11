@@ -21,7 +21,7 @@ const requestId = typeof route.query.requestId === 'string' ? route.query.reques
                         <span class="text-muted-color mb-8">{{ message || 'The request could not be completed. Please try again.' }}</span>
                         <span v-if="requestId" class="text-xs text-muted-color mb-8">Request ID: {{ requestId }}</span>
                         <div class="col-span-12 mt-8 text-center">
-                            <Button as="router-link" label="Go to Dashboard" to="/" severity="danger" />
+                            <Button as="router-link" label="Go to Content" to="/content" severity="danger" />
                         </div>
                     </div>
                 </div>

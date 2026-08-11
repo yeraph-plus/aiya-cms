@@ -38,6 +38,7 @@ class ContentDTO(BaseModel):
     archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    engagement: Any | None = None
 
 
 class ContentPageDTO(BaseModel):

@@ -158,9 +158,7 @@ async def _seed_points_program(factory: Any) -> None:
         existing = (
             (
                 await uow.session.execute(
-                    select(PointsProgram).where(
-                        PointsProgram.program_key == DEFAULT_PROGRAM_KEY
-                    )
+                    select(PointsProgram).where(PointsProgram.program_key == DEFAULT_PROGRAM_KEY)
                 )
             )
             .scalars()

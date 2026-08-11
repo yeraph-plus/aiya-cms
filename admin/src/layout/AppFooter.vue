@@ -4,7 +4,7 @@ import { APP_NAME } from '@/env';
 
 <template>
     <div class="layout-footer">
-        {{ APP_NAME }} by
+        {{ APP_NAME }} Admin. Build by
         <a href="https://primevue.org" target="_blank" rel="noopener noreferrer" class="text-primary font-bold hover:underline">PrimeVue</a>
     </div>
 </template>

@@ -62,6 +62,12 @@ class ContentPinChangedPayload(_Base):
     pin_rank: int
 
 
+class ContentPurgedPayload(_Base):
+    """Stable tombstone consumed by projections after physical deletion."""
+
+    pass
+
+
 CONTENT_EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "content.created.v1": ContentCreatedPayload,
     "content.updated.v1": ContentUpdatedPayload,
@@ -71,6 +77,7 @@ CONTENT_EVENT_SCHEMAS: dict[str, type[BaseModel]] = {
     "content.published.v1": ContentPublishedPayload,
     "content.archived.v1": ContentArchivedPayload,
     "content.pin_changed.v1": ContentPinChangedPayload,
+    "content.purged.v1": ContentPurgedPayload,
 }
 
 for _key in CONTENT_EVENT_SCHEMAS:

@@ -139,7 +139,7 @@ async def harness(
     async with uow_factory() as uow:
         uow.session.add(
             PointsProgram(
-                program_key="default", display_name="Default", unit="points", status="active"
+                program_key="credit", display_name="Credit", unit="points", status="active"
             )
         )
         await uow.commit()
@@ -195,7 +195,7 @@ async def harness(
 
 async def open_account(harness: dict[str, Any]) -> None:
     await OpenPointsAccount(harness["points_ctx"])(
-        program_key="default", subject_type="identity", subject_id="user-1"
+        program_key="credit", subject_type="identity", subject_id="user-1"
     )
 
 
@@ -204,7 +204,7 @@ async def _balance(harness: dict[str, Any]) -> int:
         uow_factory=harness["uow_factory"], behaviors=harness["points_ctx"].behaviors
     )
     result = await queries.get_balance(
-        program_key="default", subject_type="identity", subject_id="user-1"
+        program_key="credit", subject_type="identity", subject_id="user-1"
     )
     return result.balance
 
@@ -216,12 +216,12 @@ async def test_check_in_rewards_once_per_business_day(harness: dict[str, Any], c
     await open_account(harness)
     instance = await harness["runner"].start(
         workflow_key=CHECK_IN_WORKFLOW_KEY,
-        idempotency_key="checkin:user-1:default:2026-01-01",
+        idempotency_key="checkin:user-1:credit:2026-01-01",
         input_data={
             "subject_type": "identity",
             "subject_id": "user-1",
             "source_id": "check-in-ui",
-            "program_key": "default",
+            "program_key": "credit",
             "business_date": "2026-01-01",
         },
         trace_id="check-in",
@@ -232,12 +232,12 @@ async def test_check_in_rewards_once_per_business_day(harness: dict[str, Any], c
     # concurrent duplicate check-in with the same idempotency key
     duplicate = await harness["runner"].start(
         workflow_key=CHECK_IN_WORKFLOW_KEY,
-        idempotency_key="checkin:user-1:default:2026-01-01",
+        idempotency_key="checkin:user-1:credit:2026-01-01",
         input_data={
             "subject_type": "identity",
             "subject_id": "user-1",
             "source_id": "check-in-ui",
-            "program_key": "default",
+            "program_key": "credit",
             "business_date": "2026-01-01",
         },
         trace_id="check-in",
@@ -250,12 +250,12 @@ async def test_check_in_rewards_once_per_business_day(harness: dict[str, Any], c
     clock.advance(timedelta(days=1))
     await harness["runner"].start(
         workflow_key=CHECK_IN_WORKFLOW_KEY,
-        idempotency_key="checkin:user-1:default:2026-01-02",
+        idempotency_key="checkin:user-1:credit:2026-01-02",
         input_data={
             "subject_type": "identity",
             "subject_id": "user-1",
             "source_id": "check-in-ui",
-            "program_key": "default",
+            "program_key": "credit",
             "business_date": "2026-01-02",
         },
         trace_id="check-in",

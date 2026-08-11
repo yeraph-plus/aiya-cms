@@ -5,7 +5,7 @@ const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 vi.mock('@/router', () => ({
     default: {
         push: pushMock,
-        currentRoute: { value: { fullPath: '/content/posts' } }
+        currentRoute: { value: { fullPath: '/content' } }
     }
 }));
 
@@ -36,7 +36,7 @@ describe('401 single-flight reauthentication', () => {
         expect(pushMock).toHaveBeenCalledTimes(1);
         expect(pushMock).toHaveBeenCalledWith({
             name: 'login',
-            query: { redirect: '/content/posts', reason: 'expired' }
+            query: { redirect: '/content', reason: 'expired' }
         });
     });
 

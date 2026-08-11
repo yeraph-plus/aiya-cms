@@ -95,7 +95,16 @@ class ContentTypeSpec:
             "published_at",
             "updated_at",
         ),
-        sort_options: tuple[str, ...] = ("published_at", "id", "title"),
+        sort_options: tuple[str, ...] = (
+            "published_at",
+            "id",
+            "title",
+            "view_count",
+            "like_count",
+            "rating_sum",
+            "rating_count",
+            "rating_average",
+        ),
     ) -> None:
         if not _TYPE_KEY.match(type_name):
             raise ValueError(f"invalid type_name {type_name!r}")

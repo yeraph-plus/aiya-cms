@@ -95,7 +95,7 @@ async def test_role_lifecycle_and_grant_effect(
     assert role["id"] in assigned.json()["roles"]
 
     token = await _mint_token_for(services, user.subject.id)
-    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert "content.write" in me.json()["capabilities"]
 
     revoked = await client.post(
@@ -106,7 +106,7 @@ async def test_role_lifecycle_and_grant_effect(
     assert revoked.status_code == 204
 
     # decisions are read live: revocation takes effect with the same token
-    me_after = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me_after = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert "content.write" not in me_after.json()["capabilities"]
 
 

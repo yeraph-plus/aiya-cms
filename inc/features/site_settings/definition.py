@@ -62,8 +62,9 @@ class NotificationValueSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     default_from_name: str = Field(default="aiya", max_length=100)
-    email_enabled: bool = True
+    email_enabled: bool = False
     default_channel: str = Field(default="email", max_length=20)
+    smtp_enabled: bool = False
     smtp_host: str = Field(default="", max_length=200)
     smtp_port: int = Field(default=25, ge=1, le=65535)
     smtp_username: str = Field(default="", max_length=200)
@@ -71,6 +72,9 @@ class NotificationValueSchema(BaseModel):
     smtp_from_address: str = Field(default="no-reply@aiya.local", max_length=200)
     smtp_use_tls: bool = False
     smtp_starttls: bool = False
+    smtp2go_enabled: bool = False
+    smtp2go_api_key: SecretStr | None = Field(default=None, max_length=200)
+    smtp2go_region: Literal["global", "us", "eu"] = "global"
 
     @model_validator(mode="after")
     def _validate_tls_modes(self) -> NotificationValueSchema:
@@ -255,7 +259,7 @@ NOTIFICATION_FIELDS = (
         title="Email enabled",
         desc="Whether email delivery is enabled.",
         type="bool",
-        default=True,
+        default=False,
         public=True,
     ),
     SettingFieldSpec(
@@ -267,6 +271,13 @@ NOTIFICATION_FIELDS = (
         default="email",
         metadata=SettingFieldMetadata(options=(_option("Email", "email"),)),
         public=True,
+    ),
+    SettingFieldSpec(
+        slug="smtp_enabled",
+        title="SMTP enabled",
+        desc="Use the aiosmtplib SMTP provider when email delivery is enabled.",
+        type="bool",
+        default=False,
     ),
     SettingFieldSpec(
         slug="smtp_host",
@@ -325,6 +336,38 @@ NOTIFICATION_FIELDS = (
         desc="Upgrade a plain SMTP connection with STARTTLS.",
         type="bool",
         default=False,
+    ),
+    SettingFieldSpec(
+        slug="smtp2go_enabled",
+        title="SMTP2GO enabled",
+        desc="Use the SMTP2GO REST provider when email delivery is enabled.",
+        type="bool",
+        default=False,
+    ),
+    SettingFieldSpec(
+        slug="smtp2go_api_key",
+        title="SMTP2GO API key",
+        desc="Write-only API key used for SMTP2GO REST requests.",
+        type="text",
+        type_sub="password",
+        default=None,
+        metadata=SettingFieldMetadata(max_length=200),
+        sensitive=True,
+    ),
+    SettingFieldSpec(
+        slug="smtp2go_region",
+        title="SMTP2GO region",
+        desc="Fixed SMTP2GO API region endpoint.",
+        type="select",
+        type_sub="string",
+        default="global",
+        metadata=SettingFieldMetadata(
+            options=(
+                _option("Global", "global"),
+                _option("United States", "us"),
+                _option("European Union", "eu"),
+            )
+        ),
     ),
 )
 

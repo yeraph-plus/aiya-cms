@@ -9,8 +9,8 @@ inc/
   kernel/          技术运行机制
   capabilities/    独立业务能力
   features/        跨能力垂直业务流
+  adapters/        外部 Port 实现库（按 capability 分目录，见 adapters.md）
   api/             唯一组合根和 HTTP 适配
-    adapters/      组合根侧 Port 实现库（按 capability 分目录，见 adapters.md）
 admin/             OpenAPI 客户端
 ```
 
@@ -18,13 +18,14 @@ admin/             OpenAPI 客户端
 flowchart TD
     API["api / composition root"] --> FEATURES["features / vertical flows"]
     API --> CAPS["capabilities / business contracts"]
-    API --> ADAPTERS["api/adapters / Port implementations"]
+    API --> ADAPTERS["inc/adapters / Port implementations"]
     FEATURES --> CAPS
+    FEATURES --> ADAPTERS
     FEATURES --> KERNEL["kernel / technical runtime"]
     CAPS --> KERNEL
 ```
 
-依赖箭头只允许向下。`kernel` 不认识业务；capability 之间不存在横向代码依赖；feature 负责合法的跨能力业务编排；API 只负责装配、传输适配和 adapter 选择，不成为业务服务仓库。adapter 与 capability/feature 同级是一等规格成员（`adapters.md`），由 manifest 按稳定 key 显式绑定。
+依赖箭头只允许向下。`kernel` 不认识业务；capability 之间不存在横向代码依赖；feature 负责合法的跨能力业务编排；API 只负责装配、传输适配和 adapter 选择，不成为业务服务仓库。adapter 与 capability/feature 同级是一等规格成员（`adapters.md`），由 manifest 按稳定 key 显式绑定，可被 api 与 feature 使用；capability 不得反向导入 adapter。
 
 ## 2. 术语
 
@@ -44,8 +45,9 @@ flowchart TD
 | --- | --- | --- |
 | `kernel` | 标准库、批准的基础设施库、kernel 自身 | capabilities、features、api、具体业务模型 |
 | 单个 capability | kernel、自身公开与内部模块 | 兄弟 capability、feature、api、兄弟表/ORM |
-| feature | kernel、多个 capability 的公开面、自身 | capability 内部实现、ORM、Repository、api |
-| api | kernel、capability/feature 公开声明、传输 adapter（`api/adapters/`） | capability 私有实现和跨表业务逻辑 |
+| feature | kernel、多个 capability 的公开面、Port 实现（`inc/adapters/`）、自身 | capability 内部实现、ORM、Repository、api |
+| api | kernel、capability/feature 公开声明、Port 实现（`inc/adapters/`） | capability 私有实现和跨表业务逻辑 |
+| adapters | kernel、capability/feature 公开声明、自身 | 兄弟 capability 内部实现、业务表/ORM |
 | admin | 生成的 OpenAPI 类型和 HTTP | Python 源码、手写后端 DTO、数据库 |
 
 架构测试必须基于 AST/import graph 验证本矩阵；包名约定不是人工自觉替代品。
@@ -54,7 +56,7 @@ flowchart TD
 
 - 每个 kernel 组件和 capability 只能从其包根或明确的 `public.py` 导出稳定公开面。
 - ORM、Repository、UoW 实现、私有 registry 和 provider SDK adapter 默认是内部实现。
-- 外部 provider adapter 集中在 `api/adapters/<capability>/`，按 `adapters.md` 目录合同组织；capability 不持有 SDK，组合根按 manifest 显式选择实现。
+- 外部 provider adapter 集中在 `inc/adapters/<capability>/`，按 `adapters.md` 目录合同组织；capability 不持有 SDK，组合根按 manifest 显式选择实现。
 - feature 只能持有 Command/Query gateway、Activity 或 Port；不得接收 Session。
 - API handler 只能做协议解析、鉴权依赖、调用公开入口和响应映射，不实现领域规则。
 - 不承诺旧 Demo 的 Python import path、表结构、端点或事件 key 兼容。
@@ -92,6 +94,7 @@ flowchart TD
 ## 8. 注册和运行时边界
 
 - 所有注册为纯数据声明，import 不得修改全局状态。
+- 包根 `__init__.py` 只导出公开声明或稳定公开面；不得注册能力、连接数据库、启动线程/协程或创建可变全局单例。
 - registry 属于应用 container，完成 validate/freeze 后不可变。
 - 未在 manifest 启用的项目不得注册路由、订阅、Cron、worker 或外部连接。
 - 所有随当前发行版交付的表由迁移统一创建；数据库中存在表不代表 capability 已启用。
@@ -110,7 +113,7 @@ flowchart TD
 
 ## 10. 初始能力范围
 
-首个重建闭环包含 identity、access、oidc_provider、audit、content、taxonomy、settings、assets、notification、points、payments，以及 post、page、check_in、point_purchase features。
+首个重建闭环包含 identity、access、oidc_provider、audit、content、taxonomy、settings、assets、points、payments，以及 post、page、check_in、point_purchase features。notification 的契约已建立；是否进入某个运行时 manifest 由组合根显式选择，未装配时不得产生路由、worker、cron 或外部连接。
 
 comments、搜索、commerce 商品、下载、webhook 平台和 WordPress 兼容不在首个闭环。未来加入时必须遵守同一 capability/feature 边界，不得回填到 kernel。
 

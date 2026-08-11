@@ -56,6 +56,30 @@ class PermissionRegistry:
         for key in declared:
             self.register(key, owner=owner)
 
+    def register_alias(self, key: str, *, owner: str) -> None:
+        """Register an explicitly documented composition-level alias.
+
+        The dashboard permission is exposed under the ``admin`` namespace,
+        while authorization policy remains owned by the access capability.
+        Aliases are never inferred from prefixes and therefore do not weaken
+        the normal owner validation above.
+        """
+
+        if self._frozen:
+            raise KernelError(
+                code="kernel.registry_frozen",
+                category=ErrorCategory.INTERNAL,
+                message=f"permission registry is frozen; cannot register {key}",
+            )
+        validate_permission_key(key)
+        if key in self._keys:
+            raise KernelError(
+                code="kernel.registry_duplicate",
+                category=ErrorCategory.INTERNAL,
+                message=f"duplicate permission key {key}",
+            )
+        self._keys[key] = owner
+
     def freeze(self) -> None:
         self._frozen = True
 

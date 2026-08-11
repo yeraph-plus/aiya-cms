@@ -15,7 +15,7 @@ TEST_AUDIENCE = "aiya-admin"
 
 
 async def test_me_requires_valid_token(client: Any) -> None:
-    response = await client.get("/api/v1/auth/me")
+    response = await client.get("/api/v1/me")
     assert response.status_code == 401
     body = response.json()
     assert body["code"] == "api.unauthorized"
@@ -23,21 +23,53 @@ async def test_me_requires_valid_token(client: Any) -> None:
     assert "stack" not in str(body)
 
 
+async def test_legacy_auth_me_route_is_removed(client: Any) -> None:
+    response = await client.get("/api/v1/auth/me")
+    assert response.status_code == 404
+
+
+async def test_legacy_points_balance_route_is_removed(client: Any) -> None:
+    response = await client.get("/api/v1/points/balance")
+    assert response.status_code == 404
+
+
 async def test_me_returns_principal_and_capabilities(client: Any, admin_token: str) -> None:
-    response = await client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {admin_token}"}
-    )
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {admin_token}"})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["subject_id"]
+    assert body["display_name"] is None
+    assert body["avatar_asset_id"] is None
+    assert body["avatar_url"] is None
     assert body["status"] == "active"
+    assert body["points"] == {"opened": False, "program_key": "credit", "balance": 0}
     assert "identity.users.read" in body["capabilities"]
     assert "content.write" in body["capabilities"]
 
 
+async def test_me_patch_updates_current_profile(client: Any, admin_token: str) -> None:
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    avatar_id = str(uuid.uuid4())
+
+    updated = await client.patch(
+        "/api/v1/me",
+        json={"display_name": "Profile User", "avatar_asset_id": avatar_id},
+        headers=headers,
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["display_name"] == "Profile User"
+    assert updated.json()["avatar_asset_id"] == avatar_id
+    assert updated.json()["avatar_url"] is None
+
+    fetched = await client.get("/api/v1/me", headers=headers)
+    assert fetched.json()["display_name"] == "Profile User"
+    assert fetched.json()["avatar_asset_id"] == avatar_id
+
+
 async def test_request_id_roundtrip(client: Any, admin_token: str) -> None:
     response = await client.get(
-        "/api/v1/auth/me",
+        "/api/v1/me",
         headers={"Authorization": f"Bearer {admin_token}", "X-Request-ID": "req-123"},
     )
     assert response.headers["x-request-id"] == "req-123"
@@ -93,7 +125,7 @@ async def test_token_with_wrong_issuer_rejected(client: Any, admin_token: str) -
         "iat": int(now.timestamp()),
     }
     token = jwt.encode(claims, key.private_key, algorithm="RS256", headers={"kid": key.kid})
-    response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
 
 
@@ -110,7 +142,7 @@ async def test_expired_token_rejected(client: Any, admin_token: str) -> None:
         "iat": int((now - timedelta(minutes=10)).timestamp()),
     }
     token = jwt.encode(claims, key.private_key, algorithm="RS256", headers={"kid": key.kid})
-    response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
 
 
@@ -217,7 +249,7 @@ async def test_kid_rotation_invalidates_old_tokens(client: Any, admin_token: str
     old_token = jwt.encode(
         claims, old_key.private_key, algorithm="RS256", headers={"kid": old_key.kid}
     )
-    response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {old_token}"})
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {old_token}"})
     assert response.status_code == 401
 
 
@@ -236,7 +268,7 @@ async def test_wrong_audience_rejected(client: Any, admin_token: str) -> None:
         "scope": "openid",
     }
     token = await _sign(services, claims)
-    response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
 
 
@@ -254,9 +286,7 @@ async def test_algorithm_confusion_rejected(client: Any, admin_token: str) -> No
     }
     # a symmetric key would pass an HMAC verify; RS256 whitelist must reject it
     hs256_token = jwt.encode(claims, "attacker-controlled-symmetric-secret", algorithm="HS256")
-    response = await client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {hs256_token}"}
-    )
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {hs256_token}"})
     assert response.status_code == 401
 
 
@@ -275,19 +305,19 @@ async def test_token_without_openid_scope_rejected(client: Any, admin_token: str
         "scope": "email",
     }
     token = await _sign(services, claims)
-    response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
 
 
 async def test_401_carries_www_authenticate(client: Any) -> None:
-    response = await client.get("/api/v1/auth/me")
+    response = await client.get("/api/v1/me")
     assert response.status_code == 401
     assert response.headers.get("www-authenticate") == "Bearer"
 
 
 async def test_invalid_request_id_is_replaced(client: Any, admin_token: str) -> None:
     response = await client.get(
-        "/api/v1/auth/me",
+        "/api/v1/me",
         headers={
             "Authorization": f"Bearer {admin_token}",
             "X-Request-ID": "evil\ninjected",
@@ -303,7 +333,7 @@ async def test_trailing_newline_request_id_is_replaced(client: Any, admin_token:
     """A trailing newline must not pass the request-id charset gate (the old
     `$`-anchored regex matched just before a trailing newline)."""
     response = await client.get(
-        "/api/v1/auth/me",
+        "/api/v1/me",
         headers={
             "Authorization": f"Bearer {admin_token}",
             "X-Request-ID": "req-abc\n",
@@ -341,7 +371,7 @@ async def test_me_works_without_admin_capabilities(
     from tests.api.conftest import _mint_token_for
 
     token = await _mint_token_for(services, result.subject.id)
-    response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json()["capabilities"] == []
 
@@ -547,7 +577,7 @@ async def test_register_is_public_and_normalizes(client: Any, uow_factory: Any) 
 
     services = client.app.state.services
     token = await _mint_token_for(services, body["id"])
-    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["capabilities"] == []
 
@@ -601,3 +631,72 @@ async def test_verify_email_consumes_one_time_token(
     bad = await client.post("/api/v1/auth/verify-email", json={"token": "guessed-token"})
     assert bad.status_code == 422
     assert bad.json()["code"] == "identity.challenge_invalid"
+
+
+async def test_grants_requires_valid_token(client: Any) -> None:
+    response = await client.get("/api/v1/auth/grants")
+    assert response.status_code == 401
+    assert response.json()["code"] == "api.unauthorized"
+
+
+async def test_grants_are_user_scoped_and_revoke_without_admin_capability(
+    client: Any, uow_factory: Any, clock: Any
+) -> None:
+    services = client.app.state.services
+    from inc.capabilities.identity.commands import RegisterLocalUser
+
+    result = await RegisterLocalUser(_identity_ctx(uow_factory, clock, services))(
+        username="grant-user", email="grant-user@example.com", password="password-123456"
+    )
+    from tests.api.conftest import _mint_token_for
+
+    token = await _mint_token_for(services, result.subject.id)
+
+    from inc.capabilities.oidc_provider.clients import ClientCommandContext, RegisterClient
+    from inc.capabilities.oidc_provider.models import OidcGrantConsent, StringList
+
+    await RegisterClient(
+        ClientCommandContext(
+            uow_factory=uow_factory,
+            clock=clock,
+            outbox=services.outbox,
+            audit_actor_id="system",
+            audit_trace_id="test",
+        )
+    )(
+        name="Grant App",
+        client_type="public",
+        redirect_uris=["http://127.0.0.1:3000/grant-callback"],
+        client_id="grant-app",
+    )
+    async with uow_factory() as uow:
+        uow.session.add(
+            OidcGrantConsent(
+                subject_id=result.subject.id,
+                client_id="grant-app",
+                scopes=StringList(items=["openid", "profile"]),
+                audiences=StringList(items=["api"]),
+                granted_at=clock.utc_now(),
+            )
+        )
+        await uow.commit()
+
+    listed = await client.get("/api/v1/auth/grants", headers={"Authorization": f"Bearer {token}"})
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == [
+        {
+            "client_id": "grant-app",
+            "client_name": "Grant App",
+            "scopes": ["openid", "profile"],
+            "audiences": ["api"],
+            "granted_at": "2026-01-01T00:00:00Z",
+        }
+    ]
+
+    revoked = await client.delete(
+        "/api/v1/auth/grants/grant-app", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert revoked.status_code == 204
+    assert (
+        await client.get("/api/v1/auth/grants", headers={"Authorization": f"Bearer {token}"})
+    ).json() == []

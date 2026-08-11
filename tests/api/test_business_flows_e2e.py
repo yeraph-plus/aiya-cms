@@ -34,7 +34,7 @@ async def program(uow_factory: Any) -> None:
     async with uow_factory() as uow:
         uow.session.add(
             PointsProgram(
-                program_key="default", display_name="Default", unit="points", status="active"
+                program_key="credit", display_name="Credit", unit="points", status="active"
             )
         )
         await uow.commit()
@@ -172,7 +172,7 @@ def _adjust_body(*, subject_id: str, amount: int, idempotency_key: str) -> dict[
     return {
         "subject_type": "identity",
         "subject_id": subject_id,
-        "program_key": "default",
+        "program_key": "credit",
         "amount": amount,
         "reason": "e2e adjustment",
         "idempotency_key": idempotency_key,
@@ -246,11 +246,11 @@ async def test_full_business_flow(
     )
     assert assigned.status_code == 200, assigned.text
 
-    # 3. 登录：OIDC 授权码 + PKCE，/auth/me 反映角色能力
+    # 3. 登录：OIDC 授权码 + PKCE，/me 反映角色能力
     await _register_oidc_client(services, uow_factory, clock)
     access_token, id_token = await _oidc_login(client, "alice", "password-123456")
     headers = {"Authorization": f"Bearer {access_token}"}
-    me = await client.get("/api/v1/auth/me", headers=headers)
+    me = await client.get("/api/v1/me", headers=headers)
     assert me.status_code == 200, me.text
     assert {"content.write", "identity.users.read"} <= set(me.json()["capabilities"])
 
@@ -276,9 +276,9 @@ async def test_full_business_flow(
     )
     assert debit.status_code == 200, debit.text
 
-    balance = await client.get("/api/v1/points/balance", headers=headers)
-    assert balance.status_code == 200
-    assert balance.json()["balance"] == 40
+    me_after_points = await client.get("/api/v1/me", headers=headers)
+    assert me_after_points.status_code == 200
+    assert me_after_points.json()["points"]["balance"] == 40
 
     # 7. 登出：RP-Initiated Logout，精确 post-logout 重定向并撤销 OIDC 会话
     logout = await client.get(
@@ -336,10 +336,10 @@ async def test_full_business_flow(
     )
     assert banned.status_code == 200
     assert banned.json()["status"] == "banned"
-    assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 401
+    assert (await client.get("/api/v1/me", headers=headers)).status_code == 401
 
     # 10. 解封：解封后同一 Bearer 恢复
     unbanned = await client.post(f"/api/v1/admin/users/{subject.id}/unban", headers=admin_headers)
     assert unbanned.status_code == 200, unbanned.text
     assert unbanned.json()["status"] == "active"
-    assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
+    assert (await client.get("/api/v1/me", headers=headers)).status_code == 200

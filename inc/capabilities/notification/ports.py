@@ -11,7 +11,7 @@ SDK-specific payloads.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from inc.kernel.errors import ErrorCategory, KernelError, RetryCategory
 
@@ -33,10 +33,11 @@ class RecipientResolver(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ProviderResult:
-    status: str  # delivered | failed | unknown
+    status: Literal["delivered", "failed", "unknown", "unavailable"]
     provider_ref: str | None = None
     error_category: str | None = None
     error_summary: str | None = None
+    fallback_allowed: bool = False
 
 
 class ProviderError(KernelError):
@@ -48,6 +49,7 @@ class ProviderError(KernelError):
         message: str,
         category: ErrorCategory = ErrorCategory.DEPENDENCY_UNAVAILABLE,
         permanent: bool = False,
+        fallback_allowed: bool = False,
     ) -> None:
         super().__init__(
             code="notification.provider_error",
@@ -55,6 +57,7 @@ class ProviderError(KernelError):
             message=message,
         )
         self.permanent = permanent
+        self.fallback_allowed = fallback_allowed
 
     @property
     def retry_category(self) -> RetryCategory:

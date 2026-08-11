@@ -17,7 +17,7 @@ const onSignOut = async () => {
             <button class="layout-menu-button layout-topbar-action" @click="toggleMenu">
                 <i class="pi pi-bars"></i>
             </button>
-            <router-link to="/" class="layout-topbar-logo">
+            <router-link to="/content" class="layout-topbar-logo">
                 <span class="aiya-cms-mark" aria-hidden="true"></span>
                 <span>{{ APP_NAME }}</span>
             </router-link>

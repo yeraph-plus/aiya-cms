@@ -29,7 +29,8 @@ identity 管理可登录或可被业务引用的用户主体、登录标识、�
 
 - `RegisterLocalUser`：创建用户、本地登录标识和密码凭据。
 - `VerifyEmail`：一次性消费 challenge 并标记邮箱已验证。
-- `ChangePassword` / `ResetPassword`：校验策略、更新 hash version，并发布安全事件。
+- `RequestPasswordReset`：按登录标识（username/email 的 normalized 值）为 active 用户签发 `password_reset` 一次性 challenge，并作废该用户未消费的同类旧 challenge（新请求使旧 token 失效）。未知、banned 或 deleted 标识返回与成功等价的空结果（`None`），不泄露枚举。token 只在签发时返回给进程内调用方一次。
+- `ChangePassword` / `ResetPassword`：校验策略、更新 hash version，并发布安全事件。challenge 不跨用途消费（`email_verification` token 不能重置密码，反之亦然）。
 - `UpdateProfile`：只允许白名单资料字段。
 - `LinkLoginIdentity` / `UnlinkLoginIdentity`：保证用户仍保有至少一种可用登录方式。
 - `BanUser` / `UnbanUser` / `DeleteUser`：要求 access 权限并审计。
@@ -64,7 +65,9 @@ identity 管理可登录或可被业务引用的用户主体、登录标识、�
 ## 8. 权限与审计
 
 - 自助资料修改要求当前 subject 匹配。
-- `identity.users.read`、`identity.users.update`、`identity.users.ban`、`identity.users.delete` 为管理员能力 key。
+- `GET /api/v1/me` 返回 `display_name`、`avatar_asset_id`；管理员按 assets 读取权限解析短期 `avatar_url`，普通 subject 只解析自己头像 bucket 中的 asset。用户摘要中的 `credit` points 余额由组合根按已装配能力加入，读取不触发开户。
+- `PATCH /api/v1/me` 只允许当前 subject 修改 `display_name` 和 `avatar_asset_id`；上传流程由组合根调用 assets 公开 Command 后再调用 identity `UpdateProfile` 写入 opaque ID。
+- `identity.users.read`、`identity.users.update`、`identity.users.ban`、`identity.users.unban`、`identity.users.delete` 为管理员能力 key。
 - 密码、邮箱、封禁和删除均产生业务审计事件；敏感字段只记录变化类型，不记录原值。
 
 ## 9. Diagnostics 与指标
@@ -78,6 +81,7 @@ identity 管理可登录或可被业务引用的用户主体、登录标识、�
 
 - 并发注册同一 username/email 只能成功一次。
 - challenge 重放、过期和猜测被拒绝。
+- `RequestPasswordReset` 对未知、banned、deleted 标识返回与成功等价的外部结果；重复请求使旧 challenge 失效。
 - ban/delete 后新认证失败并发出相应事实事件。
 - 任何 DTO、日志、错误和事件不泄露 credential/challenge。
 - identity 可在不导入 access、OIDC、assets 或 notification 的情况下测试。

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from email.utils import formataddr
 from typing import Any
 
 import aiosmtplib
@@ -36,10 +37,12 @@ _DEFAULT_FROM_ADDRESS = "no-reply@aiya.local"
 
 @dataclass(frozen=True, slots=True)
 class SmtpSettings:
+    enabled: bool
     host: str
     port: int = 25
     username: str | None = None
     password: str | None = None  # noqa: S105
+    from_name: str = "Aiya CMS"
     from_address: str = _DEFAULT_FROM_ADDRESS
     use_tls: bool = False
     starttls: bool = False
@@ -47,7 +50,7 @@ class SmtpSettings:
 
     def __repr__(self) -> str:
         return (
-            f"SmtpSettings(host={self.host!r}, port={self.port}, "
+            f"SmtpSettings(enabled={self.enabled}, host={self.host!r}, port={self.port}, "
             f"username={self.username!r}, from_address={self.from_address!r}, "
             f"use_tls={self.use_tls}, starttls={self.starttls}, "
             f"timeout_seconds={self.timeout_seconds})"
@@ -59,20 +62,21 @@ def smtp_settings_from_group(
 ) -> SmtpSettings:
     """Build SmtpSettings from the site_settings ``notification`` group value.
 
-    Missing/empty host means the channel is not configured; the current
-    delivery is rejected rather than attempting a connection that cannot work.
+    The mapper never opens a connection. Disabled and incomplete settings are
+    represented explicitly so the adapter can return ``unavailable`` and let
+    the notification capability continue with the next provider.
     """
 
-    host = value.get("smtp_host", "")
-    if not host:
-        raise ValueError(
-            "notification settings group has no smtp_host; SMTP delivery cannot be sent"
-        )
     return SmtpSettings(
-        host=host,
+        enabled=(
+            _parse_bool(value.get("email_enabled", False))
+            and _parse_bool(value.get("smtp_enabled", False))
+        ),
+        host=str(value.get("smtp_host", "") or ""),
         port=value.get("smtp_port", 25),
         username=value.get("smtp_username") or None,
         password=value.get("smtp_password") or None,
+        from_name=str(value.get("default_from_name", "Aiya CMS") or ""),
         from_address=value.get("smtp_from_address", _DEFAULT_FROM_ADDRESS),
         use_tls=_parse_bool(value.get("smtp_use_tls", False)),
         starttls=_parse_bool(value.get("smtp_starttls", False)),
@@ -139,18 +143,24 @@ class SmtpEmailAdapter:
         body: str,
         idempotency_key: str,
     ) -> ProviderResult:
-        try:
-            settings = await self._current_settings()
-        except ValueError as exc:
-            raise ProviderError(
-                message="SMTP settings are invalid",
-                category=ErrorCategory.VALIDATION,
-                permanent=True,
-            ) from exc
+        settings = await self._current_settings()
+        if not settings.enabled:
+            return ProviderResult(
+                status="unavailable",
+                error_category="disabled",
+                error_summary="SMTP adapter is disabled",
+            )
+        if not settings.host:
+            return ProviderResult(
+                status="unavailable",
+                error_category="configuration",
+                error_summary="SMTP host is not configured",
+            )
         from_address = _validate_header_value(settings.from_address, "from_address")
+        from_name = _validate_header_value(settings.from_name, "from_name")
         to_address = _validate_header_value(target.address, "recipient address")
         message = (
-            f"From: {from_address}\r\n"
+            f"From: {formataddr((from_name, from_address))}\r\n"
             f"To: {to_address}\r\n"
             f"Subject: {_encode_header(subject)}\r\n"
             "Content-Type: text/plain; charset=utf-8\r\n"
@@ -183,22 +193,26 @@ class SmtpEmailAdapter:
                 message="SMTP recipient refused",
                 category=ErrorCategory.VALIDATION,
                 permanent=True,
+                fallback_allowed=False,
             ) from exc
         except aiosmtplib.SMTPAuthenticationError as exc:
             raise ProviderError(
                 message="SMTP authentication failed",
                 category=ErrorCategory.VALIDATION,
                 permanent=True,
+                fallback_allowed=True,
             ) from exc
         except aiosmtplib.SMTPException as exc:
             raise ProviderError(
                 message=f"SMTP failure: {type(exc).__name__}",
                 category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                fallback_allowed=True,
             ) from exc
         except OSError as exc:
             raise ProviderError(
                 message="SMTP connection failed",
                 category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                fallback_allowed=True,
             ) from exc
 
     async def _send_raw(self, settings: SmtpSettings, message: bytes, to_address: str) -> str:

@@ -1,6 +1,6 @@
 """Guards: old demo structure, migrations and bindings are gone for good.
 
-Contract source: context/full-rebuild-plan.md §12 (deletion list),
+Contract source: context/spec/architecture.md §4/§10 and
 context/spec/kernel/database.md §7.
 
 The old demo had no compatibility obligations. Its directories, revisions

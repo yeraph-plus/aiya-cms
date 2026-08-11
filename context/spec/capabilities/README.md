@@ -2,19 +2,23 @@
 
 capability 是拥有业务模型、表、命令、查询、事件、诊断和迁移的边界。它可以被不同 feature 复用，但不会因 import 自动运行。
 
-## 初始能力
+## 能力目录
+
+以下能力契约均已定义；首个重建闭环的运行时 manifest 只装配已完成的能力。
 
 - [`identity.md`](identity.md)：用户主体、登录标识和凭据生命周期。
 - [`access.md`](access.md)：权限 key、角色、主体授权与审计边界。
 - [`oidc-provider.md`](oidc-provider.md)：作为 OpenID Provider 对外提供单点登录。
 - [`audit.md`](audit.md)：跨能力安全审计事实的不可变持久化和查询。
 - [`content.md`](content.md)：通用内容、类型声明、状态、定时发布、置顶和引用。
+- [`engagement.md`](engagement.md)：内容浏览、点赞/收藏、评分事实及聚合快照。
 - [`taxonomy.md`](taxonomy.md)：平面多维标签。
-- [`settings.md`](settings.md)：声明式配置组和 SEO 默认值。
+- [`settings.md`](settings.md)：声明式配置组、Field 定义、逐字段持久化和 SEO 默认值。
 - [`assets.md`](assets.md)：外部对象存储/图床的稳定资源引用。
-- [`notification.md`](notification.md)：通知意图、模板、渠道和可靠投递。
+- [`notification.md`](notification.md)：通知意图、模板、渠道和可靠投递；是否进入运行时由 manifest 显式选择，未装配时无副作用。
 - [`points.md`](points.md)：积分计划、账户、不可变账本和行为规格。
 - [`payments.md`](payments.md)：外部支付订单、webhook 和退款事实。
+- [`membership.md`](membership.md)：会员等级、订阅周期、续费到期与授予积分额度。
 
 comments 不属于首个重建闭环；未来若加入，必须成为独立 capability，不回到 kernel/content 内核。
 

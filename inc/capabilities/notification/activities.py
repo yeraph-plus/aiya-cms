@@ -21,13 +21,16 @@ from sqlalchemy import select
 from inc.capabilities.notification.commands import DELIVER_WORKFLOW_KEY
 from inc.capabilities.notification.models import (
     NotificationDelivery,
+    NotificationDeliveryAttempt,
     NotificationIntent,
     NotificationTemplate,
 )
 from inc.capabilities.notification.ports import (
     NotificationProvider,
     ProviderError,
+    ProviderResult,
     RecipientResolver,
+    RecipientTarget,
 )
 from inc.capabilities.notification.specs import DeliveryPolicy, NotificationSpecRegistry
 from inc.kernel.db import UnitOfWork
@@ -63,7 +66,7 @@ class DeliverActivity:
         outbox: OutboxWriter,
         specs: NotificationSpecRegistry,
         resolver: RecipientResolver,
-        providers: dict[str, NotificationProvider],
+        providers: dict[str, tuple[NotificationProvider, ...]],
     ) -> None:
         self._clock = clock
         self._outbox = outbox
@@ -145,8 +148,8 @@ class DeliverActivity:
             )
             return {"skipped": False, "status": "failed", "reason": "unresolvable"}
 
-        provider = self._providers.get(delivery.channel)
-        if provider is None:
+        providers = self._providers.get(delivery.channel, ())
+        if not providers:
             await self._fail_permanently(
                 uow,
                 ctx,
@@ -158,8 +161,13 @@ class DeliverActivity:
         subject, body = render_template(
             template.subject, template.body, dict(intent.variables.values)
         )
-        result = await self._send(
-            provider, target=target, subject=subject, body=body, delivery=delivery
+        result = await self._send_chain(
+            uow,
+            providers,
+            target=target,
+            subject=subject,
+            body=body,
+            delivery=delivery,
         )
 
         delivery.lease_owner = None
@@ -232,7 +240,11 @@ class DeliverActivity:
         delivery.lease_expires_at = None
         raise ProviderError(
             message=result.error_summary or "provider failure",
-            category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+            category=(
+                ErrorCategory.RATE_LIMITED
+                if category == RetryCategory.RATE_LIMITED.value
+                else ErrorCategory.DEPENDENCY_UNAVAILABLE
+            ),
         )
 
     async def _fail_permanently(
@@ -264,25 +276,24 @@ class DeliverActivity:
         self,
         provider: NotificationProvider,
         *,
-        target: Any,
+        target: RecipientTarget,
         subject: str,
         body: str,
         delivery: NotificationDelivery,
-    ) -> Any:
-        from inc.capabilities.notification.ports import ProviderResult
-
+    ) -> ProviderResult:
         try:
             return await provider.send(
                 target=target,
                 subject=subject,
                 body=body,
-                idempotency_key=f"{delivery.id}:{delivery.attempt}",
+                idempotency_key=f"{delivery.id}:{provider.key}",
             )
         except ProviderError as exc:
             return ProviderResult(
                 status="failed",
                 error_category=exc.retry_category.value,
                 error_summary=exc.message,
+                fallback_allowed=exc.fallback_allowed,
             )
         except Exception as exc:  # noqa: BLE001 - adapters raise raw SDK errors
             return ProviderResult(
@@ -290,6 +301,59 @@ class DeliverActivity:
                 error_category="timeout",
                 error_summary=f"provider raised {type(exc).__name__}",
             )
+
+    async def _send_chain(
+        self,
+        uow: UnitOfWork,
+        providers: tuple[NotificationProvider, ...],
+        *,
+        target: RecipientTarget,
+        subject: str,
+        body: str,
+        delivery: NotificationDelivery,
+    ) -> ProviderResult:
+        """Try providers in manifest order without risking duplicate sends."""
+
+        last_safe_failure: ProviderResult | None = None
+        for sequence, provider in enumerate(providers, start=1):
+            started_at = self._clock.utc_now()
+            result = await self._send(
+                provider,
+                target=target,
+                subject=subject,
+                body=body,
+                delivery=delivery,
+            )
+            uow.session.add(
+                NotificationDeliveryAttempt(
+                    delivery_id=delivery.id,
+                    delivery_attempt=delivery.attempt,
+                    provider_sequence=sequence,
+                    provider_key=provider.key,
+                    status=result.status,
+                    provider_ref=result.provider_ref,
+                    error_category=result.error_category,
+                    error_summary=result.error_summary,
+                    started_at=started_at,
+                    finished_at=self._clock.utc_now(),
+                )
+            )
+            if result.status == "unavailable":
+                continue
+
+            delivery.provider_key = provider.key
+            if result.status == "failed" and result.fallback_allowed:
+                last_safe_failure = result
+                continue
+            return result
+
+        if last_safe_failure is not None:
+            return last_safe_failure
+        return ProviderResult(
+            status="failed",
+            error_category=RetryCategory.PERMANENT.value,
+            error_summary="notification.no_available_provider",
+        )
 
     async def _emit(
         self,

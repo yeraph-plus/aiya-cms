@@ -113,6 +113,13 @@ id DESC
 - 只返回 published 的公开列表；后台列表可按权限选择状态。
 - 若未来需要独立置顶区，必须新增 `pinned_items + items + total` 契约，不能静默改变当前分页。
 
+### 7.1 显式排序（后台列表可选）
+
+- `sort` 为逗号分隔字段列表，`-` 前缀表示 DESC；未传时保持上方默认全结果排序（置顶优先）不变。
+- 字段必须落在该类型 `ContentTypeSpec.sort_options` allowlist 内；跨类型列表取所有已注册类型 sort_options 的交集。未知或未授权字段返回 `content.invalid_sort` validation error，不静默忽略。
+- 可排序列映射到固定列白名单（`id`/`title`/`slug`/`published_at`/`created_at`/`updated_at`/`pin_rank`），禁止表达式、data JSONB 内部字段或关系字段。
+- 显式排序覆盖默认序（含置顶位）；排序键末尾始终追加 `id DESC` 作为唯一稳定键；`total` 语义不变。
+
 ## 8. 引用和删除
 
 - reference 目标必须存在且允许被引用。

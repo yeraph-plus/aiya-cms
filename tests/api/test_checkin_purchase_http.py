@@ -23,7 +23,7 @@ async def program(uow_factory: Any) -> None:
     async with uow_factory() as uow:
         uow.session.add(
             PointsProgram(
-                program_key="default", display_name="Default", unit="points", status="active"
+                program_key="credit", display_name="Credit", unit="points", status="active"
             )
         )
         await uow.commit()
@@ -63,11 +63,9 @@ async def _drive_workflows(client: Any, clock: Any, rounds: int = 4) -> None:
 
 
 async def _balance(client: Any, token: str) -> int:
-    response = await client.get(
-        "/api/v1/points/balance", headers={"Authorization": f"Bearer {token}"}
-    )
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200, response.text
-    return response.json()["balance"]
+    return response.json()["points"]["balance"]
 
 
 async def test_check_in_rewards_once_per_business_day(
@@ -91,7 +89,7 @@ async def test_check_in_rewards_once_per_business_day(
 
 async def test_check_in_requires_authentication(client: Any, program: None) -> None:
     assert (await client.post("/api/v1/check-in")).status_code == 401
-    assert (await client.get("/api/v1/points/balance")).status_code == 401
+    assert (await client.get("/api/v1/me")).status_code == 401
 
 
 async def test_purchase_capture_credits_points_exactly_once(
@@ -268,9 +266,9 @@ async def test_purchase_requires_auth_idempotency_and_known_offer(
     assert unknown_offer.status_code == 422
     assert unknown_offer.json()["code"] == "pointpurchase.unknown_offer"
 
-    balance = await client.get("/api/v1/points/balance", headers=headers)
-    assert balance.status_code == 200
-    assert balance.json()["balance"] == 0
+    me = await client.get("/api/v1/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["points"]["balance"] == 0
 
 
 async def test_payments_capability_requires_provider_port(uow_factory: Any, clock: Any) -> None:

@@ -58,6 +58,20 @@ class ContentQueries:
             row: Content | None = await uow.session.get(Content, content_id)
             return self._to_dto(row) if row is not None else None
 
+    async def get_many(self, content_ids: list[Any]) -> dict[str, ContentDTO]:
+        """Hydrate an ordered projection page without exposing ORM rows."""
+
+        if not content_ids:
+            return {}
+        async with self._uow_factory() as uow:
+            rows = (
+                (await uow.session.execute(select(Content).where(Content.id.in_(content_ids))))
+                .scalars()
+                .all()
+            )
+            return {str(row.id): self._to_dto(row) for row in rows}
+        raise RuntimeError("content batch query did not execute")
+
     async def list_contents(  # type: ignore[return]
         self,
         *,

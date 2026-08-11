@@ -9,8 +9,11 @@ never repair, enqueue events, retry or refresh state. Results distinguish
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -87,7 +90,9 @@ class AdminSummaryProvider(Protocol):
 
     key: str
 
-    async def summary(self) -> dict[str, Any]: ...
+    async def summary(
+        self, *, window: str = "7d", as_of: datetime | None = None
+    ) -> dict[str, Any]: ...
 
 
 class AdminSummaryRegistry:
@@ -111,11 +116,35 @@ class AdminSummaryRegistry:
     def keys(self) -> tuple[str, ...]:
         return tuple(sorted(self._providers))
 
-    async def run_all(self) -> dict[str, dict[str, Any]]:
-        out: dict[str, dict[str, Any]] = {}
-        for key in sorted(self._providers):
-            try:
-                out[key] = await self._providers[key].summary()
-            except Exception:  # noqa: BLE001 - surface per-provider failure distinctly
-                out[key] = {"unavailable": True}
-        return out
+    async def run_all(
+        self, *, window: str = "7d", as_of: datetime | None = None
+    ) -> dict[str, dict[str, Any]]:
+        """Run enabled providers concurrently with bounded isolation.
+
+        A provider is a read-only projection boundary.  It must not make the
+        dashboard request fail when it times out or raises, and a slow
+        provider must not consume an unbounded number of tasks.
+        """
+
+        captured_as_of = as_of or datetime.now(UTC)
+        semaphore = asyncio.Semaphore(4)
+
+        async def invoke(key: str, provider: AdminSummaryProvider) -> tuple[str, dict[str, Any]]:
+            async with semaphore:
+                try:
+                    method = provider.summary
+                    parameters = inspect.signature(method).parameters
+                    kwargs: dict[str, Any] = {}
+                    if "window" in parameters:
+                        kwargs["window"] = window
+                    if "as_of" in parameters:
+                        kwargs["as_of"] = captured_as_of
+                    value = await asyncio.wait_for(method(**kwargs), timeout=2.0)
+                    return key, value
+                except Exception:  # noqa: BLE001 - isolate one provider
+                    return key, {"unavailable": True}
+
+        pairs = await asyncio.gather(
+            *(invoke(key, self._providers[key]) for key in sorted(self._providers))
+        )
+        return dict(pairs)

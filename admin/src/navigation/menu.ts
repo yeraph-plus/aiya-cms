@@ -10,19 +10,6 @@ export interface NavMenuItem extends Omit<LayoutMenuItem, 'items'> {
 
 export const productMenu: NavMenuItem[] = [
     {
-        label: 'Home',
-        icon: 'pi pi-fw pi-home',
-        items: [
-            {
-                label: 'Overview',
-                icon: 'pi pi-fw pi-home',
-                to: '/',
-                routeName: 'dashboard',
-                capability: 'admin.summary.read'
-            }
-        ]
-    },
-    {
         label: 'Identity',
         icon: 'pi pi-fw pi-id-card',
         path: '/identity',
@@ -56,17 +43,10 @@ export const productMenu: NavMenuItem[] = [
         path: '/content',
         items: [
             {
-                label: 'Posts',
+                label: 'Articles',
                 icon: 'pi pi-fw pi-file',
-                to: '/content/posts',
-                routeName: 'content-posts',
-                capability: 'content.read'
-            },
-            {
-                label: 'Pages',
-                icon: 'pi pi-fw pi-file-edit',
-                to: '/content/pages',
-                routeName: 'content-pages',
+                to: '/content',
+                routeName: 'content-list',
                 capability: 'content.read'
             },
             {
@@ -84,17 +64,17 @@ export const productMenu: NavMenuItem[] = [
         path: '/system',
         items: [
             {
+                label: 'Dashboard',
+                icon: 'pi pi-fw pi-chart-bar',
+                to: '/dashboard',
+                routeName: 'system-dashboard',
+                capability: 'admin.dashboard.read'
+            },
+            {
                 label: 'Settings',
                 icon: 'pi pi-fw pi-sliders-h',
                 to: '/system/settings',
                 routeName: 'system-settings',
-                capability: 'settings.read'
-            },
-            {
-                label: 'SEO',
-                icon: 'pi pi-fw pi-search',
-                to: '/system/seo',
-                routeName: 'system-seo',
                 capability: 'settings.read'
             },
             {
@@ -103,6 +83,20 @@ export const productMenu: NavMenuItem[] = [
                 to: '/system/audit',
                 routeName: 'system-audit',
                 capability: 'audit.read'
+            },
+            {
+                label: 'Execution Log',
+                icon: 'pi pi-fw pi-sync',
+                to: '/system/execution',
+                routeName: 'system-execution',
+                capability: 'audit.read'
+            },
+            {
+                label: 'Assets',
+                icon: 'pi pi-fw pi-images',
+                to: '/system/assets',
+                routeName: 'system-assets',
+                capability: 'assets.read'
             },
             {
                 label: 'Diagnostics',

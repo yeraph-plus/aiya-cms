@@ -23,15 +23,23 @@ INITIAL_CAPABILITIES = (
     "oidc_provider",
     "audit",
     "settings",
-    "notification",
     "content",
     "taxonomy",
     "assets",
     "points",
     "payments",
+    "membership",
 )
 
-INITIAL_FEATURES = ("post", "page", "check_in", "point_purchase")
+INITIAL_FEATURES = (
+    "post",
+    "page",
+    "site_settings",
+    "check_in",
+    "point_purchase",
+    "membership_purchase",
+    "site_cleanup",
+)
 
 
 def _load_definitions(package: str, names: tuple[str, ...]) -> list[tuple[str, Any]]:

@@ -43,6 +43,8 @@ issuer 由配置提供且生产必须是 HTTPS、无 query/fragment。默认端�
 
 Discovery 返回值必须从同一 canonical issuer 构建，声明实际支持的 response/grant、subject、signing、client auth 和 PKCE methods。协议错误使用 OAuth/OIDC 标准响应，不套普通 API Error DTO。
 
+`POST /oidc/login` 同时支持浏览器 HTML 表单和管理员 SPA 的 JSON negotiation。SPA 请求使用 `Accept: application/json`，成功响应返回带 code/state 的前端 callback URI，失败响应返回标准 OIDC JSON error；该模式不得通过 3xx 将错误导航到 OP 页面。
+
 ## 4. Port 边界
 
 OIDC 自己声明并消费：
@@ -100,6 +102,12 @@ OIDC 自己声明并消费：
 - trusted first-party client 可以配置跳过重复 consent，但 scope 仍受注册和 access 决策约束。
 - post logout redirect 必须精确匹配已登记 URI；有 redirect 时要求有效 `id_token_hint` 或等价的已验证 client/session 上下文。
 
+用户自服务授权管理属于普通 `auth` API 组，不属于管理员 API：
+
+- `GET /api/v1/auth/grants` 只按当前认证 subject 查询 `revoked_at IS NULL` 的 consent，返回 `client_id`、可展示的 `client_name`（client 已不存在时为 null）、获准 `scopes`、`audiences` 和 `granted_at`，按 `client_id` 稳定排序。
+- `DELETE /api/v1/auth/grants/{client_id}` 只允许作用于当前认证 subject，保留 consent 行并写入 `revoked_at`；同时撤销该 subject/client 的 OIDC session、refresh family 和 refresh token。不存在或已撤销的 consent 使用幂等 204，不泄露授权是否存在。
+- 上述两个端点只要求有效 Bearer，不要求 `oidc_provider.grants.revoke` 管理员 capability；后端仍从认证上下文取得 subject，禁止客户端提交 subject_id。
+
 ## 10. 密钥轮换
 
 - 同时只有一个签发 active key，可以保留多个 verify-only 公钥。
@@ -119,6 +127,7 @@ OIDC 自己声明并消费：
 - 审计 client 变更、授权、token issuance、revocation、logout、key rotation、code replay 和 refresh reuse；不记录 token/code/secret。
 - authorization/token/login/revocation 按 client、IP 风险和 subject 进行受控限流，避免把高基数值放入 metrics label。
 - diagnostics 检查过期 code/token 清理积压、无 active signing key、JWKS 生命周期错误、异常 reuse 和 disabled client 活动。
+- `cleanup_expired_keys` 由组合根注册为 `oidc.keys.cleanup.v1` Cron task；未装配 oidc_provider 时不产生该 task。
 
 ## 13. 验收
 

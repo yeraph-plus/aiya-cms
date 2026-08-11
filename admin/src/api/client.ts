@@ -2,6 +2,34 @@ import type { paths } from './schema';
 import { ApiError } from './errors';
 
 export type PathKeys = keyof paths;
+type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
+type Operation<P extends PathKeys, M extends HttpMethod> = M extends keyof paths[P] ? paths[P][M] : never;
+type QueryFor<P extends PathKeys, M extends HttpMethod> = Operation<P, M> extends { parameters: infer Parameters } ? (Parameters extends { query?: infer Query } ? Query : undefined) : undefined;
+type BodyFor<P extends PathKeys, M extends HttpMethod> = Operation<P, M> extends { requestBody: { content: infer Content } } ? (Content extends { 'application/json': infer Body } ? Body : undefined) : undefined;
+type ResponseFor<P extends PathKeys, M extends HttpMethod> =
+    Operation<P, M> extends { responses: infer Responses }
+        ? 200 extends keyof Responses
+            ? Responses[200] extends { content: infer Content }
+                ? Content extends { 'application/json': infer Body }
+                    ? Body
+                    : undefined
+                : undefined
+            : undefined
+        : never;
+
+export interface ApiPath<P extends PathKeys> {
+    readonly template: P;
+    readonly value: string;
+}
+
+export function apiPath<P extends PathKeys>(template: P, params: Record<string, string | number>): ApiPath<P> {
+    let value = template as string;
+    for (const [key, parameter] of Object.entries(params)) {
+        value = value.replace(`{${key}}`, encodeURIComponent(String(parameter)));
+    }
+    if (/\{[^}]+\}/u.test(value)) throw new Error(`Missing path parameter in ${template}`);
+    return { template, value };
+}
 
 export interface ApiClientOptions {
     baseUrl: string;
@@ -17,6 +45,8 @@ interface RequestOptions {
     idempotencyKey?: string;
     signal?: AbortSignal;
 }
+
+type Query = RequestOptions['query'];
 
 function newRequestId(): string {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -81,11 +111,36 @@ export function createApiClient(options: ApiClientOptions) {
     };
 
     return {
-        get: <T>(path: string, query?: RequestOptions['query'], signal?: AbortSignal) => request<T>({ method: 'GET', path, query, signal }),
-        post: <T>(path: string, body?: unknown, options_?: { idempotencyKey?: string; signal?: AbortSignal }) => request<T>({ method: 'POST', path, body, idempotencyKey: options_?.idempotencyKey, signal: options_?.signal }),
-        put: <T>(path: string, body?: unknown, options_?: { idempotencyKey?: string; signal?: AbortSignal }) => request<T>({ method: 'PUT', path, body, idempotencyKey: options_?.idempotencyKey, signal: options_?.signal }),
-        patch: <T>(path: string, body?: unknown, options_?: { idempotencyKey?: string; signal?: AbortSignal }) => request<T>({ method: 'PATCH', path, body, idempotencyKey: options_?.idempotencyKey, signal: options_?.signal }),
-        delete: <T>(path: string, query?: RequestOptions['query'], signal?: AbortSignal) => request<T>({ method: 'DELETE', path, query, signal })
+        get: <P extends PathKeys>(path: P | ApiPath<P>, query?: QueryFor<P, 'get'>, signal?: AbortSignal) => request<ResponseFor<P, 'get'>>({ method: 'GET', path: typeof path === 'string' ? path : path.value, query: query as Query, signal }),
+        post: <P extends PathKeys>(
+            path: P | ApiPath<P>,
+            ...args: BodyFor<P, 'post'> extends undefined
+                ? [body?: undefined, options_?: { idempotencyKey?: string; query?: QueryFor<P, 'post'>; signal?: AbortSignal }]
+                : [body: BodyFor<P, 'post'>, options_?: { idempotencyKey?: string; query?: QueryFor<P, 'post'>; signal?: AbortSignal }]
+        ) => {
+            const [body, options_] = args;
+            return request<ResponseFor<P, 'post'>>({ method: 'POST', path: typeof path === 'string' ? path : path.value, body, query: options_?.query as Query, idempotencyKey: options_?.idempotencyKey, signal: options_?.signal });
+        },
+        put: <P extends PathKeys>(
+            path: P | ApiPath<P>,
+            ...args: BodyFor<P, 'put'> extends undefined
+                ? [body?: undefined, options_?: { idempotencyKey?: string; query?: QueryFor<P, 'put'>; signal?: AbortSignal }]
+                : [body: BodyFor<P, 'put'>, options_?: { idempotencyKey?: string; query?: QueryFor<P, 'put'>; signal?: AbortSignal }]
+        ) => {
+            const [body, options_] = args;
+            return request<ResponseFor<P, 'put'>>({ method: 'PUT', path: typeof path === 'string' ? path : path.value, body, query: options_?.query as Query, idempotencyKey: options_?.idempotencyKey, signal: options_?.signal });
+        },
+        patch: <P extends PathKeys>(
+            path: P | ApiPath<P>,
+            ...args: BodyFor<P, 'patch'> extends undefined
+                ? [body?: undefined, options_?: { idempotencyKey?: string; query?: QueryFor<P, 'patch'>; signal?: AbortSignal }]
+                : [body: BodyFor<P, 'patch'>, options_?: { idempotencyKey?: string; query?: QueryFor<P, 'patch'>; signal?: AbortSignal }]
+        ) => {
+            const [body, options_] = args;
+            return request<ResponseFor<P, 'patch'>>({ method: 'PATCH', path: typeof path === 'string' ? path : path.value, body, query: options_?.query as Query, idempotencyKey: options_?.idempotencyKey, signal: options_?.signal });
+        },
+        delete: <P extends PathKeys>(path: P | ApiPath<P>, query?: QueryFor<P, 'delete'>, signal?: AbortSignal) =>
+            request<ResponseFor<P, 'delete'>>({ method: 'DELETE', path: typeof path === 'string' ? path : path.value, query: query as Query, signal })
     };
 }
 

@@ -10,8 +10,6 @@ cannot connect.
 
 from __future__ import annotations
 
-import pytest
-
 from inc.adapters.notification.email_smtp import (
     SmtpSettings,
     smtp_settings_from_group,
@@ -23,6 +21,8 @@ def test_mapper_builds_settings_from_notification_group_value() -> None:
     # The stored group value is the persisted dict (secrets unwrapped at the
     # settings capability boundary), not the schema's masked model_dump.
     group_value = NotificationValueSchema(
+        email_enabled=True,
+        smtp_enabled=True,
         smtp_host="mail.example.com",
         smtp_port=587,
         smtp_username="sender",
@@ -36,6 +36,7 @@ def test_mapper_builds_settings_from_notification_group_value() -> None:
     settings = smtp_settings_from_group(group_value)
 
     assert isinstance(settings, SmtpSettings)
+    assert settings.enabled is True
     assert settings.host == "mail.example.com"
     assert settings.port == 587
     assert settings.username == "sender"
@@ -50,6 +51,8 @@ def test_mapper_builds_settings_from_stored_value_dict() -> None:
     plaintext password that the adapter needs to authenticate."""
     settings = smtp_settings_from_group(
         {
+            "email_enabled": True,
+            "smtp_enabled": True,
             "smtp_host": "mail.example.com",
             "smtp_port": 587,
             "smtp_username": "sender",
@@ -64,7 +67,9 @@ def test_mapper_builds_settings_from_stored_value_dict() -> None:
 
 def test_mapper_applies_defaults_and_empty_credentials() -> None:
     settings = smtp_settings_from_group(
-        NotificationValueSchema(smtp_host="mail.example.com").model_dump(mode="json")
+        NotificationValueSchema(
+            email_enabled=True, smtp_enabled=True, smtp_host="mail.example.com"
+        ).model_dump(mode="json")
     )
     assert settings.username is None
     assert settings.password is None
@@ -72,8 +77,9 @@ def test_mapper_applies_defaults_and_empty_credentials() -> None:
     assert settings.port == 25
 
 
-def test_mapper_rejects_missing_host() -> None:
-    with pytest.raises(ValueError, match="smtp_host"):
-        smtp_settings_from_group({})
-    with pytest.raises(ValueError, match="smtp_host"):
-        smtp_settings_from_group(NotificationValueSchema().model_dump(mode="json"))
+def test_mapper_keeps_disabled_or_unconfigured_adapter_inert() -> None:
+    disabled = smtp_settings_from_group({})
+    assert disabled.enabled is False
+    enabled_without_host = smtp_settings_from_group({"email_enabled": True, "smtp_enabled": True})
+    assert enabled_without_host.enabled is True
+    assert enabled_without_host.host == ""

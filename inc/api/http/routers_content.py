@@ -9,6 +9,7 @@ pin-stable ordering defined by the content spec.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -43,6 +44,7 @@ from inc.capabilities.content.schemas import (
     SetContentPinInput,
     UpdateContentInput,
 )
+from inc.capabilities.engagement.schemas import EngagementSummaryDTO
 
 
 class RejectBody(BaseModel):
@@ -73,6 +75,71 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "content.purge",
 )
 
+_ENGAGEMENT_SORT_FIELDS = {
+    "view_count",
+    "like_count",
+    "rating_sum",
+    "rating_count",
+    "rating_average",
+}
+
+
+def _contains_engagement_sort(sort: str) -> bool:
+    return any(part.strip().lstrip("-") in _ENGAGEMENT_SORT_FIELDS for part in sort.split(","))
+
+
+async def _list_with_engagement_sort(
+    services: Services,
+    *,
+    page: int,
+    size: int,
+    type_name: str | None,
+    status: str | None,
+    sort: str,
+    public_only: bool = False,
+) -> ContentPageDTO:
+    """Apply projection-owned ordering without crossing the ORM boundary."""
+
+    engagement_queries = services.engagement_queries
+    if engagement_queries is None:
+        return await services.content_queries.list_contents(
+            page=page, size=size, type_name=type_name, status=status, public_only=public_only
+        )
+    fields = [part.strip().lstrip("-") for part in sort.split(",")]
+    if not fields or any(field not in _ENGAGEMENT_SORT_FIELDS for field in fields):
+        from inc.kernel.errors import ErrorCategory, KernelError
+
+        raise KernelError(
+            code="content.invalid_sort",
+            category=ErrorCategory.VALIDATION,
+            message="sort must contain only engagement fields",
+        )
+    ids, total = await engagement_queries.list_content_ids(
+        page=page,
+        size=size,
+        type_name=type_name,
+        status=status,
+        public_only=public_only,
+        sort=sort,
+    )
+    hydrated = await services.content_queries.get_many(ids)
+
+    async def with_summary(content_id: uuid.UUID) -> Any:
+        row = hydrated.get(str(content_id))
+        if row is None:
+            return None
+        summary = await engagement_queries.get_summary(content_id)
+        return row.model_copy(
+            update={"engagement": summary or EngagementSummaryDTO(content_id=str(content_id))}
+        )
+
+    items = [
+        item
+        for item in await asyncio.gather(*(with_summary(content_id) for content_id in ids))
+        if item is not None
+    ]
+    return ContentPageDTO(items=items, total=total, page=page, size=size)
+
 
 def build_router(
     services: Services,
@@ -90,8 +157,33 @@ def build_router(
         sort: str | None = Query(default=None, max_length=200),
         ctx: AppContext = Depends(require_capability("content.read")),
     ) -> ContentPageDTO:
-        return await services.content_queries.list_contents(
+        if sort and _contains_engagement_sort(sort):
+            return await _list_with_engagement_sort(
+                services,
+                page=page,
+                size=size,
+                type_name=type_name,
+                status=status,
+                sort=sort,
+            )
+        result = await services.content_queries.list_contents(
             page=page, size=size, type_name=type_name, status=status, sort=sort
+        )
+        if services.engagement_queries is None:
+            return result
+        return result.model_copy(
+            update={
+                "items": [
+                    item.model_copy(
+                        update={
+                            "engagement": await services.engagement_queries.get_summary(
+                                uuid.UUID(item.id)
+                            )
+                        }
+                    )
+                    for item in result.items
+                ]
+            }
         )
 
     @router.get("/content/{content_id}", response_model=ContentDTO)

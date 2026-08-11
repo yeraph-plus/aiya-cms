@@ -25,6 +25,7 @@ ALL_CAPABILITIES = (
     "points",
     "payments",
     "membership",
+    "engagement",
 )
 
 ALL_FEATURES = (
@@ -34,6 +35,8 @@ ALL_FEATURES = (
     "check_in",
     "point_purchase",
     "membership_purchase",
+    "site_cleanup",
+    "content_engagement",
 )
 
 

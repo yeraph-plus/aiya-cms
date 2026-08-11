@@ -32,12 +32,15 @@ from inc.capabilities.oidc_provider.keys import (
     verify_jwt,
 )
 from inc.capabilities.oidc_provider.models import (
+    OidcGrantConsent,
     OidcRefreshFamily,
+    OidcSession,
     StringList,
 )
 from inc.capabilities.oidc_provider.schemas import ClientRegistrationResult, OidcError
 from inc.capabilities.oidc_provider.services import (
     AuthorizationService,
+    GrantConsentService,
     LogoutService,
     RevocationService,
     ServiceContext,
@@ -639,6 +642,75 @@ async def test_revocation_is_idempotent_for_unknown_tokens(
     await RevocationService(ctx).revoke(
         client_id="spa", token="unknown-token-value", token_type_hint="refresh_token"
     )
+
+
+async def test_grants_are_listed_for_subject_and_revoke_invalidates_client_state(
+    ctx: ServiceContext,
+    client_ctx: ClientCommandContext,
+    uow_factory: UoWFactory,
+) -> None:
+    await register_clients(client_ctx)
+    tokens = await _authorize_and_exchange(ctx)
+
+    grants = GrantConsentService(ctx)
+    listed = await grants.list_for_subject("u-1")
+    assert [grant.client_id for grant in listed] == ["spa"]
+    assert listed[0].client_name == "Admin SPA"
+    assert listed[0].scopes == sorted(set(SCOPES.split()))
+
+    await grants.revoke(subject_id="u-1", client_id="spa")
+
+    assert await grants.list_for_subject("u-1") == []
+    async with uow_factory() as uow:
+        consent = (await uow.session.execute(select(OidcGrantConsent))).scalars().one()
+        assert consent.revoked_at is not None
+        session = (await uow.session.execute(select(OidcSession))).scalars().one()
+        assert session.revoked_at is not None
+        family = (await uow.session.execute(select(OidcRefreshFamily))).scalars().one()
+        assert family.revoked_at is not None
+
+    with pytest.raises(OidcError) as excinfo:
+        await TokenService(ctx).refresh(client_id="spa", refresh_token=tokens["refresh_token"])
+    assert excinfo.value.code == "invalid_grant"
+
+
+async def test_grants_are_scoped_to_subject_and_ignore_revoked_rows(
+    ctx: ServiceContext,
+    client_ctx: ClientCommandContext,
+    uow_factory: UoWFactory,
+) -> None:
+    await register_clients(client_ctx)
+    async with uow_factory() as uow:
+        uow.session.add_all(
+            [
+                OidcGrantConsent(
+                    subject_id="u-1",
+                    client_id="spa",
+                    scopes=StringList(items=["openid"]),
+                    audiences=StringList(items=[]),
+                    granted_at=ctx.clock.utc_now(),
+                ),
+                OidcGrantConsent(
+                    subject_id="u-1",
+                    client_id="api",
+                    scopes=StringList(items=["openid"]),
+                    audiences=StringList(items=[]),
+                    granted_at=ctx.clock.utc_now(),
+                    revoked_at=ctx.clock.utc_now(),
+                ),
+                OidcGrantConsent(
+                    subject_id="u-2",
+                    client_id="spa",
+                    scopes=StringList(items=["openid"]),
+                    audiences=StringList(items=[]),
+                    granted_at=ctx.clock.utc_now(),
+                ),
+            ]
+        )
+        await uow.commit()
+
+    listed = await GrantConsentService(ctx).list_for_subject("u-1")
+    assert [(grant.client_id, grant.client_name) for grant in listed] == [("spa", "Admin SPA")]
 
 
 async def test_logout_requires_hint_for_redirect_and_exact_match(

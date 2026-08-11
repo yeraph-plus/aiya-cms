@@ -90,6 +90,12 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
     )
     assert assigned.status_code == 204, assigned.text
 
+    fetched = await client.get(
+        f"/api/v1/admin/taxonomy/targets/post/{post_id}/terms", headers=headers
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert [item["id"] for item in fetched.json()["tag"]] == [term_id]
+
     services = client.app.state.services
     current = await services.taxonomy_queries.get_target_terms("post", uuid.UUID(post_id))
     assert term_id in {item.id for item in current.get("tag", [])}
@@ -170,6 +176,11 @@ async def test_taxonomy_routes_require_capability(
 
     assert (
         await client.get("/api/v1/admin/taxonomy/dimensions", headers=headers)
+    ).status_code == 403
+    assert (
+        await client.get(
+            f"/api/v1/admin/taxonomy/targets/post/{uuid.uuid4()}/terms", headers=headers
+        )
     ).status_code == 403
     assert (
         await client.post(

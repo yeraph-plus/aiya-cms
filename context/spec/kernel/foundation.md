@@ -4,6 +4,7 @@
 
 - 配置在启动阶段一次解析为不可变 Pydantic settings。
 - 环境变量、secret file 和测试 override 的优先级必须显式；运行中不重新读取环境变量。
+- 数据库与缓存连接参数拆分为独立字段（`AIYA_PG_HOST/PORT/USER/PASSWORD/DATABASE`、`AIYA_REDIS_HOST/PORT/DB/PASSWORD`），由代码组装 URL；显式 `AIYA_DATABASE_URL`/`AIYA_REDIS_URL` 覆盖优先（用于 SQLite 测试与特殊部署）。backend 不内管数据库，仅通过环境变量连接外部 PostgreSQL/Redis。
 - secret 值禁止出现在 repr、日志、错误响应、OpenAPI example 或诊断输出。
 - capability/provider 配置由所属包声明 schema，由组合根汇总；kernel 不维护业务配置 key。
 - 必需配置缺失、未知安全枚举或相互冲突时启动失败。

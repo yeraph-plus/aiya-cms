@@ -11,7 +11,7 @@
 5. 同步 migration、事件、OpenAPI、管理员生成类型和 Compose。
 6. 从空环境复验发布门。
 
-本次规格全量替换后，旧实现暂时不符合规格是预期重构状态，但必须通过 R2 的失败架构测试清单明确差距；不得宣称发布完成。
+规格与实现出现差距时，必须由失败测试或明确的校验输出记录差距；不得在未通过相应发布门前宣称完成。
 
 ## 2. 测试层级
 
@@ -72,25 +72,24 @@
 - 新基线发布后 revision 不可改写，后续按 owner 向前迁移。
 - 测试 SQLite/in-memory 结果不能替代 PostgreSQL 验收。
 
-## 4. Compose profiles
+## 4. Compose 组织
 
-- `runtime`：PostgreSQL、Redis、通知开发 provider、migrate、api、worker、admin static server。
-- `dev`：源码挂载的 api/admin 开发服务，依赖仍使用 Compose service name。
-- `test`：backend quality/test、admin quality、Playwright 和可选 conformance harness。
-- `ops`：create-admin、OpenAPI dump/check、diagnostics、显式 repair/reconcile 命令。
-- `review`：固定版本的代码审查工具。
+- `compose.infra.yaml`：只管理 PostgreSQL 和 Redis，暴露宿主端口。项目不做 All-in-One；生产部署由 1panel 等面板管理数据库，backend 只通过拆分环境变量（`AIYA_PG_HOST/PORT/USER/PASSWORD/DATABASE`、`AIYA_REDIS_HOST/PORT/DB/PASSWORD`）连接，构建内健康/初始化检查仅确认连接可用。
+- `compose.yaml`：只包含 backend 镜像构建（`api` 运行服务 + `dev` 源码挂载）。migrate、install、quality、test、openapi-check、migration-check 全部内部化为 `inc.cli` 子命令，通过同一 backend 镜像 `docker compose run --rm backend python -m inc.cli <cmd>` 一次性执行。
+- 一次性命令：`inc.cli migrate`（alembic upgrade head）、`inc.cli install`（迁移 + points 种子 + OIDC 客户端 + 单一超级管理员 bootstrap 一步完成）、`inc.cli quality`、`inc.cli test`、`inc.cli openapi-check`、`inc.cli migration-check`。
 
 profile 名可在实现前调整，但最终必须有等价的单命令、可重复、无宿主依赖验收入口。
 
 ## 5. 建议命令门
 
 ```powershell
-docker compose --profile test run --rm backend-quality
-docker compose --profile test run --rm backend-test
-docker compose --profile test run --rm admin-quality
-docker compose --profile test run --rm admin-e2e
-docker compose --profile ops run --rm openapi-check
-docker compose --profile review run --rm opencode-review
+docker compose -f compose.infra.yaml up -d
+docker compose run --rm backend python -m inc.cli migrate
+docker compose run --rm backend python -m inc.cli install
+docker compose run --rm backend python -m inc.cli quality
+docker compose run --rm backend python -m inc.cli test
+docker compose run --rm backend python -m inc.cli openapi-check
+docker compose run --rm backend python -m inc.cli migration-check
 ```
 
 命令名称以最终 Compose 为准；文档和 CI 必须同步。只运行 `docker compose config` 不代表数据库、Redis、worker 或业务链路健康。
@@ -110,7 +109,7 @@ docker compose --profile review run --rm opencode-review
 
 1. PostgreSQL/Redis/通知开发 provider health。
 2. `0001_initial` 迁移。
-3. 幂等创建管理员。
+3. `install` 一步完成初始化（迁移 + 种子 + 单一超级管理员 bootstrap）；重复执行不产生第二个超级管理员。
 4. OIDC discovery、Code + PKCE 登录、token refresh/revocation/logout。
 5. 创建 post/page，page 无 taxonomy，定时发布与置顶分页。
 6. check-in 一次性奖励。

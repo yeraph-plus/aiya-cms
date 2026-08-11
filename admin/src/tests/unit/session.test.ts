@@ -20,7 +20,7 @@ vi.mock('@/api/auth', () => ({
     fetchMe: fetchMeMock
 }));
 
-import { clearSession, completeAuthentication, initializeSession, sessionState, signOut } from '@/auth/session';
+import { clearSession, completeAuthentication, getAccessToken, initializeSession, sessionState, signOut } from '@/auth/session';
 
 describe('session state machine', () => {
     beforeEach(() => {
@@ -31,6 +31,10 @@ describe('session state machine', () => {
 
     it('becomes authenticated with an in-memory token when a valid user exists', async () => {
         getUserMock.mockResolvedValue({ access_token: 'token-1', expired: false });
+        fetchMeMock.mockImplementationOnce(() => {
+            expect(getAccessToken()).toBe('token-1');
+            return { id: 'u1', display_name: 'Admin', capabilities: ['content.read'] };
+        });
         await initializeSession();
 
         expect(sessionState.status).toBe('authenticated');
@@ -55,6 +59,17 @@ describe('session state machine', () => {
         expect(getUserMock).toHaveBeenCalledTimes(1);
     });
 
+    it('does not expose an authenticated session before /me succeeds', async () => {
+        getUserMock.mockResolvedValue({ access_token: 'token-1', expired: false });
+        fetchMeMock.mockRejectedValueOnce(new Error('API unavailable'));
+
+        await initializeSession();
+
+        expect(sessionState.status).toBe('error');
+        expect(sessionState.accessToken).toBeNull();
+        expect(sessionState.me).toBeNull();
+    });
+
     it('completes the authorization callback by exchanging the code', async () => {
         signinCallbackMock.mockResolvedValue({ access_token: 'token-2', expired: false });
         await completeAuthentication();
@@ -62,6 +77,16 @@ describe('session state machine', () => {
         expect(sessionState.status).toBe('authenticated');
         expect(sessionState.accessToken).toBe('token-2');
         expect(fetchMeMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears callback credentials when /me rejects', async () => {
+        signinCallbackMock.mockResolvedValue({ access_token: 'token-2', expired: false });
+        fetchMeMock.mockRejectedValueOnce(new Error('API unavailable'));
+
+        await expect(completeAuthentication()).rejects.toThrow('API unavailable');
+        expect(sessionState.status).toBe('anonymous');
+        expect(sessionState.accessToken).toBeNull();
+        expect(sessionState.me).toBeNull();
     });
 
     it('clears local state and triggers RP-initiated logout', async () => {

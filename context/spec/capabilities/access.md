@@ -26,7 +26,7 @@ subject 是 identity 等能力的 opaque reference，不建立外键。创建关
 - `CreateRole`、`UpdateRole`、`DeleteRole`。
 - `ReplaceRoleCapabilities`。
 - `AssignRoleToSubject`、`RevokeRoleFromSubject`。
-- `BootstrapAdministrator`：仅 ops 入口可调用，幂等创建/绑定系统管理员角色。
+- `BootstrapAdministrator`：仅 `install` ops 入口可调用。系统内只允许一个超级管理员（`administrator` 角色）：目标 subject 已持有该角色时幂等返回；已有其他 subject 持有该角色时拒绝并返回 `access.administrator_exists`，禁止创建第二个超级管理员。bootstrap 创建 `administrator` 系统角色并绑定全部已注册权限 key。
 
 系统角色允许禁止删除或限制编辑。任何 role/capability 变更必须在一个 access UoW 中保持一致并审计。
 
@@ -65,4 +65,5 @@ Principal DTO 可以包含 subject ref、authentication method、session/client 
 - 默认拒绝、own/global scope 和实时撤权有正负测试。
 - 并发 ReplaceRoleCapabilities 不产生部分集合。
 - access 不导入 identity/OIDC；SubjectExists 由组合根绑定。
-- 管理员 CLI 可在空库幂等执行且留下审计记录。
+- `install` 在空库一步完成迁移、points 种子与单一超级管理员 bootstrap 并留下审计记录；重复执行不产生第二个超级管理员，与其他 subject 冲突时失败。
+- 本期不提供管理员 CLI 密码找回，也不提供 CLI 直接创建/删除用户等平面操作。

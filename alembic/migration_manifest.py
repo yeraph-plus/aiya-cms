@@ -8,9 +8,9 @@ modules; directory scanning is forbidden. Owners are ``kernel:<component>``
 or ``capability:<name>``.
 
 Kernel technical tables (outbox, inbox receipts, workflow instances, step
-attempts, signals, task instances, cron state) land with R3. Capability
-models are added as their phases land, and everything is squashed into a
-single ``0001_initial`` revision at R9.
+attempts, signals, task instances, cron state) and shipped capability models
+are collected here explicitly and released through a single ``0001_initial``
+revision. Later changes advance by owner-specific revisions.
 """
 
 from __future__ import annotations
@@ -31,4 +31,5 @@ MIGRATION_OWNER_MODULES: dict[str, str] = {
     "capability:points": "inc.capabilities.points.models",
     "capability:payments": "inc.capabilities.payments.models",
     "capability:membership": "inc.capabilities.membership.models",
+    "capability:engagement": "inc.capabilities.engagement.models",
 }

@@ -37,6 +37,7 @@ task/activity 记录 lease owner/expiry、attempt、timeout、next run、result/
 - signal 可在 workflow 进入 waiting 前到达，运行时必须持久保存后消费。
 - 未注册 signal、错误 payload version 或已终结 workflow 的 signal 返回稳定结果。
 - 等待不占用线程、连接或数据库事务。
+- runner 提供按 `(workflow key, business idempotency key)` 的只读实例查找，供信号桥接（如支付 webhook → 等待中的购买 workflow）定位实例；查找不产生任何写副作用。
 
 ## 5. 补偿与人工恢复
 
@@ -51,6 +52,7 @@ task/activity 记录 lease owner/expiry、attempt、timeout、next run、result/
 - schedule 使用显式业务时区；持久执行时间仍保存 UTC。
 - 多实例环境只允许 lease holder 产生同一触发；handler 仍需幂等。
 - 定时发布等任务重启后必须通过数据库重新扫描到期项，不能依赖内存 timer。
+- 组合根必须同时把 Cron handler 显式注册为对应的 `TaskSpec`；CronScheduler 只产生 `*.tick` task instance，TaskWorker 才执行 activity。未注册的 tick key 启动时失败。
 
 ## 7. 版本演进
 

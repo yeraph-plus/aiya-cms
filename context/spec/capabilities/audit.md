@@ -25,7 +25,11 @@ audit 不代替领域事件、应用日志或 metrics，也不在 diagnostics �
 - `audit_entries`：不可变 envelope、ingested_at 和完整性版本。
 - 可选 `audit_exports`：受控导出任务状态，不保存导出文件本体。
 
-audit entry 创建后不得更新或删除；保留期清理由明确运维 policy/activity 执行并产生独立审计摘要。首版不实现篡改证明链，未来需要时新增 hash chain/外部归档规格。
+audit entry 创建后不得更新或删除；保留期清理由 `site_cleanup` feature 的明确运维
+policy/activity 执行，并产生独立的 `audit.retention.cleaned` 审计摘要。策略值由
+`site_settings.operations.audit_retention_days` 提供，且同时适用于 audit entry 和
+kernel 的终态 outbox/inbox/task execution log。首版不实现篡改证明链，未来需要时新增
+hash chain/外部归档规格。
 
 ## 4. 消费和失败语义
 
@@ -38,6 +42,7 @@ audit entry 创建后不得更新或删除；保留期清理由明确运维 poli
 
 - `ListAuditEntries`：按 action、actor、target、outcome、时间范围分页。
 - `GetAuditEntry`。
+- 管理员可通过 execution entries read model 查看 outbox、inbox receipt 和 task 的安全摘要；该查询不返回 payload、result 或自由文本异常。
 - `RequestAuditExport`：如首版启用，必须限范围、异步、可审计且输出到受控外部资产。
 
 默认需要 `audit.read`；导出需要更高 `audit.export`。查询结果按最小披露返回，不允许任意 JSON path/SQL 过滤。

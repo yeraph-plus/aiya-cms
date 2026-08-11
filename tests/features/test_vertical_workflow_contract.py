@@ -1,6 +1,6 @@
 """Vertical workflow contract fixture: submit -> notify -> review -> publish.
 
-Contract source: context/spec/features.md §5, full-rebuild-plan R6.
+Contract source: context/spec/features.md §5.
 
 This fixture proves the vertical workflow capability end to end: a
 submitted content is persisted, a notification request is created, the
@@ -186,7 +186,7 @@ async def harness(
         outbox=outbox,
         specs=notification_specs,
         resolver=FakeIdentityResolver(),
-        providers={"email": email},
+        providers={"email": (email,)},
         runner=runner,
         permissions=frozenset({"notification.request"}),
         actor_id="workflow",
@@ -197,7 +197,7 @@ async def harness(
         outbox=outbox,
         specs=notification_specs,
         resolver=FakeIdentityResolver(),
-        providers={"email": email},
+        providers={"email": (email,)},
     )
     registry.register(
         build_deliver_workflow_spec(

@@ -16,13 +16,18 @@ const registered = (names: string[]) => {
 
 describe('product menu', () => {
     it('defines the explicit product groups from the plan', () => {
-        expect(productMenu.map((group) => group.label)).toEqual(['Home', 'Identity', 'Content', 'System', 'Operations']);
+        expect(productMenu.map((group) => group.label)).toEqual(['Identity', 'Content', 'System', 'Operations']);
+        const content = productMenu.find((group) => group.label === 'Content');
+        const system = productMenu.find((group) => group.label === 'System');
+        expect(content?.items?.map((item) => item.to)).toEqual(['/content', '/content/taxonomy']);
+        expect(system?.items?.map((item) => item.to)).toContain('/system/assets');
     });
 
     it('does not contain demo or blocked contract entries', () => {
         const items = allItems(productMenu);
         const labels = items.map((item) => item.label.toLowerCase());
         expect(labels.join(' ')).not.toContain('demo');
+        expect(labels).not.toContain('seo');
         for (const blocked of ['oidc', 'notification', 'payment', 'ledger', 'media library', 'overview placeholder']) {
             expect(labels.join(' ')).not.toContain(blocked);
         }
@@ -45,6 +50,7 @@ describe('menu capability filtering', () => {
         expect(labels).toContain('Settings');
         expect(labels).not.toContain('Users');
         expect(labels).not.toContain('Posts');
+        expect(labels).not.toContain('Pages');
     });
 
     it('hides a parent group when no child survives', () => {
@@ -56,7 +62,7 @@ describe('menu capability filtering', () => {
         expect(groups).toContain('System');
     });
 
-    it('hides the Home overview until the summary capability exists', () => {
+    it('does not expose an overview placeholder before a summary provider exists', () => {
         const visible = filterMenu(productMenu, { capabilities: capabilities([]), isRouteRegistered: allRegistered() });
         expect(visible.map((group) => group.label)).not.toContain('Home');
     });

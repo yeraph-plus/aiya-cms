@@ -17,18 +17,17 @@ from pathlib import Path
 ADAPTER_DIRS = (
     ("notification", ("email_smtp", "smtp2go")),
     ("payments", ("paypal", "epay")),
-    ("content", ("s3", "openlist")),
+    ("assets", ("s3",)),
+    ("content", ("openlist",)),
 )
 
-PLACEHOLDERS = (
-    "inc.adapters.notification.smtp2go",
-    "inc.adapters.payments.paypal",
-    "inc.adapters.content.s3",
-)
+PLACEHOLDERS = ("inc.adapters.payments.paypal",)
 
 IMPLEMENTED = (
     "inc.adapters.notification.email_smtp",
+    "inc.adapters.notification.smtp2go",
     "inc.adapters.payments.epay",
+    "inc.adapters.assets.s3",
     "inc.adapters.content.openlist",
 )
 
@@ -64,4 +63,12 @@ def test_email_smtp_adapter_imports_only_expected_dependencies() -> None:
 
     source = Path(adapter.__file__).read_text(encoding="utf-8")
     assert "aiosmtplib" in source
+    assert "from inc.capabilities.notification.ports import" in source
+
+
+def test_smtp2go_adapter_uses_requests_and_notification_port() -> None:
+    import inc.adapters.notification.smtp2go as adapter
+
+    source = Path(adapter.__file__).read_text(encoding="utf-8")
+    assert "requests" in source
     assert "from inc.capabilities.notification.ports import" in source

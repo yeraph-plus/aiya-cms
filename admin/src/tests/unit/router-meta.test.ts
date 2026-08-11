@@ -29,9 +29,34 @@ describe('production route meta contract', () => {
         }
     });
 
-    it('keeps the shell landing route for authenticated redirect', () => {
+    it('does not register an overview placeholder before the summary provider exists', () => {
         const root = appRoutes.find((record) => record.path === '/');
         const landing = root?.children?.find((record) => record.path === '');
-        expect(landing?.meta?.shell).toBe('app');
+        expect(landing).toBeUndefined();
+    });
+
+    it('registers the settings, audit and assets endpoint groups as explicit pages', () => {
+        const routes = leaves(appRoutes);
+        expect(routes.map((route) => route.path)).toEqual(expect.arrayContaining(['system/settings', 'system/audit', 'system/execution', 'system/assets']));
+        expect(routes.map((route) => route.path)).not.toContain('system/settings/:groupKey');
+        expect(routes.map((route) => route.path)).not.toContain('system/seo');
+        expect(routes.find((route) => route.name === 'system-assets')?.meta?.requiredCapability).toBe('assets.read');
+        expect(routes.find((route) => route.name === 'system-settings')?.meta?.requiredCapability).toBe('settings.read');
+        expect(routes.find((route) => route.name === 'system-audit')?.meta?.requiredCapability).toBe('audit.read');
+        expect(routes.find((route) => route.name === 'system-execution')?.meta?.requiredCapability).toBe('audit.read');
+    });
+
+    it('uses one content list for every registered content type', () => {
+        const routes = leaves(appRoutes);
+        expect(routes.map((route) => route.path)).toEqual(expect.arrayContaining(['content', 'content/new', 'content/:contentId([0-9a-fA-F-]{36})', 'content/taxonomy']));
+        expect(routes.map((route) => route.path)).not.toContain('content/posts');
+        expect(routes.map((route) => route.path)).not.toContain('content/pages');
+    });
+
+    it('registers the user list behind the read capability without a detail sub-route', () => {
+        const routes = leaves(appRoutes);
+        expect(routes.map((route) => route.path)).toContain('identity/users');
+        expect(routes.map((route) => route.path)).not.toContain('identity/users/:userId');
+        expect(routes.find((route) => route.name === 'identity-users')?.meta?.requiredCapability).toBe('identity.users.read');
     });
 });

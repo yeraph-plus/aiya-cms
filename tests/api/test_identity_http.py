@@ -72,7 +72,7 @@ async def test_ban_blocks_bearer_and_delete_marks_status(
     user_headers = {"Authorization": f"Bearer {user_token}"}
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    assert (await client.get("/api/v1/auth/me", headers=user_headers)).status_code == 200
+    assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 200
 
     banned = await client.post(
         f"/api/v1/admin/users/{created.subject.id}/ban",
@@ -83,7 +83,7 @@ async def test_ban_blocks_bearer_and_delete_marks_status(
     assert banned.json()["status"] == "banned"
 
     # ban triggers the security event but the bearer check re-reads status
-    assert (await client.get("/api/v1/auth/me", headers=user_headers)).status_code == 401
+    assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 401
 
     deleted = await client.delete(
         f"/api/v1/admin/users/{created.subject.id}", headers=admin_headers
@@ -131,7 +131,7 @@ async def test_unban_restores_active_status(
     )
     assert banned.status_code == 200
     assert banned.json()["status"] == "banned"
-    assert (await client.get("/api/v1/auth/me", headers=user_headers)).status_code == 401
+    assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 401
 
     unbanned = await client.post(
         f"/api/v1/admin/users/{created.subject.id}/unban", headers=admin_headers
@@ -141,7 +141,7 @@ async def test_unban_restores_active_status(
 
     # the security event already went out with the unban; the bearer re-reads
     # status so the same token authenticates again immediately
-    assert (await client.get("/api/v1/auth/me", headers=user_headers)).status_code == 200
+    assert (await client.get("/api/v1/me", headers=user_headers)).status_code == 200
 
 
 async def test_unban_rejects_non_banned_and_unknown(

@@ -21,8 +21,9 @@ from inc.capabilities.identity.commands import (
     CommandContext,
     DeleteUser,
     UnbanUser,
+    UpdateProfile,
 )
-from inc.capabilities.identity.schemas import SubjectDTO
+from inc.capabilities.identity.schemas import SubjectDTO, UpdateProfileInput
 from inc.kernel.db import Page
 
 
@@ -48,6 +49,7 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "identity.users.ban",
     "identity.users.unban",
     "identity.users.delete",
+    "identity.users.update",
 )
 
 
@@ -82,6 +84,14 @@ def build_router(
                 message=f"user {user_id}",
             )
         return subject
+
+    @router.patch("/users/{user_id}", response_model=SubjectDTO)
+    async def update_user_profile(
+        body: UpdateProfileInput,
+        user_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("identity.users.update")),
+    ) -> SubjectDTO:
+        return await UpdateProfile(_ctx(ctx, services))(user_id=str(user_id), changes=body)
 
     @router.post("/users/{user_id}/ban", response_model=SubjectDTO)
     async def ban_user(

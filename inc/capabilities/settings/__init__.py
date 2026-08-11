@@ -22,6 +22,7 @@ from inc.capabilities.settings.service import (
     ResetSettingGroup,
     SettingsQueries,
     UpdateSettingGroup,
+    redact_sensitive_group,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "SettingOption",
     "SettingsQueries",
     "UpdateSettingGroup",
+    "redact_sensitive_group",
 ]

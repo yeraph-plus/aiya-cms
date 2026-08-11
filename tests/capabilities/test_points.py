@@ -180,6 +180,25 @@ async def test_open_account_creates_single_perpetual_bucket(
     assert balance.account_id
 
 
+async def test_credit_implicitly_opens_account(
+    ctx: CommandContext, program: None, queries: PointsQueries
+) -> None:
+    entry = await CreditPoints(ctx)(
+        PURCHASE_KEY,
+        credit_input(
+            amount=7,
+            source_type="payment",
+            source_id="purchase-auto-open",
+            idempotency_key="auto-open-credit",
+        ),
+    )
+    assert entry.amount == 7
+    balance = await queries.get_balance(
+        program_key="default", subject_type=SUBJECT[0], subject_id=SUBJECT[1]
+    )
+    assert balance.balance == 7
+
+
 async def test_unknown_behavior_is_validation_error(ctx: CommandContext, program: None) -> None:
     with pytest.raises(KernelError) as excinfo:
         await CreditPoints(ctx)("ghost.reward.v1", credit_input())
@@ -187,10 +206,9 @@ async def test_unknown_behavior_is_validation_error(ctx: CommandContext, program
     assert excinfo.value.category.value == "validation"
 
 
-async def test_credit_requires_opened_account(ctx: CommandContext, program: None) -> None:
-    with pytest.raises(KernelError) as excinfo:
-        await CreditPoints(ctx)(REWARD_KEY, credit_input())
-    assert excinfo.value.code == "points.account_not_opened"
+async def test_credit_auto_opens_account_for_reward(ctx: CommandContext, program: None) -> None:
+    entry = await CreditPoints(ctx)(REWARD_KEY, credit_input())
+    assert entry.amount == 10
 
 
 # --- credit / idempotency -------------------------------------------------

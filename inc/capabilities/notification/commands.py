@@ -57,7 +57,7 @@ class CommandContext:
     outbox: OutboxWriter
     specs: NotificationSpecRegistry
     resolver: RecipientResolver
-    providers: dict[str, NotificationProvider]
+    providers: dict[str, tuple[NotificationProvider, ...]]
     runner: WorkflowRunner
     permissions: frozenset[str] = frozenset()
     actor_id: str | None = None
@@ -331,13 +331,13 @@ def _digest(value: str) -> str:
 def _provider_for(
     ctx: CommandContext, spec: NotificationSpec, channel: str
 ) -> NotificationProvider:
-    provider = ctx.providers.get(channel)
-    if provider is None:
+    providers = ctx.providers.get(channel, ())
+    if not providers:
         raise _conflict(
             "notification.channel_unbound",
             f"no provider bound for channel {channel!r} (spec {spec.key})",
         )
-    return provider
+    return providers[0]
 
 
 class CancelPendingNotification:

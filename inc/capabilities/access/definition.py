@@ -19,5 +19,6 @@ spec = CapabilitySpec(
         "access.roles.manage",
         "access.roles.assign",
         "access.bootstrap",
+        "access.dashboard.read",
     ),
 )

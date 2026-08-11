@@ -14,49 +14,26 @@ in any response body (identity.md §4/§6).
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
-from inc.capabilities.assets.commands import (
-    FINALIZE_WORKFLOW_KEY,
-    CreateUploadIntent,
-    FinalizeAsset,
-)
-from inc.capabilities.assets.commands import (
-    CommandContext as AssetCommandContext,
-)
-from inc.capabilities.assets.schemas import CreateUploadIntentInput, CreateUploadIntentResult
+from inc.capabilities.assets.schemas import CreateUploadIntentResult
 from inc.capabilities.identity.commands import (
     CommandContext,
     RegisterLocalUser,
     RequestPasswordReset,
     ResetPassword,
-    UpdateProfile,
     VerifyEmail,
 )
 from inc.capabilities.identity.schemas import SubjectDTO, UpdateProfileInput
 from inc.capabilities.oidc_provider.schemas import GrantConsentDTO
-from inc.capabilities.points import DEFAULT_PROGRAM_KEY
-from inc.features.check_in.schemas import BalanceViewDTO
-from inc.features.check_in.workflows import REWARD_BEHAVIOR
-from inc.kernel.errors import KernelError
-
-
-class MeDTO(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    subject_id: str
-    username: str | None = None
-    display_name: str | None = None
-    avatar_asset_id: str | None = None
-    avatar_url: str | None = None
-    status: str
-    capabilities: list[str] = []
-    points: BalanceViewDTO | None = None
+from inc.features.check_in.api import MeService
+from inc.features.check_in.schemas import MeDTO
+from inc.kernel.errors import ErrorCategory, KernelError
 
 
 class RegisterInput(BaseModel):
@@ -119,102 +96,14 @@ def _public_ctx(services: Services, request: Request) -> CommandContext:
     )
 
 
-def _identity_ctx(services: Services, ctx: AppContext) -> CommandContext:
-    return CommandContext(
-        uow_factory=services.uow_factory,
-        clock=services.clock,
-        outbox=services.outbox,
-        hasher=services.hasher,
-        audit_actor_id=ctx.principal.subject_id,
-        audit_trace_id=ctx.trace_id,
-    )
-
-
-def _asset_ctx(services: Services, ctx: AppContext) -> AssetCommandContext:
-    if services.asset_queries is None or not services.asset_providers:
-        from inc.kernel.errors import ErrorCategory
-
+def _me_service(services: Services) -> MeService:
+    if services.me is None:
         raise KernelError(
-            code="assets.unavailable",
+            code="profile.unavailable",
             category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
-            message="assets capability is not available",
+            message="self-service feature is not available",
         )
-    return AssetCommandContext(
-        uow_factory=services.uow_factory,
-        clock=services.clock,
-        outbox=services.outbox,
-        providers=services.asset_providers,
-        runner=services.runner,
-        permissions=frozenset({"assets.upload", "assets.read"}),
-        actor_id=ctx.principal.subject_id,
-        trace_id=ctx.trace_id,
-    )
-
-
-async def _me_dto(services: Services, ctx: AppContext, subject: SubjectDTO) -> MeDTO:
-    avatar_url: str | None = None
-    if subject.avatar_asset_id is not None and services.asset_queries is not None:
-        from inc.kernel.errors import ErrorCategory
-
-        try:
-            permissions = frozenset(ctx.principal.capabilities)
-            asset_id = uuid.UUID(subject.avatar_asset_id)
-            if "assets.read" not in permissions:
-                asset = await services.asset_queries.get(
-                    asset_id, permissions=frozenset({"assets.read"})
-                )
-                avatar_bucket = await services.settings_queries.get_value(
-                    "object_storage", "s3_avatar_bucket"
-                )
-                if asset is None or asset.bucket != avatar_bucket:
-                    raise KernelError(
-                        code="assets.forbidden",
-                        category=ErrorCategory.FORBIDDEN,
-                        message="avatar is not in the subject avatar bucket",
-                    )
-                permissions = frozenset({"assets.read"})
-            avatar_url = (
-                await services.asset_queries.resolve_url(asset_id, permissions=permissions)
-            ).url
-        except KernelError:
-            # A deleted, pending or unavailable asset is represented as no URL;
-            # the stable opaque ID remains useful for profile management.
-            avatar_url = None
-    points: BalanceViewDTO | None = None
-    try:
-        program_key = services.behaviors.require(REWARD_BEHAVIOR).program_key
-    except KernelError as exc:
-        if exc.code != "points.unknown_behavior":
-            raise
-    else:
-        try:
-            balance = await services.points_queries.get_balance(
-                program_key=program_key,
-                subject_type="identity",
-                subject_id=subject.id,
-            )
-        except KernelError as exc:
-            if exc.code not in {"points.account_not_opened", "points.program_inactive"}:
-                raise
-            points = BalanceViewDTO(
-                opened=False, program_key=program_key or DEFAULT_PROGRAM_KEY, balance=0
-            )
-        else:
-            points = BalanceViewDTO(
-                opened=True,
-                program_key=balance.program_key,
-                balance=balance.balance,
-            )
-    return MeDTO(
-        subject_id=subject.id,
-        username=subject.username,
-        display_name=subject.display_name,
-        avatar_asset_id=subject.avatar_asset_id,
-        avatar_url=avatar_url,
-        status=subject.status,
-        capabilities=sorted(ctx.principal.capabilities),
-        points=points,
-    )
+    return cast(MeService, services.me)
 
 
 def build_router(
@@ -228,44 +117,33 @@ def build_router(
     async def me(
         ctx: AppContext = Depends(require_authenticated()),
     ) -> MeDTO:
-        subject = await services.identity_queries.get_subject(ctx.principal.subject_id)
-        if subject is None:
-            from inc.kernel.errors import ErrorCategory, KernelError
-
-            raise KernelError(
-                code="identity.not_found",
-                category=ErrorCategory.NOT_FOUND,
-                message="subject disappeared",
-            )
-        return await _me_dto(services, ctx, subject)
+        return await _me_service(services).get(
+            subject_id=ctx.principal.subject_id,
+            capabilities=frozenset(ctx.principal.capabilities),
+        )
 
     @router.patch("/me", response_model=MeDTO)
     async def update_me(
         body: UpdateProfileInput,
         ctx: AppContext = Depends(require_authenticated()),
     ) -> MeDTO:
-        subject = await UpdateProfile(_identity_ctx(services, ctx))(
-            user_id=ctx.principal.subject_id,
+        return await _me_service(services).update(
+            subject_id=ctx.principal.subject_id,
             changes=body,
+            capabilities=frozenset(ctx.principal.capabilities),
+            trace_id=ctx.trace_id,
         )
-        return await _me_dto(services, ctx, subject)
 
     @router.post("/me/avatar/upload-intents", response_model=CreateUploadIntentResult)
     async def create_avatar_upload_intent(
         body: AvatarUploadIntentInput,
         ctx: AppContext = Depends(require_authenticated()),
     ) -> CreateUploadIntentResult:
-        asset_ctx = _asset_ctx(services, ctx)
-        avatar_bucket = await services.settings_queries.get_value(
-            "object_storage", "s3_avatar_bucket"
-        )
-        return await CreateUploadIntent(asset_ctx)(
-            CreateUploadIntentInput(
-                provider_key="s3",
-                bucket=avatar_bucket,
-                mime_types=body.mime_types,
-                content_length_max=body.content_length_max,
-            )
+        return await _me_service(services).create_avatar_upload_intent(
+            subject_id=ctx.principal.subject_id,
+            trace_id=ctx.trace_id,
+            mime_types=body.mime_types,
+            content_length_max=body.content_length_max,
         )
 
     @router.post("/me/avatar/upload-intents/{intent_id}/finalize", response_model=MeDTO)
@@ -273,47 +151,12 @@ def build_router(
         intent_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_authenticated()),
     ) -> MeDTO:
-        asset_ctx = _asset_ctx(services, ctx)
-        await FinalizeAsset(asset_ctx)(intent_id)
-        instance = await services.runner.find_by_business_key(
-            workflow_key=FINALIZE_WORKFLOW_KEY,
-            idempotency_key=f"intent:{intent_id}",
+        return await _me_service(services).finalize_avatar_upload(
+            subject_id=ctx.principal.subject_id,
+            trace_id=ctx.trace_id,
+            intent_id=intent_id,
+            capabilities=frozenset(ctx.principal.capabilities),
         )
-        if instance is None:
-            from inc.kernel.errors import ErrorCategory, KernelError
-
-            raise KernelError(
-                code="assets.finalize_not_started",
-                category=ErrorCategory.CONFLICT,
-                message="avatar finalize workflow was not started",
-            )
-        await services.runner.advance(instance.id)
-        asset_queries = services.asset_queries
-        if asset_queries is None:
-            from inc.kernel.errors import ErrorCategory, KernelError
-
-            raise KernelError(
-                code="assets.unavailable",
-                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
-                message="assets capability is not available",
-            )
-        asset = await asset_queries.get_by_upload_intent(
-            intent_id,
-            permissions=frozenset({"assets.read"}),
-        )
-        if asset is None:
-            from inc.kernel.errors import ErrorCategory, KernelError
-
-            raise KernelError(
-                code="assets.finalize_pending",
-                category=ErrorCategory.CONFLICT,
-                message="avatar upload has not reached ready state",
-            )
-        subject = await UpdateProfile(_identity_ctx(services, ctx))(
-            user_id=ctx.principal.subject_id,
-            changes=UpdateProfileInput(avatar_asset_id=asset.id),
-        )
-        return await _me_dto(services, ctx, subject)
 
     grants = services.oidc_grants
     if grants is not None:

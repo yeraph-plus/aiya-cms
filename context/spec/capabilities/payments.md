@@ -47,7 +47,7 @@ payments 声明：
 
 adapter 负责 SDK、credential、签名算法、timeout、provider idempotency、错误归一化和 API version。provider-specific payload 不得进入公开 Payment DTO 或 points。
 
-首个 provider 在实现 R7 前选择；选择只新增 adapter/config 和 provider 合同测试，不改变 payments/points 核心模型。
+具体 provider 由部署在 provider 合同冻结后显式选择；选择只新增 adapter/config 和 provider 合同测试，不改变 payments/points 核心模型。
 
 ## 6. Commands 与 webhook
 
@@ -65,6 +65,7 @@ webhook 入口必须先基于原始 bytes、签名 header、时间窗和 provide
 ## 7. 幂等和失败
 
 - `(provider, order idempotency key)` 唯一，重复创建不产生第二笔应付订单。
+- 订单读取 DTO 携带本地 idempotency key，供 workflow 桥接按 `(workflow key, idempotency key)` 定位等待中的实例；它不携带 provider-specific payload。
 - 调 provider 时传稳定 idempotency key（若支持）。
 - 请求超时结果不明时标记 unknown/pending 并查询 provider，不盲目再创建支付。
 - webhook 可重复、延迟和乱序；状态转换必须单调或由明确 reconciliation 纠正。

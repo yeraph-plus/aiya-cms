@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
 import { APP_NAME } from '@/env';
 import { createLoginFormArgs, submitLogin as submitOidcLogin, type LoginFormArgs } from '@/auth/oidc';
+import { storePendingRedirect } from '@/auth/storage';
 
 const route = useRoute();
 const router = useRouter();
@@ -16,6 +17,7 @@ const submitting = ref(false);
 const expired = route.query.reason === 'expired';
 
 onMounted(async () => {
+    storePendingRedirect(route.query.redirect as string | null);
     try {
         loginForm.value = await createLoginFormArgs();
     } catch (caught) {

@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, Path, Query
+from pydantic import BaseModel, ConfigDict
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
@@ -33,6 +34,12 @@ from inc.capabilities.assets.schemas import (
     ResolvedAssetUrlDTO,
     UpdateAssetMetadataInput,
 )
+
+
+class ConfiguredBucketsDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    buckets: list[str]
 
 
 def _ctx(ctx: AppContext, services: Services) -> CommandContext:
@@ -83,6 +90,22 @@ def build_router(
             search=search,
             permissions=frozenset(ctx.principal.capabilities),
         )
+
+    @router.get("/assets/buckets", response_model=ConfiguredBucketsDTO)
+    async def list_configured_buckets(
+        ctx: AppContext = Depends(require_capability("assets.read")),
+    ) -> ConfiguredBucketsDTO:
+        del ctx
+        group = await services.settings_queries.get_group("object_storage")
+        values = group.values
+        buckets = sorted(
+            {
+                str(value).strip()
+                for key, value in values.items()
+                if key.endswith("_bucket") and isinstance(value, str) and value.strip()
+            }
+        )
+        return ConfiguredBucketsDTO(buckets=buckets)
 
     @router.post("/assets/upload-intents", response_model=CreateUploadIntentResult)
     async def create_upload_intent(

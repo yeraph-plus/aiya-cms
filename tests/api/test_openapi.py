@@ -25,7 +25,11 @@ def test_cms_schema_contains_expected_contract() -> None:
     for expected in (
         "/healthz",
         "/api/v1/health",
-        "/api/v1/auth/me",
+        "/api/v1/me",
+        "/api/v1/me/points/ledger",
+        "/api/v1/admin/points/ledger",
+        "/api/v1/auth/grants",
+        "/api/v1/auth/grants/{client_id}",
         "/api/v1/admin/content",
         "/api/v1/admin/users",
         "/api/v1/admin/taxonomy/dimensions",

@@ -29,13 +29,29 @@ async def test_start_stop_is_idempotent_and_clean(
         manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings
     )
     await container.start()
-    assert len(container._tasks) == 4  # outbox + workflow + publish scan + points expire
+    assert len(container._tasks) == 4  # outbox + workflow + CronScheduler + TaskWorker
     with pytest.raises(KernelError) as excinfo:
         await container.start()  # double start must fail
     assert excinfo.value.code == "kernel.container_already_started"
     await container.stop()
     assert container._tasks == []
     await container.stop()  # stop is idempotent
+
+
+async def test_cms_registers_cron_work_with_kernel_task_runtime(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    container = build_container(
+        manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings
+    )
+
+    assert "content.publish.scan.v1" in container.cron_registry.keys()
+    assert "points.buckets.expire.v1" in container.cron_registry.keys()
+    assert "membership.subscription.expire.v1" in container.cron_registry.keys()
+    assert "oidc.keys.cleanup.v1" in container.cron_registry.keys()
+    assert "site.cleanup.retention.v1" in container.cron_registry.keys()
+    assert "content.publish.scan.v1.tick" in container.task_registry.keys()
+    assert "site.cleanup.retention.v1.tick" in container.task_registry.keys()
 
 
 async def test_start_requires_frozen_container(
@@ -79,7 +95,7 @@ async def test_duplicate_manifest_entries_fail(
     assert excinfo.value.code == "kernel.manifest_duplicate"
 
 
-async def test_production_denies_dev_storage(uow_factory: Any, clock: Any) -> None:
+async def test_production_denies_dev_payment_adapter(uow_factory: Any, clock: Any) -> None:
     production = ApiSettings(
         environment="production",
         issuer="https://cms.example.com",
@@ -114,33 +130,32 @@ async def test_production_gate_holds_on_direct_construction() -> None:
         ApiSettings(environment="production", issuer="https://cms.example.com")
 
 
-async def test_assets_dev_storage_only_created_when_bound(
+async def test_assets_s3_provider_only_created_when_bound(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
-    """Enabling the assets capability without binding assets.dev_memory must
-    not create a live in-memory provider (production guard leak)."""
-    from inc.api.container import _binds_dev_storage
-
-    manifest_with_dev = AppManifest(
-        name="with-dev-storage",
+    """Assets resolves the explicit S3 provider and fails closed when unbound."""
+    manifest_with_s3 = AppManifest(
+        name="with-s3-storage",
         capabilities=("assets",),
         routers=("assets",),
-        adapters=(("assets.object_storage", "assets.dev_memory"),),
+        adapters=(("assets.object_storage", "assets.s3"),),
     )
-    assert _binds_dev_storage(manifest_with_dev)
-    container_dev = build_container(
-        manifest=manifest_with_dev, uow_factory=uow_factory, clock=clock, settings=settings
+    container_s3 = build_container(
+        manifest=manifest_with_s3, uow_factory=uow_factory, clock=clock, settings=settings
     )
-    assert container_dev.services.dev_storage is not None
+    assert container_s3.services.asset_providers["s3"].key == "s3"
 
-    # a non-dev storage binding is not considered dev-memory
-    manifest_other = AppManifest(
-        name="other-storage",
+    manifest_unknown = AppManifest(
+        name="unknown-storage",
         capabilities=("assets",),
         routers=("assets",),
-        adapters=(("assets.object_storage", "assets.s3_real"),),
+        adapters=(("assets.object_storage", "assets.unknown"),),
     )
-    assert not _binds_dev_storage(manifest_other)
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest_unknown, uow_factory=uow_factory, clock=clock, settings=settings
+        )
+    assert excinfo.value.code == "kernel.adapter_unknown"
 
     # assets with no object_storage binding fails closed on the required port
     manifest_unbound = AppManifest(
@@ -155,7 +170,7 @@ async def test_assets_dev_storage_only_created_when_bound(
     assert excinfo.value.code == "kernel.port_unbound"
 
 
-async def test_oidc_without_identity_fails_on_handler_schema(
+async def test_oidc_without_identity_fails_on_capability_dependency(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
     manifest = AppManifest(
@@ -170,7 +185,7 @@ async def test_oidc_without_identity_fails_on_handler_schema(
     )
     with pytest.raises(KernelError) as excinfo:
         build_container(manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings)
-    assert excinfo.value.code == "kernel.handler_schema_missing"
+    assert excinfo.value.code == "kernel.capability_requires_missing"
 
 
 async def test_worker_loop_survives_failures_and_logs(

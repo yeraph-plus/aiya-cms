@@ -27,6 +27,39 @@ from inc.kernel.errors import ErrorCategory, KernelError
 
 ALLOWED_CLAIMS = ("sub", "name", "email", "email_verified", "preferred_username")
 
+# Port ownership and provider requirements are validated by the composition
+# root before any concrete adapter is constructed.
+PORT_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "oidc.subject_authenticator": ("oidc_provider", ("identity",)),
+    "oidc.subject_claims": ("oidc_provider", ("identity",)),
+    "oidc.authorization_decision": ("oidc_provider", ("access",)),
+    "oidc.security_events": ("oidc_provider", ("oidc_provider",)),
+    "taxonomy.target_exists": ("taxonomy", ("content",)),
+    "assets.object_storage": ("assets", ()),
+    "payments.provider": ("payments", ()),
+    "notification.email": ("notification", ("settings",)),
+    "membership.subject_exists": ("membership", ("identity",)),
+    "membership.points_ledger": ("membership", ("points",)),
+}
+
+ADAPTER_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "identity.credential": ("identity",),
+    "identity.profile": ("identity",),
+    "access.authorize": ("access",),
+    "oidc.session_revoker": ("oidc_provider",),
+    "content.exists": ("content",),
+    "content.batch_exists": ("content",),
+    "assets.s3": (),
+    "payments.dev_fake": (),
+    "email.smtp": ("settings",),
+    "email.smtp2go": ("settings",),
+    "membership.subject_exists": ("identity",),
+    "membership.points_ledger": ("points",),
+}
+
+KNOWN_ADAPTERS = frozenset(ADAPTER_REQUIREMENTS)
+MULTI_PROVIDER_PORTS = frozenset({"notification.email"})
+
 
 class IdentityCredentialAuthenticator(SubjectAuthenticator):
     """Local username/email + password login."""
@@ -158,7 +191,7 @@ def resolve_adapters(
 
     resolved: dict[str, Any] = {}
     for port, adapter in bindings:
-        if port in resolved:
+        if port in resolved and port not in MULTI_PROVIDER_PORTS:
             raise KernelError(
                 code="kernel.port_duplicate",
                 category=ErrorCategory.INTERNAL,
@@ -171,11 +204,29 @@ def resolve_adapters(
         elif adapter == "access.authorize":
             resolved[port] = AccessAuthorizationReader(authorize=authorize)
         elif adapter == "oidc.session_revoker":
+            if session_revoker is None:
+                raise KernelError(
+                    code="kernel.adapter_dependency_missing",
+                    category=ErrorCategory.INTERNAL,
+                    message="adapter 'oidc.session_revoker' requires the oidc_provider capability",
+                )
             resolved[port] = session_revoker
         elif adapter == "content.exists":
-            resolved[port] = TaxonomyContentExists(queries=content_queries)  # type: ignore[arg-type]
+            if content_queries is None:
+                raise KernelError(
+                    code="kernel.adapter_dependency_missing",
+                    category=ErrorCategory.INTERNAL,
+                    message="adapter 'content.exists' requires the content capability",
+                )
+            resolved[port] = TaxonomyContentExists(queries=content_queries)
         elif adapter == "content.batch_exists":
-            resolved[port] = ContentBatchExists(queries=content_queries)  # type: ignore[arg-type]
+            if content_queries is None:
+                raise KernelError(
+                    code="kernel.adapter_dependency_missing",
+                    category=ErrorCategory.INTERNAL,
+                    message="adapter 'content.batch_exists' requires the content capability",
+                )
+            resolved[port] = ContentBatchExists(queries=content_queries)
         elif adapter == "assets.s3":
             from inc.adapters.assets import S3ObjectStorage
 
@@ -186,6 +237,16 @@ def resolve_adapters(
             from inc.adapters.payments.dev_fake import DevFakePaymentProvider
 
             resolved[port] = DevFakePaymentProvider()
+        elif adapter == "email.smtp":
+            from inc.adapters.notification import SmtpEmailAdapter
+
+            smtp_provider = SmtpEmailAdapter(settings_queries=settings_queries)
+            resolved[port] = (*resolved.get(port, ()), smtp_provider)
+        elif adapter == "email.smtp2go":
+            from inc.adapters.notification import Smtp2GoEmailAdapter
+
+            smtp2go_provider = Smtp2GoEmailAdapter(settings_queries=settings_queries)
+            resolved[port] = (*resolved.get(port, ()), smtp2go_provider)
         elif adapter == "membership.subject_exists":
             from inc.adapters.membership import IdentitySubjectExists
 

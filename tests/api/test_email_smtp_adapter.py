@@ -17,16 +17,25 @@ from typing import Any
 
 import pytest
 
-from inc.adapters.notification.email_smtp import SmtpEmailAdapter, SmtpSettings
+from inc.adapters.notification.email_smtp import SmtpEmailAdapter
 from inc.capabilities.notification.ports import (
     ProviderError,
     ProviderResult,
     RecipientTarget,
 )
 
-MAILPIT_HOST = "127.0.0.1"
+MAILPIT_HOST = os.environ.get("MAILPIT_HOST", "127.0.0.1")
 MAILPIT_SMTP_PORT = int(os.environ.get("MAILPIT_SMTP_PORT", "2525"))
 MAILPIT_UI_PORT = int(os.environ.get("MAILPIT_UI_PORT", "8025"))
+
+
+class _SettingsReader:
+    def __init__(self, values: dict[str, Any]) -> None:
+        self.values = values
+
+    async def get_group(self, group_key: str) -> Any:
+        assert group_key == "notification"
+        return type("SettingGroup", (), {"values": dict(self.values)})()
 
 
 def _mailpit_serving() -> bool:
@@ -65,12 +74,16 @@ async def test_smtp_send_delivers() -> None:
     # The Docker userland proxy on Windows can delay the SMTP banner well past
     # the adapter's default 15s timeout, so use a generous per-test timeout.
     adapter = SmtpEmailAdapter(
-        settings=SmtpSettings(
-            host=MAILPIT_HOST,
-            port=MAILPIT_SMTP_PORT,
-            from_address="sender@example.com",
-            timeout_seconds=30.0,
-        )
+        settings_queries=_SettingsReader(
+            {
+                "email_enabled": True,
+                "smtp_enabled": True,
+                "smtp_host": MAILPIT_HOST,
+                "smtp_port": MAILPIT_SMTP_PORT,
+                "smtp_from_address": "sender@example.com",
+            }
+        ),
+        timeout_seconds=30.0,
     )
     result = await adapter.send(
         target=_target(),
@@ -84,7 +97,17 @@ async def test_smtp_send_delivers() -> None:
 
 
 async def test_smtp_connection_error_classified_transient(monkeypatch: Any) -> None:
-    adapter = SmtpEmailAdapter(settings=SmtpSettings(host="127.0.0.1", port=1, timeout_seconds=2.0))
+    adapter = SmtpEmailAdapter(
+        settings_queries=_SettingsReader(
+            {
+                "email_enabled": True,
+                "smtp_enabled": True,
+                "smtp_host": "127.0.0.1",
+                "smtp_port": 1,
+            }
+        ),
+        timeout_seconds=2.0,
+    )
 
     async def _boom(*args: Any, **kwargs: Any) -> str:
         raise OSError("connection refused")
@@ -94,12 +117,22 @@ async def test_smtp_connection_error_classified_transient(monkeypatch: Any) -> N
         await adapter.send(target=_target(), subject="x", body="y", idempotency_key="delivery-2:1")
     assert excinfo.value.permanent is False
     assert excinfo.value.retry_category.value == "transient"
+    assert excinfo.value.fallback_allowed is True
 
 
 async def test_smtp_auth_error_classified_permanent(monkeypatch: Any) -> None:
     import aiosmtplib
 
-    adapter = SmtpEmailAdapter(settings=SmtpSettings(host=MAILPIT_HOST, port=MAILPIT_SMTP_PORT))
+    adapter = SmtpEmailAdapter(
+        settings_queries=_SettingsReader(
+            {
+                "email_enabled": True,
+                "smtp_enabled": True,
+                "smtp_host": MAILPIT_HOST,
+                "smtp_port": MAILPIT_SMTP_PORT,
+            }
+        )
+    )
 
     async def _boom(*args: Any, **kwargs: Any) -> str:
         raise aiosmtplib.SMTPAuthenticationError(535, b"authentication failed")
@@ -109,3 +142,4 @@ async def test_smtp_auth_error_classified_permanent(monkeypatch: Any) -> None:
         await adapter.send(target=_target(), subject="x", body="y", idempotency_key="delivery-3:1")
     assert excinfo.value.permanent is True
     assert excinfo.value.retry_category.value == "permanent"
+    assert excinfo.value.fallback_allowed is True

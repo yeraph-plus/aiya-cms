@@ -25,7 +25,7 @@ async def program(uow_factory: Any) -> None:
     async with uow_factory() as uow:
         uow.session.add(
             PointsProgram(
-                program_key="default", display_name="Default", unit="points", status="active"
+                program_key="credit", display_name="Credit", unit="points", status="active"
             )
         )
         await uow.commit()
@@ -65,11 +65,9 @@ async def _drive_workflows(client: Any, clock: Any, rounds: int = 4) -> None:
 
 
 async def _balance(client: Any, token: str) -> int:
-    response = await client.get(
-        "/api/v1/points/balance", headers={"Authorization": f"Bearer {token}"}
-    )
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200, response.text
-    return response.json()["balance"]
+    return response.json()["points"]["balance"]
 
 
 async def test_membership_offers_require_auth_and_list_levels(client: Any, program: None) -> None:

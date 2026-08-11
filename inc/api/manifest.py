@@ -16,8 +16,8 @@ mount a manifest that binds only audited providers. Do not deploy ``cms`` with
 any other/unset environment value — real traffic would silently run on the fake
 provider, which also ships a hardcoded webhook secret.
 
-notification (R6) is not part of the closed loop yet; the manifest reflects
-only shipped capabilities.
+notification is not enabled by this manifest; any notification-enabled
+deployment must bind its providers explicitly.
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ cms = AppManifest(
         "points",
         "payments",
         "membership",
+        "engagement",
     ),
     features=(
         "post",
@@ -60,6 +61,7 @@ cms = AppManifest(
         "check_in",
         "point_purchase",
         "membership_purchase",
+        "content_engagement",
     ),
     adapters=(
         ("oidc.subject_authenticator", "identity.credential"),
@@ -74,10 +76,13 @@ cms = AppManifest(
     ),
     routers=(
         "health",
+        "dashboard",
         "auth",
         "identity",
         "access",
         "content",
+        "content_public",
+        "engagement",
         "taxonomy",
         "settings",
         "assets",
@@ -90,6 +95,7 @@ cms = AppManifest(
         "point_purchase",
         "payments",
         "membership_purchase",
+        "membership_admin",
     ),
     workers=("outbox", "workflow", "task"),
     cron_enabled=True,

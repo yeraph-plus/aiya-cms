@@ -20,6 +20,7 @@
 - `inc/kernel`：技术内核；规格见 `context/spec/kernel/`。
 - `inc/capabilities`：可独立装配的业务能力；规格见 `context/spec/capabilities/`。
 - `inc/features`：垂直业务声明与持久化工作流；规格见 `context/spec/features.md`。
+- `inc/adapters`：外部 Port 实现库，按 capability 分目录，可被 api 与 feature 使用；规格见 `context/spec/adapters.md`。
 - `inc/api`：应用组合根与 HTTP 适配层；规格见 `context/spec/composition.md` 和 `context/spec/http-openapi.md`。
 - `admin`：Vue 管理员 SPA，只依赖 OpenAPI；规格见 `context/spec/admin.md`。
 - `alembic`：迁移汇总入口；表与 revision 所有权见 `context/spec/kernel/database.md`。
@@ -29,15 +30,17 @@
 
 ## 运行与验证
 
-宿主机使用 Docker Compose：
+宿主机使用 Docker Compose（infra 单独管理 PostgreSQL/Redis，backend 镜像内建全部一次性命令）：
 
 ```powershell
-docker compose --profile runtime up -d --build
-docker compose --profile ops run --rm create-admin --username admin --email admin@example.com
-docker compose --profile test run --rm backend-quality
-docker compose --profile test run --rm backend-test
-docker compose --profile test run --rm admin-quality
-docker compose --profile review run --rm opencode-review
+docker compose -f compose.infra.yaml up -d
+docker compose up -d --build
+docker compose run --rm backend python -m inc.cli migrate
+docker compose run --rm backend python -m inc.cli install
+docker compose run --rm backend python -m inc.cli quality
+docker compose run --rm backend python -m inc.cli test
+docker compose run --rm backend python -m inc.cli openapi-check
+docker compose run --rm backend python -m inc.cli migration-check
 ```
 
 规格重构期间，旧实现与新版规格暂时不一致必须由失败测试或明确的重构阶段记录体现；不得用兼容层把旧架构重新引入。完整发布门见 `context/spec/quality-release.md`。

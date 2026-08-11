@@ -15,7 +15,7 @@ import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
                         <h1 class="text-surface-900 dark:text-surface-0 font-bold text-4xl lg:text-5xl mb-2">Access Denied</h1>
                         <span class="text-muted-color mb-8">You do not have the necessary permissions. Please contact your administrator.</span>
                         <div class="col-span-12 mt-8 text-center">
-                            <Button as="router-link" label="Go to Dashboard" to="/" severity="warn" />
+                            <Button as="router-link" label="Go to Content" to="/content" severity="warn" />
                         </div>
                     </div>
                 </div>

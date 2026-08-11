@@ -871,6 +871,17 @@ class PurgeArchivedContent:
                 raise _conflict("content.purge_requires_archived", "content is no longer archived")
             for ref in outgoing:
                 await uow.session.delete(ref)
+            await _emit(
+                ctx,
+                uow,
+                key="content.purged.v1",
+                content_id=str(row.id),
+                occurred_at=now,
+                type_name=row.type_name,
+                slug=row.slug,
+                status="purged",
+                version=row.version,
+            )
             await _append_audit(
                 ctx,
                 uow,

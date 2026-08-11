@@ -18,6 +18,7 @@ from inc.capabilities.settings import (
     CommandContext,
     ResetSettingGroup,
     UpdateSettingGroup,
+    redact_sensitive_group,
 )
 from inc.capabilities.settings.schemas import SettingGroupDTO, UpdateSettingGroupInput
 
@@ -57,14 +58,16 @@ def build_router(
     async def list_groups(
         ctx: AppContext = Depends(require_capability("settings.read")),
     ) -> list[SettingGroupDTO]:
-        return await services.settings_queries.list_groups()
+        return [
+            redact_sensitive_group(group) for group in await services.settings_queries.list_groups()
+        ]
 
     @router.get("/settings/groups/{group_key}", response_model=SettingGroupDTO)
     async def get_group(
         group_key: str = Path(...),
         ctx: AppContext = Depends(require_capability("settings.read")),
     ) -> SettingGroupDTO:
-        return await services.settings_queries.get_group(group_key)
+        return redact_sensitive_group(await services.settings_queries.get_group(group_key))
 
     @router.put("/settings/groups/{group_key}", response_model=SettingGroupDTO)
     async def update_group(
@@ -74,13 +77,15 @@ def build_router(
     ) -> SettingGroupDTO:
         # the group's registered update permission (settings.<group>.update)
         # is enforced by the capability command itself
-        return await UpdateSettingGroup(_ctx(ctx, services))(group_key, body)
+        return redact_sensitive_group(
+            await UpdateSettingGroup(_ctx(ctx, services))(group_key, body)
+        )
 
     @router.post("/settings/groups/{group_key}/reset", response_model=SettingGroupDTO)
     async def reset_group(
         group_key: str = Path(...),
         ctx: AppContext = Depends(require_authenticated()),
     ) -> SettingGroupDTO:
-        return await ResetSettingGroup(_ctx(ctx, services))(group_key)
+        return redact_sensitive_group(await ResetSettingGroup(_ctx(ctx, services))(group_key))
 
     return router

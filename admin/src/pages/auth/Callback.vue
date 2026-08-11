@@ -4,21 +4,22 @@ import { useRoute, useRouter } from 'vue-router';
 import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
 import { APP_NAME } from '@/env';
 import { completeAuthentication } from '@/auth/session';
+import { isSafeRedirectPath, takePendingRedirect } from '@/auth/storage';
 
 const route = useRoute();
 const router = useRouter();
 
-function safeRedirect(target: string | null): string {
-    if (typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')) {
+function resolveRedirect(target: string | null): string {
+    if (isSafeRedirectPath(target)) {
         return target;
     }
-    return '/';
+    return takePendingRedirect() ?? '/content';
 }
 
 onMounted(async () => {
     try {
         await completeAuthentication();
-        await router.replace(safeRedirect(route.query.redirect as string | null));
+        await router.replace(resolveRedirect(route.query.redirect as string | null));
     } catch {
         await router.replace({ name: 'error', query: { message: 'Sign-in could not be completed. Please try again.' } });
     }

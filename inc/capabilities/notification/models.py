@@ -125,3 +125,35 @@ class NotificationDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     __table_args__ = (Index("ix_notification_deliveries_due", "status", "next_retry_at"),)
+
+
+@TableOwnership.owned_by("capability:notification")
+class NotificationDeliveryAttempt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One provider invocation within a logical delivery attempt."""
+
+    __tablename__ = "notification_delivery_attempts"
+
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("notification_deliveries.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    delivery_attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "delivery_id",
+            "delivery_attempt",
+            "provider_sequence",
+            name="uq_notification_delivery_attempts_sequence",
+        ),
+    )

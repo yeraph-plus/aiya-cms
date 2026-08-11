@@ -6,20 +6,22 @@ Contract source: context/spec/capabilities/audit.md §7.
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import select
 
-from inc.capabilities.audit.models import AuditEntry
+from inc.capabilities.audit.models import AuditEntry, AuditMetadata
 from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
-from inc.capabilities.audit.service import AuditInboxHandler, AuditQueries
+from inc.capabilities.audit.service import AuditInboxHandler, AuditQueries, AuditRetentionActivity
 from inc.kernel.db import UoWFactory
 from inc.kernel.events import (
     EventEnvelope,
     EventHandlerRegistry,
     EventSchemaRegistry,
     OutboxDispatcher,
+    OutboxMessage,
     OutboxWriter,
 )
 from inc.kernel.workflow.spec import RetryPolicy
@@ -146,3 +148,52 @@ async def test_sensitive_fields_never_enter_audit(
     entry = (await queries.list_entries(page=1, size=10)).items[0]
     assert "hunter2" not in entry.model_dump_json()
     assert "s3cret" not in entry.model_dump_json()
+
+
+async def test_retention_activity_purges_and_records_independent_summary(
+    uow_factory: UoWFactory,
+    schema_registry: EventSchemaRegistry,
+    clock: Any,
+) -> None:
+    old = clock.utc_now() - timedelta(days=31)
+    async with uow_factory() as uow:
+        uow.session.add(
+            AuditEntry(
+                envelope_id=uuid.uuid7(),
+                action="old.action",
+                outcome="success",
+                occurred_at=old,
+                ingested_at=old,
+                details=AuditMetadata(data={}),
+                created_at=old,
+                updated_at=old,
+            )
+        )
+        await uow.commit()
+
+    activity = AuditRetentionActivity(
+        uow_factory=uow_factory,
+        outbox=OutboxWriter(schema_registry, clock),
+        clock=clock,
+    )
+    assert (
+        await activity.cleanup_before(
+            cutoff=clock.utc_now() - timedelta(days=30),
+            details={"retention_days": 30},
+        )
+        == 1
+    )
+    assert (
+        await activity.cleanup_before(
+            cutoff=clock.utc_now() - timedelta(days=30),
+            details={"retention_days": 30},
+        )
+        == 0
+    )
+
+    async with uow_factory() as uow:
+        assert not (await uow.session.execute(select(AuditEntry))).scalars().all()
+        messages = (await uow.session.execute(select(OutboxMessage))).scalars().all()
+        assert len(messages) == 1
+        assert messages[0].envelope.payload["action"] == "audit.retention.cleaned"
+        assert messages[0].envelope.payload["details"]["audit_entries_deleted"] == 1

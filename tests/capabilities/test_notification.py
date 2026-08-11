@@ -23,7 +23,11 @@ from inc.capabilities.notification.commands import (
 )
 from inc.capabilities.notification.diagnostics import NotificationDiagnostics
 from inc.capabilities.notification.events import NOTIFICATION_EVENT_SCHEMAS
-from inc.capabilities.notification.models import NotificationDelivery, NotificationIntent
+from inc.capabilities.notification.models import (
+    NotificationDelivery,
+    NotificationDeliveryAttempt,
+    NotificationIntent,
+)
 from inc.capabilities.notification.ports import (
     ProviderError,
     ProviderResult,
@@ -140,13 +144,14 @@ def ctx(
 ) -> CommandContext:
     workflow_registry = WorkflowRegistry()
     runner = WorkflowRunner(uow_factory=uow_factory, registry=workflow_registry, clock=clock)
-    provider = FakeProvider()
+    provider = FakeProvider(key="email.primary")
+    providers = {"email": (provider,)}
     activity = DeliverActivity(
         clock=clock,
         outbox=OutboxWriter(schema_registry, clock),
         specs=specs,
         resolver=FakeResolver(),
-        providers={"email": provider},
+        providers=providers,
     )
     workflow_registry.register(
         build_deliver_workflow_spec(
@@ -159,7 +164,7 @@ def ctx(
         outbox=OutboxWriter(schema_registry, clock),
         specs=specs,
         resolver=FakeResolver(),
-        providers={"email": provider},
+        providers=providers,
         runner=runner,
         permissions=frozenset(
             {"notification.request", "notification.cancel", "notification.retry"}
@@ -284,7 +289,7 @@ async def test_request_requires_permission(
         outbox=OutboxWriter(schema_registry, clock),
         specs=specs,
         resolver=FakeResolver(),
-        providers={"email": FakeProvider()},
+        providers={"email": (FakeProvider(),)},
         runner=runner,
         permissions=frozenset(),
     )
@@ -309,12 +314,12 @@ async def test_deliver_flow_with_template_rendering(
     assert delivery.delivered_at is not None
     assert intent is not None and intent.state == "delivered"
 
-    provider = ctx.providers["email"]
+    provider = ctx.providers["email"][0]
     assert len(provider.sends) == 1
     sent = provider.sends[0]
     assert sent["subject"] == "New submission: Hello"
     assert sent["body"] == "Review Hello (content-1)"
-    assert sent["idempotency_key"] == f"{result.delivery.id}:1"
+    assert sent["idempotency_key"] == f"{result.delivery.id}:email.primary"
     assert sent["address"] == "admin@example.com"
 
     # replay of the executed step must not re-send
@@ -325,7 +330,7 @@ async def test_deliver_flow_with_template_rendering(
 async def test_transient_failure_retries_then_dead(
     ctx: CommandContext, uow_factory: UoWFactory, clock: Any
 ) -> None:
-    provider = ctx.providers["email"]
+    provider = ctx.providers["email"][0]
     provider.results = [
         ProviderResult(status="failed", error_category="transient", error_summary="busy"),
         ProviderResult(status="failed", error_category="transient", error_summary="busy"),
@@ -346,7 +351,7 @@ async def test_transient_failure_retries_then_dead(
 async def test_permanent_failure_marks_failed_without_retry(
     ctx: CommandContext, uow_factory: UoWFactory
 ) -> None:
-    provider = ctx.providers["email"]
+    provider = ctx.providers["email"][0]
     provider.results = [
         ProviderResult(status="failed", error_category="permanent", error_summary="bad address")
     ]
@@ -362,7 +367,7 @@ async def test_permanent_failure_marks_failed_without_retry(
 async def test_provider_timeout_marks_unknown_no_automatic_retry(
     ctx: CommandContext, uow_factory: UoWFactory, clock: Any
 ) -> None:
-    provider = ctx.providers["email"]
+    provider = ctx.providers["email"][0]
     provider.results = [
         ProviderResult(status="unknown", error_category="timeout", error_summary="lost"),
     ]
@@ -377,10 +382,122 @@ async def test_provider_timeout_marks_unknown_no_automatic_retry(
     assert len(provider.sends) == 1  # never auto re-sent
 
 
+async def test_provider_chain_skips_unavailable_and_records_each_provider(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    primary = FakeProvider(
+        key="email.smtp",
+        results=[
+            ProviderResult(
+                status="unavailable",
+                error_category="disabled",
+                error_summary="SMTP disabled",
+            )
+        ],
+    )
+    secondary = FakeProvider(
+        key="email.smtp2go",
+        results=[ProviderResult(status="delivered", provider_ref="smtp2go-1")],
+    )
+    ctx.providers["email"] = (primary, secondary)
+
+    result = await RequestNotification(ctx)(request_input())
+    await _run_due(ctx)
+
+    async with uow_factory() as uow:
+        delivery = await uow.session.get(NotificationDelivery, uuid.UUID(result.delivery.id))
+        attempts = list(
+            (
+                await uow.session.execute(
+                    select(NotificationDeliveryAttempt)
+                    .where(NotificationDeliveryAttempt.delivery_id == uuid.UUID(result.delivery.id))
+                    .order_by(NotificationDeliveryAttempt.provider_sequence)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert delivery is not None and delivery.status == "delivered"
+    assert delivery.provider_key == "email.smtp2go"
+    assert delivery.provider_ref == "smtp2go-1"
+    assert [attempt.status for attempt in attempts] == ["unavailable", "delivered"]
+    assert [attempt.provider_key for attempt in attempts] == ["email.smtp", "email.smtp2go"]
+    assert len(primary.sends) == 1 and len(secondary.sends) == 1
+
+
+async def test_provider_chain_falls_back_only_when_adapter_confirms_not_accepted(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    primary = FakeProvider(
+        key="email.smtp",
+        results=[
+            ProviderResult(
+                status="failed",
+                error_category="rate_limited",
+                error_summary="rate limited",
+                fallback_allowed=True,
+            )
+        ],
+    )
+    secondary = FakeProvider(key="email.smtp2go")
+    ctx.providers["email"] = (primary, secondary)
+
+    result = await RequestNotification(ctx)(request_input())
+    await _run_due(ctx)
+
+    async with uow_factory() as uow:
+        delivery = await uow.session.get(NotificationDelivery, uuid.UUID(result.delivery.id))
+    assert delivery is not None and delivery.status == "delivered"
+    assert delivery.provider_key == "email.smtp2go"
+    assert len(secondary.sends) == 1
+
+
+async def test_provider_chain_stops_on_unknown_outcome(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    primary = FakeProvider(
+        key="email.smtp",
+        results=[ProviderResult(status="unknown", error_category="timeout")],
+    )
+    secondary = FakeProvider(key="email.smtp2go")
+    ctx.providers["email"] = (primary, secondary)
+
+    result = await RequestNotification(ctx)(request_input())
+    await _run_due(ctx)
+
+    async with uow_factory() as uow:
+        delivery = await uow.session.get(NotificationDelivery, uuid.UUID(result.delivery.id))
+    assert delivery is not None and delivery.status == "unknown"
+    assert delivery.provider_key == "email.smtp"
+    assert secondary.sends == []
+
+
+async def test_provider_chain_all_unavailable_fails_without_workflow_retry(
+    ctx: CommandContext, uow_factory: UoWFactory, clock: Any
+) -> None:
+    providers = (
+        FakeProvider(key="email.smtp", results=[ProviderResult(status="unavailable")]),
+        FakeProvider(key="email.smtp2go", results=[ProviderResult(status="unavailable")]),
+    )
+    ctx.providers["email"] = providers
+
+    result = await RequestNotification(ctx)(request_input())
+    await _run_due(ctx)
+    clock.advance(timedelta(minutes=30))
+    await _run_due(ctx)
+
+    async with uow_factory() as uow:
+        delivery = await uow.session.get(NotificationDelivery, uuid.UUID(result.delivery.id))
+    assert delivery is not None and delivery.status == "failed"
+    assert delivery.error_category == "permanent"
+    assert delivery.error_summary == "notification.no_available_provider"
+    assert [len(provider.sends) for provider in providers] == [1, 1]
+
+
 async def test_provider_exception_retries_then_delivers(
     ctx: CommandContext, uow_factory: UoWFactory, clock: Any
 ) -> None:
-    provider = ctx.providers["email"]
+    provider = ctx.providers["email"][0]
     provider.raise_error = ProviderError(
         message="smtp down", category=ErrorCategory.DEPENDENCY_UNAVAILABLE
     )
@@ -404,7 +521,7 @@ async def test_provider_exception_retries_then_delivers(
 async def test_retry_delivery_requeues_unknown(
     ctx: CommandContext, uow_factory: UoWFactory
 ) -> None:
-    provider = ctx.providers["email"]
+    provider = ctx.providers["email"][0]
     provider.results = [ProviderResult(status="unknown", error_category="timeout")]
     result = await RequestNotification(ctx)(request_input())
     await _run_due(ctx)

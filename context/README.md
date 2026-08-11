@@ -2,7 +2,7 @@
 
 `context/spec/` 是当前唯一权威规格集合。代码、测试、迁移、OpenAPI、管理员端和 Compose 与规格不一致时，先更新规格，再写失败测试，最后修改实现。
 
-`full-rebuild-plan.md` 是本次本地 Demo 重构的一次性施工记录，不与 `context/spec/` 共同定义长期行为。若两者冲突，以已经落入 `context/spec/` 的约定为准；重构完成后可从工作树移除计划书，历史由 Git 保留。
+本地 Demo 重构施工计划已完成并从工作树移除；历史由 Git 保留。`context/spec/` 是当前唯一权威规格集合，不再维护独立的阶段计划或第二套长期事实源。
 
 ## 阅读顺序
 
@@ -10,7 +10,7 @@
 2. [`spec/composition.md`](spec/composition.md)：manifest、注册表、Port/adapter 和启动生命周期。
 3. [`spec/kernel/README.md`](spec/kernel/README.md)：技术内核范围，再按其中索引阅读细分规格。
 4. [`spec/capabilities/README.md`](spec/capabilities/README.md)：能力统一合同，再按需求阅读单项能力。
-5. [`spec/adapters.md`](spec/adapters.md)：组合根侧 Port 实现库，按 capability 分目录组织。
+5. [`spec/adapters.md`](spec/adapters.md)：外部 Port 实现库（`inc/adapters`），按 capability 分目录组织，可被 api 与 feature 使用。
 6. [`spec/features.md`](spec/features.md)：跨能力垂直业务流。
 7. [`spec/http-openapi.md`](spec/http-openapi.md)：HTTP、授权、分页和 OpenAPI。
 8. [`spec/admin.md`](spec/admin.md)：管理员端认证、契约和部署。

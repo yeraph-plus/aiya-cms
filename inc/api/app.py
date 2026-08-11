@@ -15,7 +15,7 @@ import importlib
 import re
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -26,7 +26,12 @@ from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from inc.api.config import DEFAULT_ISSUER
-from inc.api.container import ApplicationContainer, Services, build_container
+from inc.api.container import (
+    ROUTER_BINDINGS,
+    ApplicationContainer,
+    Services,
+    build_container,
+)
 from inc.api.http.context import (
     BearerVerifier,
     make_authenticated,
@@ -41,26 +46,8 @@ from inc.api.http.errors import (
 from inc.api.http.routers_health import build_router as build_health_router
 from inc.kernel.boot import AppManifest
 from inc.kernel.db import UoWFactory
-from inc.kernel.errors import KernelError
+from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.time import Clock
-
-_ROUTER_FACTORIES: dict[str, Any] = {
-    "identity": importlib.import_module("inc.api.http.routers_identity"),
-    "access": importlib.import_module("inc.api.http.routers_access"),
-    "content": importlib.import_module("inc.api.http.routers_content"),
-    "taxonomy": importlib.import_module("inc.api.http.routers_taxonomy"),
-    "settings": importlib.import_module("inc.api.http.routers_settings"),
-    "assets": importlib.import_module("inc.api.http.routers_assets"),
-    "audit": importlib.import_module("inc.api.http.routers_audit"),
-    "execution": importlib.import_module("inc.api.http.routers_execution"),
-    "auth": importlib.import_module("inc.api.http.routers_auth"),
-    "check_in": importlib.import_module("inc.api.http.routers_check_in"),
-    "points": importlib.import_module("inc.api.http.routers_points"),
-    "points_admin": importlib.import_module("inc.api.http.routers_points_admin"),
-    "point_purchase": importlib.import_module("inc.api.http.routers_point_purchase"),
-    "payments": importlib.import_module("inc.api.http.routers_payments"),
-    "membership_purchase": importlib.import_module("inc.api.http.routers_membership_purchase"),
-}
 
 _REQUEST_ID_HEADER = "x-request-id"
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._\-]{1,64}$")
@@ -123,6 +110,8 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "membership-purchase",
         "description": "Buy membership via the trusted offer catalog.",
     },
+    {"name": "content", "description": "Published content reads."},
+    {"name": "engagement", "description": "Views, likes, ratings and favorites."},
     {"name": "webhooks", "description": "Provider webhook callbacks (signature verified)."},
     {
         "name": "admin",
@@ -140,6 +129,9 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-execution", "description": "Kernel execution log queries."},
     {"name": "admin-payments", "description": "Payment order administration."},
     {"name": "admin-points", "description": "Points balance and ledger administration."},
+    {"name": "admin-dashboard", "description": "Capability-owned administrator statistics."},
+    {"name": "admin-engagement", "description": "Engagement projection administration."},
+    {"name": "admin-membership", "description": "Membership subscriptions and renewals."},
 ]
 
 
@@ -237,15 +229,26 @@ def create_app(
     for router_name in manifest.routers:
         if router_name in ("health", "oidc"):
             continue
-        router_module = _ROUTER_FACTORIES.get(router_name)
-        if router_module is None:
-            continue
+        binding = ROUTER_BINDINGS[router_name]
+        if binding.module is None:
+            raise KernelError(
+                code="kernel.router_unbound",
+                category=ErrorCategory.INTERNAL,
+                message=f"router {router_name!r} has no HTTP module binding",
+            )
+        router_module = importlib.import_module(binding.module)
         for permission_key in getattr(router_module, "REQUIRED_PERMISSIONS", ()):
             services.permission_registry.require(permission_key)
         router = router_module.build_router(services, require_capability, require_authenticated)
         app.include_router(router)
 
-    if "oidc" in manifest.routers and services.oidc is not None:
+    if "oidc" in manifest.routers:
+        if services.oidc is None:
+            raise KernelError(
+                code="kernel.router_requires_missing",
+                category=ErrorCategory.INTERNAL,
+                message="router 'oidc' requires the oidc_provider capability",
+            )
         from inc.capabilities.oidc_provider.api import OidcHttpServices, build_router
 
         oidc_services = OidcHttpServices(
@@ -270,7 +273,7 @@ def create_app(
 
 def _register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(KernelError, kernel_error_response)  # type: ignore[arg-type]
-    app.add_exception_handler(RequestValidationError, validation_error_response)  # type: ignore[arg-type]
-    app.add_exception_handler(ValidationError, pydantic_validation_response)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, cast(Any, validation_error_response))
+    app.add_exception_handler(ValidationError, cast(Any, pydantic_validation_response))
     app.add_exception_handler(StarletteHTTPException, _http_exception_response)
     app.add_exception_handler(Exception, internal_error_response)

@@ -14,6 +14,103 @@
         "title": "AcceptedDTO",
         "type": "object"
       },
+      "AdminDashboardDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "window": {
+            "enum": [
+              "24h",
+              "7d",
+              "30d"
+            ],
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window",
+          "as_of",
+          "capabilities"
+        ],
+        "title": "AdminDashboardDTO",
+        "type": "object"
+      },
+      "AdminPointsViewDTO": {
+        "additionalProperties": false,
+        "description": "Administrator account snapshot together with its paged ledger.",
+        "properties": {
+          "balance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BalanceDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/BucketDTO"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "ledger": {
+            "$ref": "#/components/schemas/Page_LedgerEntryDTO_"
+          }
+        },
+        "required": [
+          "ledger"
+        ],
+        "title": "AdminPointsViewDTO",
+        "type": "object"
+      },
+      "AssetPageDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssetRefDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "AssetPageDTO",
+        "type": "object"
+      },
       "AssetRefDTO": {
         "additionalProperties": false,
         "description": "Stable object reference; never carries a signed URL.",
@@ -247,6 +344,74 @@
         "title": "AuditEntryDTO",
         "type": "object"
       },
+      "AvatarUploadIntentInput": {
+        "additionalProperties": false,
+        "properties": {
+          "content_length_max": {
+            "default": 10485760,
+            "exclusiveMinimum": 0.0,
+            "maximum": 20971520.0,
+            "title": "Content Length Max",
+            "type": "integer"
+          },
+          "mime_types": {
+            "default": [
+              "image/png"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Mime Types",
+            "type": "array"
+          }
+        },
+        "title": "AvatarUploadIntentInput",
+        "type": "object"
+      },
+      "BalanceDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "balance": {
+            "title": "Balance",
+            "type": "integer"
+          },
+          "program_key": {
+            "title": "Program Key",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_type": {
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "account_id",
+          "program_key",
+          "subject_type",
+          "subject_id",
+          "state",
+          "balance",
+          "version"
+        ],
+        "title": "BalanceDTO",
+        "type": "object"
+      },
       "BalanceViewDTO": {
         "additionalProperties": false,
         "description": "Self-service balance; unopened accounts get an explicit empty view.",
@@ -290,6 +455,84 @@
         "title": "BanInput",
         "type": "object"
       },
+      "BucketDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "bucket_type": {
+            "title": "Bucket Type",
+            "type": "string"
+          },
+          "expiration_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiration Identity"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "account_id",
+          "bucket_type",
+          "amount",
+          "version"
+        ],
+        "title": "BucketDTO",
+        "type": "object"
+      },
+      "CancelInput": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "subscription_id": {
+            "title": "Subscription Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id",
+          "reason"
+        ],
+        "title": "CancelInput",
+        "type": "object"
+      },
       "CapabilityDTO": {
         "additionalProperties": false,
         "properties": {
@@ -331,6 +574,23 @@
         "title": "CheckInResultDTO",
         "type": "object"
       },
+      "ConfiguredBucketsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "buckets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Buckets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "buckets"
+        ],
+        "title": "ConfiguredBucketsDTO",
+        "type": "object"
+      },
       "ContentDTO": {
         "additionalProperties": false,
         "properties": {
@@ -366,6 +626,15 @@
             "additionalProperties": true,
             "title": "Data",
             "type": "object"
+          },
+          "engagement": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engagement"
           },
           "excerpt": {
             "anyOf": [
@@ -662,6 +931,18 @@
       "CreateUploadIntentInput": {
         "additionalProperties": false,
         "properties": {
+          "bucket": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket"
+          },
           "checksum_sha256": {
             "anyOf": [
               {
@@ -800,6 +1081,215 @@
         "title": "DimensionDTO",
         "type": "object"
       },
+      "EngagementSummaryDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "content_id": {
+            "title": "Content Id",
+            "type": "string"
+          },
+          "counted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted"
+          },
+          "like_count": {
+            "default": 0,
+            "title": "Like Count",
+            "type": "integer"
+          },
+          "rating_average": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating Average"
+          },
+          "rating_count": {
+            "default": 0,
+            "title": "Rating Count",
+            "type": "integer"
+          },
+          "rating_sum": {
+            "default": 0,
+            "title": "Rating Sum",
+            "type": "integer"
+          },
+          "view_count": {
+            "default": 0,
+            "title": "View Count",
+            "type": "integer"
+          },
+          "viewer_liked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewer Liked"
+          },
+          "viewer_rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewer Rating"
+          }
+        },
+        "required": [
+          "content_id"
+        ],
+        "title": "EngagementSummaryDTO",
+        "type": "object"
+      },
+      "ExecutionEntryDTO": {
+        "additionalProperties": false,
+        "description": "Minimal operational record; payloads and free-form results are omitted.",
+        "properties": {
+          "attempts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempts"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Category"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "outbox",
+              "inbox",
+              "task"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "key",
+          "status",
+          "occurred_at",
+          "updated_at"
+        ],
+        "title": "ExecutionEntryDTO",
+        "type": "object"
+      },
+      "FavoriteDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "content_id": {
+            "title": "Content Id",
+            "type": "string"
+          },
+          "liked_at": {
+            "format": "date-time",
+            "title": "Liked At",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/EngagementSummaryDTO"
+          },
+          "type_name": {
+            "title": "Type Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_id",
+          "type_name",
+          "liked_at",
+          "summary"
+        ],
+        "title": "FavoriteDTO",
+        "type": "object"
+      },
+      "FavoritePageDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FavoriteDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "FavoritePageDTO",
+        "type": "object"
+      },
       "FinalizeResultDTO": {
         "additionalProperties": false,
         "description": "Ack returned by FinalizeAsset; the asset becomes observable after\nthe finalize workflow executes.",
@@ -823,6 +1313,52 @@
           "object_key"
         ],
         "title": "FinalizeResultDTO",
+        "type": "object"
+      },
+      "GrantConsentDTO": {
+        "additionalProperties": false,
+        "description": "User-visible consent for one registered OIDC client.",
+        "properties": {
+          "audiences": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Audiences",
+            "type": "array"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "granted_at": {
+            "format": "date-time",
+            "title": "Granted At",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "granted_at"
+        ],
+        "title": "GrantConsentDTO",
         "type": "object"
       },
       "GrantSummary": {
@@ -914,6 +1450,28 @@
             "title": "Account Id",
             "type": "string"
           },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Type"
+          },
           "allocations": {
             "items": {
               "$ref": "#/components/schemas/DebitAllocationDTO"
@@ -959,6 +1517,11 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
           },
           "program_key": {
             "title": "Program Key",
@@ -1009,11 +1572,77 @@
         "title": "LedgerEntryDTO",
         "type": "object"
       },
-      "MeDTO": {
+      "LevelDTO": {
         "additionalProperties": false,
         "properties": {
+          "cycle_days": {
+            "title": "Cycle Days",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "grant_points": {
+            "title": "Grant Points",
+            "type": "integer"
+          },
+          "level_key": {
+            "title": "Level Key",
+            "type": "string"
+          },
+          "renewal_allowed": {
+            "title": "Renewal Allowed",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tier_rank": {
+            "title": "Tier Rank",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level_key",
+          "display_name",
+          "tier_rank",
+          "status",
+          "cycle_days",
+          "grant_points",
+          "renewal_allowed"
+        ],
+        "title": "LevelDTO",
+        "type": "object"
+      },
+      "MeDTO": {
+        "additionalProperties": false,
+        "description": "Cross-capability self-service read model for the authenticated subject.",
+        "properties": {
+          "avatar_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Asset Id"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "capabilities": {
-            "default": [],
             "items": {
               "type": "string"
             },
@@ -1030,6 +1659,16 @@
               }
             ],
             "title": "Display Name"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BalanceViewDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "title": "Status",
@@ -1228,11 +1867,135 @@
         "title": "Page",
         "type": "object"
       },
+      "Page_ExecutionEntryDTO_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionEntryDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "Page_LedgerEntryDTO_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerEntryDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "Page_RenewalRecordDTO_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RenewalRecordDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
       "Page_SubjectDTO_": {
         "properties": {
           "items": {
             "items": {
               "$ref": "#/components/schemas/SubjectDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "Page_SubscriptionDTO_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionDTO"
             },
             "title": "Items",
             "type": "array"
@@ -1317,10 +2080,17 @@
             "type": "object"
           },
           "program_key": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Program Key",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Key"
           },
           "reason": {
             "maxLength": 500,
@@ -1340,7 +2110,6 @@
         },
         "required": [
           "subject_id",
-          "program_key",
           "amount",
           "reason",
           "idempotency_key"
@@ -1417,6 +2186,22 @@
           "dry_run"
         ],
         "title": "PurgeResultDTO",
+        "type": "object"
+      },
+      "RatingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "rating": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "RatingBody",
         "type": "object"
       },
       "ReferenceDTO": {
@@ -1630,6 +2415,69 @@
         "title": "RejectBody",
         "type": "object"
       },
+      "RenewalRecordDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "cycle_end": {
+            "format": "date-time",
+            "title": "Cycle End",
+            "type": "string"
+          },
+          "cycle_start": {
+            "format": "date-time",
+            "title": "Cycle Start",
+            "type": "string"
+          },
+          "granted_points": {
+            "title": "Granted Points",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "points_source_id": {
+            "title": "Points Source Id",
+            "type": "string"
+          },
+          "subscription_id": {
+            "title": "Subscription Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "subscription_id",
+          "cycle_start",
+          "cycle_end",
+          "granted_points",
+          "points_source_id",
+          "outcome"
+        ],
+        "title": "RenewalRecordDTO",
+        "type": "object"
+      },
+      "ReplaceCapabilitiesBody": {
+        "additionalProperties": false,
+        "properties": {
+          "capability_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capability Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capability_keys"
+        ],
+        "title": "ReplaceCapabilitiesBody",
+        "type": "object"
+      },
       "ReplaceReferencesInput": {
         "additionalProperties": false,
         "properties": {
@@ -1791,9 +2639,85 @@
         "title": "SetContentPinInput",
         "type": "object"
       },
+      "SettingFieldDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "title": "Default"
+          },
+          "desc": {
+            "title": "Desc",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "public": {
+            "title": "Public",
+            "type": "boolean"
+          },
+          "sensitive": {
+            "title": "Sensitive",
+            "type": "boolean"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "bool",
+              "text",
+              "textarea",
+              "select",
+              "radio",
+              "mult",
+              "upload"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "type_sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Sub"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "desc",
+          "type",
+          "default",
+          "metadata",
+          "public",
+          "sensitive"
+        ],
+        "title": "SettingFieldDTO",
+        "type": "object"
+      },
       "SettingGroupDTO": {
         "additionalProperties": false,
         "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SettingFieldDTO"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
           "group_key": {
             "title": "Group Key",
             "type": "string"
@@ -1801,6 +2725,13 @@
           "schema_version": {
             "title": "Schema Version",
             "type": "string"
+          },
+          "sensitive_configured": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Sensitive Configured",
+            "type": "object"
           },
           "updated_at": {
             "anyOf": [
@@ -1839,6 +2770,7 @@
           "group_key",
           "schema_version",
           "version",
+          "fields",
           "values"
         ],
         "title": "SettingGroupDTO",
@@ -1913,6 +2845,91 @@
         "title": "SubjectDTO",
         "type": "object"
       },
+      "SubscriptionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_renew": {
+            "title": "Auto Renew",
+            "type": "boolean"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "cycle_end": {
+            "format": "date-time",
+            "title": "Cycle End",
+            "type": "string"
+          },
+          "cycle_start": {
+            "format": "date-time",
+            "title": "Cycle Start",
+            "type": "string"
+          },
+          "expired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expired At"
+          },
+          "granted_points": {
+            "title": "Granted Points",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "level_key": {
+            "title": "Level Key",
+            "type": "string"
+          },
+          "renewal_count": {
+            "title": "Renewal Count",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_type": {
+            "title": "Subject Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "subject_type",
+          "subject_id",
+          "level_key",
+          "cycle_start",
+          "cycle_end",
+          "status",
+          "auto_renew",
+          "granted_points",
+          "renewal_count"
+        ],
+        "title": "SubscriptionDTO",
+        "type": "object"
+      },
       "TermDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1961,6 +2978,27 @@
           "status"
         ],
         "title": "TermDTO",
+        "type": "object"
+      },
+      "TerminateInput": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "subscription_id": {
+            "title": "Subscription Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription_id",
+          "reason"
+        ],
+        "title": "TerminateInput",
         "type": "object"
       },
       "UpdateAssetMetadataInput": {
@@ -2063,19 +3101,57 @@
         "title": "UpdateContentInput",
         "type": "object"
       },
-      "UpdateSettingGroupInput": {
+      "UpdateProfileInput": {
         "additionalProperties": false,
+        "description": "Whitelisted profile fields; unknown fields are rejected.",
         "properties": {
-          "expected_version": {
+          "avatar_asset_id": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Expected Version"
+            "title": "Avatar Asset Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "title": "UpdateProfileInput",
+        "type": "object"
+      },
+      "UpdateSettingGroupInput": {
+        "additionalProperties": false,
+        "properties": {
+          "clear_sensitive_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clear Sensitive Fields"
+          },
+          "expected_version": {
+            "title": "Expected Version",
+            "type": "integer"
           },
           "values": {
             "additionalProperties": true,
@@ -2084,6 +3160,7 @@
           }
         },
         "required": [
+          "expected_version",
           "values"
         ],
         "title": "UpdateSettingGroupInput",
@@ -2239,6 +3316,134 @@
       }
     },
     "/api/v1/admin/assets": {
+      "get": {
+        "operationId": "list_assets_api_v1_admin_assets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Assets",
+        "tags": [
+          "admin",
+          "admin-assets"
+        ]
+      },
       "post": {
         "operationId": "register_external_api_v1_admin_assets_post",
         "requestBody": {
@@ -2279,6 +3484,33 @@
           }
         ],
         "summary": "Register External",
+        "tags": [
+          "admin",
+          "admin-assets"
+        ]
+      }
+    },
+    "/api/v1/admin/assets/buckets": {
+      "get": {
+        "operationId": "list_configured_buckets_api_v1_admin_assets_buckets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfiguredBucketsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Configured Buckets",
         "tags": [
           "admin",
           "admin-assets"
@@ -3621,6 +4853,567 @@
         ]
       }
     },
+    "/api/v1/admin/dashboard/summary": {
+      "get": {
+        "operationId": "dashboard_api_v1_admin_dashboard_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "default": "7d",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "title": "Window",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dashboard",
+        "tags": [
+          "admin",
+          "admin-dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/engagement": {
+      "get": {
+        "operationId": "list_engagement_stats_api_v1_admin_engagement_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-view_count",
+              "maxLength": 64,
+              "title": "Sort",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EngagementSummaryDTO"
+                  },
+                  "title": "Response List Engagement Stats Api V1 Admin Engagement Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Engagement Stats",
+        "tags": [
+          "engagement",
+          "admin",
+          "admin-engagement"
+        ]
+      }
+    },
+    "/api/v1/admin/execution/entries": {
+      "get": {
+        "operationId": "list_entries_api_v1_admin_execution_entries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "outbox",
+                    "inbox",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "occurred_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurred After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "occurred_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurred Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ExecutionEntryDTO_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Entries",
+        "tags": [
+          "admin",
+          "admin-execution"
+        ]
+      }
+    },
+    "/api/v1/admin/membership/levels": {
+      "get": {
+        "operationId": "list_levels_api_v1_admin_membership_levels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LevelDTO"
+                  },
+                  "title": "Response List Levels Api V1 Admin Membership Levels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Levels",
+        "tags": [
+          "admin",
+          "admin-membership"
+        ]
+      }
+    },
+    "/api/v1/admin/membership/subscriptions": {
+      "get": {
+        "operationId": "list_subscriptions_api_v1_admin_membership_subscriptions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_SubscriptionDTO_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Subscriptions",
+        "tags": [
+          "admin",
+          "admin-membership"
+        ]
+      }
+    },
+    "/api/v1/admin/membership/subscriptions/{subscription_id}/cancel": {
+      "post": {
+        "operationId": "cancel_subscription_api_v1_admin_membership_subscriptions__subscription_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Subscription",
+        "tags": [
+          "admin",
+          "admin-membership"
+        ]
+      }
+    },
+    "/api/v1/admin/membership/subscriptions/{subscription_id}/renewals": {
+      "get": {
+        "operationId": "list_renewals_api_v1_admin_membership_subscriptions__subscription_id__renewals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RenewalRecordDTO_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Renewals",
+        "tags": [
+          "admin",
+          "admin-membership"
+        ]
+      }
+    },
+    "/api/v1/admin/membership/subscriptions/{subscription_id}/terminate": {
+      "post": {
+        "operationId": "terminate_subscription_api_v1_admin_membership_subscriptions__subscription_id__terminate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "subscription_id",
+            "required": true,
+            "schema": {
+              "title": "Subscription Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TerminateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Terminate Subscription",
+        "tags": [
+          "admin",
+          "admin-membership"
+        ]
+      }
+    },
     "/api/v1/admin/payments/orders/{order_id}/refund": {
       "post": {
         "operationId": "request_refund_api_v1_admin_payments_orders__order_id__refund_post",
@@ -3727,6 +5520,103 @@
         ]
       }
     },
+    "/api/v1/admin/points/ledger": {
+      "get": {
+        "operationId": "list_ledger_api_v1_admin_points_ledger_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Subject Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_type",
+            "required": false,
+            "schema": {
+              "default": "identity",
+              "maxLength": 32,
+              "minLength": 1,
+              "title": "Subject Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "program_key",
+            "required": false,
+            "schema": {
+              "default": "credit",
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Program Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPointsViewDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Ledger",
+        "tags": [
+          "admin",
+          "admin-points"
+        ]
+      }
+    },
     "/api/v1/admin/roles": {
       "get": {
         "operationId": "list_roles_api_v1_admin_roles_get",
@@ -3803,6 +5693,48 @@
         ]
       }
     },
+    "/api/v1/admin/roles/{role_id}": {
+      "delete": {
+        "operationId": "delete_role_api_v1_admin_roles__role_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Role",
+        "tags": [
+          "admin",
+          "admin-access"
+        ]
+      }
+    },
     "/api/v1/admin/roles/{role_id}/assign": {
       "post": {
         "operationId": "assign_role_api_v1_admin_roles__role_id__assign_post",
@@ -3856,6 +5788,65 @@
           }
         ],
         "summary": "Assign Role",
+        "tags": [
+          "admin",
+          "admin-access"
+        ]
+      }
+    },
+    "/api/v1/admin/roles/{role_id}/capabilities": {
+      "put": {
+        "operationId": "replace_capabilities_api_v1_admin_roles__role_id__capabilities_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Role Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceCapabilitiesBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Replace Capabilities",
         "tags": [
           "admin",
           "admin-access"
@@ -4286,6 +6277,69 @@
           "admin-taxonomy"
         ]
       },
+      "get": {
+        "operationId": "get_target_terms_api_v1_admin_taxonomy_targets__target_type___target_id__terms_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_type",
+            "required": true,
+            "schema": {
+              "title": "Target Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "$ref": "#/components/schemas/TermDTO"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Get Target Terms Api V1 Admin Taxonomy Targets  Target Type   Target Id  Terms Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Target Terms",
+        "tags": [
+          "admin",
+          "admin-taxonomy"
+        ]
+      },
       "put": {
         "operationId": "assign_terms_api_v1_admin_taxonomy_targets__target_type___target_id__terms_put",
         "parameters": [
@@ -4619,6 +6673,63 @@
           "admin",
           "admin-users"
         ]
+      },
+      "patch": {
+        "operationId": "update_user_profile_api_v1_admin_users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubjectDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update User Profile",
+        "tags": [
+          "admin",
+          "admin-users"
+        ]
       }
     },
     "/api/v1/admin/users/{user_id}/ban": {
@@ -4729,15 +6840,19 @@
         ]
       }
     },
-    "/api/v1/auth/me": {
+    "/api/v1/auth/grants": {
       "get": {
-        "operationId": "me_api_v1_auth_me_get",
+        "operationId": "list_grants_api_v1_auth_grants_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MeDTO"
+                  "items": {
+                    "$ref": "#/components/schemas/GrantConsentDTO"
+                  },
+                  "title": "Response List Grants Api V1 Auth Grants Get",
+                  "type": "array"
                 }
               }
             },
@@ -4749,7 +6864,49 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Me",
+        "summary": "List Grants",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/grants/{client_id}": {
+      "delete": {
+        "operationId": "revoke_grant_api_v1_auth_grants__client_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Grant",
         "tags": [
           "auth"
         ]
@@ -4945,6 +7102,519 @@
         ]
       }
     },
+    "/api/v1/content/{type_name}": {
+      "get": {
+        "operationId": "list_published_content_api_v1_content__type_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Published Content",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      }
+    },
+    "/api/v1/content/{type_name}/{content_id}": {
+      "get": {
+        "operationId": "get_published_content_api_v1_content__type_name___content_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Published Content",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      }
+    },
+    "/api/v1/content/{type_name}/{content_id}/engagement": {
+      "get": {
+        "operationId": "get_engagement_api_v1_content__type_name___content_id__engagement_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Engagement",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      }
+    },
+    "/api/v1/content/{type_name}/{content_id}/like": {
+      "delete": {
+        "operationId": "unlike_content_api_v1_content__type_name___content_id__like_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unlike Content",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      },
+      "put": {
+        "operationId": "like_content_api_v1_content__type_name___content_id__like_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Like Content",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      }
+    },
+    "/api/v1/content/{type_name}/{content_id}/rating": {
+      "delete": {
+        "operationId": "withdraw_rating_api_v1_content__type_name___content_id__rating_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Withdraw Rating",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      },
+      "put": {
+        "operationId": "rate_content_api_v1_content__type_name___content_id__rating_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rate Content",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      }
+    },
+    "/api/v1/content/{type_name}/{content_id}/views": {
+      "post": {
+        "operationId": "record_view_api_v1_content__type_name___content_id__views_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Content Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record View",
+        "tags": [
+          "content",
+          "engagement"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -4963,6 +7633,301 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me_api_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "operationId": "update_me_api_v1_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/avatar/upload-intents": {
+      "post": {
+        "operationId": "create_avatar_upload_intent_api_v1_me_avatar_upload_intents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarUploadIntentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateUploadIntentResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Avatar Upload Intent",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/avatar/upload-intents/{intent_id}/finalize": {
+      "post": {
+        "operationId": "finalize_avatar_upload_api_v1_me_avatar_upload_intents__intent_id__finalize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Finalize Avatar Upload",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me/favorites/{type_name}": {
+      "get": {
+        "operationId": "list_favorites_api_v1_me_favorites__type_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "type_name",
+            "required": true,
+            "schema": {
+              "title": "Type Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoritePageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Favorites",
+        "tags": [
+          "engagement"
+        ]
+      }
+    },
+    "/api/v1/me/points/ledger": {
+      "get": {
+        "operationId": "ledger_api_v1_me_points_ledger_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LedgerEntryDTO_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ledger",
+        "tags": [
+          "points"
         ]
       }
     },
@@ -5133,32 +8098,6 @@
         "summary": "Start Purchase",
         "tags": [
           "point-purchase"
-        ]
-      }
-    },
-    "/api/v1/points/balance": {
-      "get": {
-        "operationId": "balance_api_v1_points_balance_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BalanceViewDTO"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Balance",
-        "tags": [
-          "points"
         ]
       }
     },
@@ -5381,7 +8320,7 @@
       "name": "check-in"
     },
     {
-      "description": "Points balance self-service reads.",
+      "description": "Points self-service ledger reads.",
       "name": "points"
     },
     {
@@ -5391,6 +8330,14 @@
     {
       "description": "Buy membership via the trusted offer catalog.",
       "name": "membership-purchase"
+    },
+    {
+      "description": "Published content reads.",
+      "name": "content"
+    },
+    {
+      "description": "Views, likes, ratings and favorites.",
+      "name": "engagement"
     },
     {
       "description": "Provider webhook callbacks (signature verified).",
@@ -5429,12 +8376,28 @@
       "name": "admin-audit"
     },
     {
+      "description": "Kernel execution log queries.",
+      "name": "admin-execution"
+    },
+    {
       "description": "Payment order administration.",
       "name": "admin-payments"
     },
     {
       "description": "Points balance and ledger administration.",
       "name": "admin-points"
+    },
+    {
+      "description": "Capability-owned administrator statistics.",
+      "name": "admin-dashboard"
+    },
+    {
+      "description": "Engagement projection administration.",
+      "name": "admin-engagement"
+    },
+    {
+      "description": "Membership subscriptions and renewals.",
+      "name": "admin-membership"
     }
   ]
 }

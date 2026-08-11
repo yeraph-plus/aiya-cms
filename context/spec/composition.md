@@ -13,6 +13,7 @@ kernel、capability 和 feature 都不得读取环境后自行把自己挂入应
 每个 capability 导出一个不可变声明，至少包含：
 
 - 稳定 `name` 和 `schema_version`。
+- 运行时启用前必须满足的 capability 依赖。
 - 自有 tables/migration owner。
 - commands、queries、events 和 error codes。
 - activities、event handlers、Cron 声明。
@@ -46,6 +47,13 @@ FeatureSpec 不声明或拥有业务表；需要持久化的 feature 状态使�
 
 首版至少提供用于测试的 `kernel_only`、`identity_provider` 和完整 `cms` 三种 manifest fixture；生产 manifest 只有一个明确入口。
 
+### 2.4 部署形态约束
+
+- 生产运行形态为**单 API + 单 worker 实例**；水平扩容只扩无状态层（如只读副本、静态文件）。多写实例（多 API/多 worker 同时写库）不在本规格支持范围。
+- 业务能力（如 points）在此前提下采用“时序单步 + 幂等键 + 账本级乐观锁”的执行模型：不依赖数据库行锁、分布式锁或进程内互斥；同账户并发冲突由 version 条件更新拦截，由 workflow 重试。
+- 后台周期性任务（定时发布、积分/会员过期、密钥和日志清理等）由组合根显式注册 `CronSpec`，由 kernel `CronScheduler` 生成持久 `TaskInstance`，再由 `TaskWorker` 顺序执行；生产单 worker 进程内同一时刻仅一个执行者。
+- 依赖此约束的能力规格必须写明。本版本不提供多写实例部署配置；未来若引入，组合根必须在启动时 fail-fast 拒绝多写形态。
+
 ## 3. 稳定 key
 
 - key 使用小写 ASCII、点分命名，不以 Python import path 作为协议。
@@ -61,10 +69,10 @@ FeatureSpec 不声明或拥有业务表；需要持久化的 feature 状态使�
 ## 4. Port 与 adapter
 
 - Port 由消费方定义。例如 OIDC 定义 `SubjectClaimsReader`，由组合根用 identity adapter 实现。
-- adapter 库位于 `inc/api/adapters/`，按消费方 capability 分目录组织；完整目录合同、已装配/计划实现与占位规则见 [`adapters.md`](adapters.md)。
+- adapter 库位于 `inc/adapters/`，按消费方 capability 分目录组织；可被 api 与 feature 使用，capability 不得反向导入；完整目录合同、已装配/计划实现与占位规则见 [`adapters.md`](adapters.md)。
 - capability 不得为了复用实现而导入 provider capability。
 - adapter 只能通过 provider 的公开 Query/Command 获取数据，不能读取其 Repository/ORM。
-- 一个 Port 可以有 production、sandbox、in-memory adapter，但同一 manifest 中绑定必须唯一。
+- 普通单实现 Port 在同一 manifest 中绑定必须唯一。notification channel provider Port 可以由组合根显式绑定有序 adapter 元组；每个 slot/key 仍必须唯一，顺序是部署声明而不是数据库设置，capability 只消费 `NotificationProvider` 契约。
 - 外部 provider adapter 负责 SDK 初始化、认证、超时、限流、错误归一化和资源关闭。
 - 必需 Port 未绑定、绑定重复或配置不完整必须在启动前失败。
 

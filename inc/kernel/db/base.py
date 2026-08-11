@@ -9,6 +9,10 @@ package location.
 
 from __future__ import annotations
 
+import secrets
+import sys
+import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -23,10 +27,37 @@ class Base(DeclarativeBase):
     """Shared declarative base for kernel and capability models."""
 
 
-def new_uuid7() -> uuid.UUID:
-    """App-side UUIDv7 primary key default."""
+_uuid7_lock = threading.Lock()
+_last_uuid7_ms = 0
+_uuid7_counter = 0
 
-    return uuid.uuid7()
+
+def new_uuid7() -> uuid.UUID:
+    """App-side UUIDv7 primary key default.
+
+    Python 3.14 provides ``uuid.uuid7``.  The fallback keeps local 3.12/3.13
+    verification deterministic and preserves the UUIDv7 ordering contract
+    instead of delegating ordering to random UUID4 values.
+    """
+
+    if sys.version_info >= (3, 14) and hasattr(uuid, "uuid7"):
+        return uuid.uuid7()
+    global _last_uuid7_ms, _uuid7_counter
+    now_ms = time.time_ns() // 1_000_000
+    with _uuid7_lock:
+        if now_ms <= _last_uuid7_ms:
+            _uuid7_counter = (_uuid7_counter + 1) & 0xFFF
+        else:
+            _last_uuid7_ms = now_ms
+            _uuid7_counter = 0
+        value = (
+            ((now_ms & ((1 << 48) - 1)) << 80)
+            | (0x7 << 76)
+            | (_uuid7_counter << 64)
+            | (0x2 << 62)
+            | secrets.randbits(62)
+        )
+    return uuid.UUID(int=value)
 
 
 def _utc_now() -> datetime:

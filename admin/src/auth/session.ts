@@ -39,13 +39,19 @@ export function initializeSession(): Promise<void> {
             const user = await userManager.getUser();
             if (user?.access_token && !user.expired) {
                 sessionState.accessToken = user.access_token;
+                const me = await fetchMe();
+                sessionState.me = me;
                 sessionState.status = 'authenticated';
-                await refreshMe();
             } else {
+                sessionState.accessToken = null;
+                sessionState.me = null;
                 sessionState.status = 'anonymous';
             }
         })().catch(() => {
+            sessionState.accessToken = null;
+            sessionState.me = null;
             sessionState.status = 'error';
+            initializePromise = null;
         });
     }
     return initializePromise;
@@ -56,10 +62,17 @@ export async function refreshMe(): Promise<void> {
 }
 
 export async function completeAuthentication(): Promise<void> {
-    const user = await userManager.signinRedirectCallback();
-    sessionState.accessToken = user.access_token ?? null;
-    sessionState.status = 'authenticated';
-    await refreshMe();
+    try {
+        const user = await userManager.signinRedirectCallback();
+        if (!user.access_token) throw new Error('OIDC callback did not return an access token.');
+        sessionState.accessToken = user.access_token;
+        const me = await fetchMe();
+        sessionState.me = me;
+        sessionState.status = 'authenticated';
+    } catch (error) {
+        clearSession();
+        throw error;
+    }
 }
 
 export function clearSession(): void {

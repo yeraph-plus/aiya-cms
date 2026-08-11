@@ -21,7 +21,7 @@ async def program(uow_factory: Any) -> None:
     async with uow_factory() as uow:
         uow.session.add(
             PointsProgram(
-                program_key="default", display_name="Default", unit="points", status="active"
+                program_key="credit", display_name="Credit", unit="points", status="active"
             )
         )
         await uow.commit()
@@ -67,7 +67,7 @@ async def _open_account(services: Any, uow_factory: Any, clock: Any, subject_id:
         actor_id="system",
     )
     await OpenPointsAccount(ctx)(
-        program_key="default", subject_type="identity", subject_id=subject_id
+        program_key="credit", subject_type="identity", subject_id=subject_id
     )
 
 
@@ -75,7 +75,7 @@ def _adjust_body(*, subject_id: str, amount: int, idempotency_key: str) -> dict[
     return {
         "subject_type": "identity",
         "subject_id": subject_id,
-        "program_key": "default",
+        "program_key": "credit",
         "amount": amount,
         "reason": "admin compensation",
         "idempotency_key": idempotency_key,
@@ -105,7 +105,7 @@ async def test_adjust_credit_and_debit_balance(
 
     queries = PointsQueries(uow_factory=uow_factory, behaviors=services.behaviors)
     after_credit = await queries.get_balance(
-        program_key="default", subject_type="identity", subject_id=created.subject.id
+        program_key="credit", subject_type="identity", subject_id=created.subject.id
     )
     assert after_credit.balance == 50
 
@@ -118,9 +118,41 @@ async def test_adjust_credit_and_debit_balance(
     assert debit.json()["amount"] == -20
 
     after_debit = await queries.get_balance(
-        program_key="default", subject_type="identity", subject_id=created.subject.id
+        program_key="credit", subject_type="identity", subject_id=created.subject.id
     )
     assert after_debit.balance == 30
+
+    from tests.api.conftest import _mint_token_for
+
+    user_token = await _mint_token_for(services, created.subject.id)
+    me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {user_token}"})
+    assert me.status_code == 200, me.text
+    assert me.json()["points"]["balance"] == 30
+
+    self_ledger = await client.get(
+        "/api/v1/me/points/ledger",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert self_ledger.status_code == 200, self_ledger.text
+    assert self_ledger.json()["total"] == 2
+    assert [item["amount"] for item in self_ledger.json()["items"]] == [-20, 50]
+
+    admin_ledger = await client.get(
+        "/api/v1/admin/points/ledger",
+        params={
+            "subject_type": "identity",
+            "subject_id": created.subject.id,
+            "program_key": "credit",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert admin_ledger.status_code == 200, admin_ledger.text
+    view = admin_ledger.json()
+    assert view["balance"]["balance"] == 30
+    assert view["ledger"]["total"] == 2
+    assert view["ledger"]["items"][0]["amount"] == -20
+    assert view["ledger"]["items"][0]["metadata"]["reason"] == "admin compensation"
+    assert view["buckets"]
 
 
 async def test_adjust_is_idempotent_per_key(
@@ -142,27 +174,70 @@ async def test_adjust_is_idempotent_per_key(
 
     queries = PointsQueries(uow_factory=uow_factory, behaviors=services.behaviors)
     balance = await queries.get_balance(
-        program_key="default", subject_type="identity", subject_id=created.subject.id
+        program_key="credit", subject_type="identity", subject_id=created.subject.id
     )
     assert balance.balance == 100
 
 
-async def test_adjust_rejects_unopened_account_and_zero_amount(
+async def test_self_points_reads_are_empty_without_opening_an_account(
+    client: Any, uow_factory: Any, clock: Any, program: None
+) -> None:
+    from sqlalchemy import func, select
+
+    from inc.capabilities.points.models import PointsAccount
+
+    services = client.app.state.services
+    created = await _register(uow_factory, clock, services, "ledger-reader")
+    from tests.api.conftest import _mint_token_for
+
+    token = await _mint_token_for(services, created.subject.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with uow_factory() as uow:
+        before = (
+            await uow.session.execute(select(func.count()).select_from(PointsAccount))
+        ).scalar_one()
+
+    me = await client.get("/api/v1/me", headers=headers)
+    ledger = await client.get("/api/v1/me/points/ledger", headers=headers)
+
+    assert me.status_code == 200
+    assert me.json()["points"] == {"opened": False, "program_key": "credit", "balance": 0}
+    assert ledger.status_code == 200
+    assert ledger.json() == {"items": [], "total": 0, "page": 1, "size": 20}
+
+    async with uow_factory() as uow:
+        after = (
+            await uow.session.execute(select(func.count()).select_from(PointsAccount))
+        ).scalar_one()
+    assert after == before
+
+
+async def test_adjust_auto_opens_account_and_rejects_zero_amount(
     client: Any, admin_token: str, uow_factory: Any, clock: Any, program: None
 ) -> None:
     services = client.app.state.services
     created = await _register(uow_factory, clock, services, "no-account")
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    not_opened = await client.post(
+    auto_opened = await client.post(
         "/api/v1/admin/points/adjust",
         json=_adjust_body(subject_id=created.subject.id, amount=10, idempotency_key="adj-n1"),
         headers=headers,
     )
-    assert not_opened.status_code == 404
-    assert not_opened.json()["code"] == "points.account_not_opened"
+    assert auto_opened.status_code == 200, auto_opened.text
+    assert auto_opened.json()["program_key"] == "credit"
 
-    await _open_account(services, uow_factory, clock, created.subject.id)
+    omitted_program = _adjust_body(
+        subject_id=created.subject.id, amount=5, idempotency_key="adj-n3"
+    )
+    omitted_program.pop("program_key")
+    defaulted = await client.post(
+        "/api/v1/admin/points/adjust", json=omitted_program, headers=headers
+    )
+    assert defaulted.status_code == 200, defaulted.text
+    assert defaulted.json()["program_key"] == "credit"
+
     zero = await client.post(
         "/api/v1/admin/points/adjust",
         json=_adjust_body(subject_id=created.subject.id, amount=0, idempotency_key="adj-n2"),
@@ -190,3 +265,25 @@ async def test_adjust_requires_capability_and_auth(
     )
     assert denied.status_code == 403
     assert denied.json()["code"] == "api.forbidden"
+
+    assert (
+        await client.get(
+            "/api/v1/admin/points/ledger",
+            params={
+                "subject_type": "identity",
+                "subject_id": created.subject.id,
+                "program_key": "credit",
+            },
+        )
+    ).status_code == 401
+    read_denied = await client.get(
+        "/api/v1/admin/points/ledger",
+        params={
+            "subject_type": "identity",
+            "subject_id": created.subject.id,
+            "program_key": "credit",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert read_denied.status_code == 403
+    assert read_denied.json()["code"] == "api.forbidden"

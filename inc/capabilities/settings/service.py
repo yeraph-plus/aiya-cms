@@ -195,9 +195,52 @@ def _to_dto(
         version=version,
         fields=_field_dtos(spec),
         values=values,
+        sensitive_configured={
+            slug: values.get(slug) not in (None, "") for slug in spec.sensitive_fields
+        },
         updated_by=updated_by,
         updated_at=updated_at,
     )
+
+
+def redact_sensitive_group(group: SettingGroupDTO) -> SettingGroupDTO:
+    """Return the management HTTP projection without write-only secrets."""
+
+    sensitive = {field.slug for field in group.fields if field.sensitive}
+    if not sensitive:
+        return group
+    return group.model_copy(
+        update={
+            "values": {slug: value for slug, value in group.values.items() if slug not in sensitive}
+        }
+    )
+
+
+def _merged_update_values(
+    spec: SettingGroupSpec,
+    current: dict[str, Any],
+    input_: UpdateSettingGroupInput,
+) -> dict[str, Any]:
+    clears = set(input_.clear_sensitive_fields or ())
+    sensitive = set(spec.sensitive_fields)
+    invalid = clears - sensitive
+    conflicts = clears & set(input_.values)
+    if invalid or conflicts:
+        details: list[str] = []
+        if invalid:
+            details.append(f"not sensitive: {sorted(invalid)}")
+        if conflicts:
+            details.append(f"set and clear: {sorted(conflicts)}")
+        raise KernelError(
+            code="settings.invalid_sensitive_clear",
+            category=ErrorCategory.VALIDATION,
+            message="invalid sensitive field clear request",
+            details={"reason": "; ".join(details)},
+        )
+    merged = {**current, **input_.values}
+    for slug in clears:
+        merged[slug] = None
+    return merged
 
 
 async def _load_group_rows(
@@ -300,9 +343,7 @@ class UpdateSettingGroup:
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
 
-    async def __call__(
-        self, group_key: str, input_: UpdateSettingGroupInput
-    ) -> SettingGroupDTO:
+    async def __call__(self, group_key: str, input_: UpdateSettingGroupInput) -> SettingGroupDTO:
         ctx = self._ctx
         spec = _require_group(ctx, group_key)
         _require_permission(ctx, spec.update_permission)
@@ -317,7 +358,7 @@ class UpdateSettingGroup:
                     f"expected version {input_.expected_version}, found {current_version}",
                 )
             current = _effective_values(spec, rows)
-            values = _validate_values(spec, {**current, **input_.values})
+            values = _validate_values(spec, _merged_update_values(spec, current, input_))
             next_version = current_version + 1
             existing = {row.field_slug: row for row in rows}
             for field in spec.fields:

@@ -20,6 +20,8 @@ from inc.capabilities.access.commands import (
     AssignRoleToSubject,
     CommandContext,
     CreateRole,
+    DeleteRole,
+    ReplaceRoleCapabilities,
     RevokeRoleFromSubject,
 )
 from inc.capabilities.access.schemas import GrantSummary, RoleDTO
@@ -44,6 +46,12 @@ class CapabilityDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     keys: list[str]
+
+
+class ReplaceCapabilitiesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability_keys: list[str]
 
 
 def _ctx(ctx: AppContext, services: Services) -> CommandContext:
@@ -118,6 +126,23 @@ def build_router(
         return await services.access_queries.grants_for(
             subject_type=body.subject_type, subject_id=body.subject_id
         )
+
+    @router.put("/roles/{role_id}/capabilities", response_model=RoleDTO)
+    async def replace_capabilities(
+        body: ReplaceCapabilitiesBody,
+        role_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("access.roles.manage")),
+    ) -> RoleDTO:
+        return await ReplaceRoleCapabilities(_ctx(ctx, services))(
+            role_id=str(role_id), capability_keys=body.capability_keys
+        )
+
+    @router.delete("/roles/{role_id}", status_code=204)
+    async def delete_role(
+        role_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("access.roles.manage")),
+    ) -> None:
+        await DeleteRole(_ctx(ctx, services))(role_id=str(role_id))
 
     @router.post("/roles/{role_id}/revoke", status_code=204)
     async def revoke_role(

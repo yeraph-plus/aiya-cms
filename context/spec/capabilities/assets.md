@@ -20,7 +20,7 @@ assets 只管理外部图床、S3 或兼容对象存储上的稳定对象引用�
 ## 3. 表所有权
 
 - `assets_objects`：稳定引用、完整性元数据、状态。
-- `assets_upload_intents`：可选，记录短期上传意图 digest、目标 object key、expires/consumed state。
+- `assets_upload_intents`：可选，记录短期上传意图 owner、bucket、目标 object key、digest、expires/consumed state。
 
 状态至少为 `pending`、`ready`、`failed`、`deleted`。外部对象是否存在由 provider/diagnostics 确认，不能仅靠本地 row 推断。
 
@@ -33,7 +33,9 @@ assets 自己声明 `ObjectStorageProvider`：
 - 生成短期 read URL。
 - 删除对象。
 
-adapter 负责 SDK client、endpoint、credential、timeout、重试和 provider error 映射。provider 配置/secret 不进入 settings 或数据库。
+`ObjectStat` may return the provider bucket/container so Finalize can persist the complete stable reference.
+
+adapter 负责 SDK client、endpoint、credential、timeout、重试和 provider error 映射。S3-compatible adapter 的连接配置与凭据由 `site_settings.object_storage` 组保存；凭据字段必须登记为 sensitive，不进入公共 DTO、事件、日志或审计摘要。
 
 ## 5. Commands 与 Queries
 
@@ -43,12 +45,14 @@ adapter 负责 SDK client、endpoint、credential、timeout、重试和 provider
 - `UpdateAssetMetadata`。
 - `DeleteAsset`：先标记，再由幂等 activity 删除外部对象。
 - `GetAsset`、`ResolveAssetUrl`。
+- 管理端 `ListAssets`：按 state、provider、bucket 或 object key 查询稳定引用并分页；它不返回 signed URL，也不构成媒体库。
 
 provider 调用不得与长数据库事务绑定。Finalize/Delete 使用 workflow/activity 处理跨系统部分失败。
 
 ## 6. 跨能力使用
 
 - content/settings/identity 只保存 asset opaque ID 或 AssetRef JSON，不建 assets 外键。
+- 系统站点资源使用 `object_storage.s3_bucket`；用户头像使用 `object_storage.s3_avatar_bucket`。bucket 由组合根选择并通过 assets Command 传入，assets 不理解业务类型。
 - 写入引用前可通过消费方 `AssetExists` Port 验证 ready 状态。
 - assets 不维护“被哪些业务对象使用”的跨能力反向索引；物理删除前由 feature/运维流程检查引用。
 

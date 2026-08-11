@@ -21,6 +21,17 @@ from inc.adapters.notification.email_smtp import (
 from inc.capabilities.notification.ports import ProviderError, RecipientTarget
 
 
+class _SettingsReader:
+    def __init__(self, values: dict[str, Any]) -> None:
+        self.values = values
+        self.calls = 0
+
+    async def get_group(self, group_key: str) -> Any:
+        assert group_key == "notification"
+        self.calls += 1
+        return type("SettingGroup", (), {"values": dict(self.values)})()
+
+
 def _target(address: str = "recipient@example.com") -> RecipientTarget:
     return RecipientTarget(channel="email", address=address, masked_address="re***@example.com")
 
@@ -51,7 +62,16 @@ def test_encode_header_strips_crlf() -> None:
 async def test_recipients_refused_is_permanent(monkeypatch: Any) -> None:
     import aiosmtplib
 
-    adapter = SmtpEmailAdapter(settings=SmtpSettings(host="127.0.0.1", port=2525))
+    adapter = SmtpEmailAdapter(
+        settings_queries=_SettingsReader(
+            {
+                "email_enabled": True,
+                "smtp_enabled": True,
+                "smtp_host": "127.0.0.1",
+                "smtp_port": 2525,
+            }
+        )
+    )
 
     async def _refuse(*args: Any, **kwargs: Any) -> str:
         refused = {"recipient@example.com": (550, b"mailbox unavailable")}
@@ -64,11 +84,60 @@ async def test_recipients_refused_is_permanent(monkeypatch: Any) -> None:
     assert excinfo.value.category.value == "validation"
 
 
+async def test_send_reads_current_settings_for_each_execution(monkeypatch: Any) -> None:
+    reader = _SettingsReader(
+        {
+            "email_enabled": True,
+            "smtp_enabled": True,
+            "smtp_host": "smtp-old.example.com",
+            "smtp_port": 25,
+        }
+    )
+    adapter = SmtpEmailAdapter(settings_queries=reader)
+    hosts: list[str] = []
+
+    async def _capture(settings: SmtpSettings, *args: Any) -> str:
+        hosts.append(settings.host)
+        return f"{settings.host}:{settings.port}"
+
+    monkeypatch.setattr(adapter, "_send_raw", _capture)
+
+    await adapter.send(target=_target(), subject="x", body="y", idempotency_key="u-1")
+    reader.values["smtp_host"] = "smtp-new.example.com"
+    await adapter.send(target=_target(), subject="x", body="y", idempotency_key="u-2")
+
+    assert reader.calls == 2
+    assert hosts == ["smtp-old.example.com", "smtp-new.example.com"]
+
+
+async def test_send_returns_unavailable_without_network_when_disabled_or_unconfigured(
+    monkeypatch: Any,
+) -> None:
+    adapter = SmtpEmailAdapter(settings_queries=_SettingsReader({}))
+
+    async def _unexpected(*args: Any, **kwargs: Any) -> str:
+        raise AssertionError("disabled SMTP must not touch the network")
+
+    monkeypatch.setattr(adapter, "_send_raw", _unexpected)
+    disabled = await adapter.send(target=_target(), subject="x", body="y", idempotency_key="u-1")
+    assert disabled.status == "unavailable"
+    assert disabled.error_category == "disabled"
+
+    adapter = SmtpEmailAdapter(
+        settings_queries=_SettingsReader({"email_enabled": True, "smtp_enabled": True})
+    )
+    invalid = await adapter.send(target=_target(), subject="x", body="y", idempotency_key="u-2")
+    assert invalid.status == "unavailable"
+    assert invalid.error_category == "configuration"
+
+
 async def test_smtp_settings_group_parses_boolean_strings() -> None:
     from inc.adapters.notification.email_smtp import smtp_settings_from_group
 
     settings = smtp_settings_from_group(
         {
+            "email_enabled": True,
+            "smtp_enabled": True,
             "smtp_host": "smtp.example.com",
             "smtp_use_tls": "false",
             "smtp_starttls": "0",
@@ -79,6 +148,8 @@ async def test_smtp_settings_group_parses_boolean_strings() -> None:
 
     settings = smtp_settings_from_group(
         {
+            "email_enabled": True,
+            "smtp_enabled": True,
             "smtp_host": "smtp.example.com",
             "smtp_use_tls": "true",
             "smtp_starttls": "1",

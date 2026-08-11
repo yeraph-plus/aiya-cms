@@ -113,8 +113,7 @@ class AssetQueries:
         provider = _provider(self._ctx, row.provider_key)
         try:
             url = await provider.read_url(
-                bucket=row.bucket,
-                object_key=row.object_key, expires_in_seconds=expires_in_seconds
+                bucket=row.bucket, object_key=row.object_key, expires_in_seconds=expires_in_seconds
             )
         except StorageError:
             raise

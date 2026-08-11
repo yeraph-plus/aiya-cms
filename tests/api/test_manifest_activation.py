@@ -5,6 +5,7 @@ Contract source: context/spec/composition.md §9, http-openapi.md §12.
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import httpx
@@ -67,6 +68,16 @@ async def test_kernel_only_openapi_has_no_business_paths(
     assert not any(p.startswith("/oidc") for p in paths)
 
 
+async def test_kernel_only_does_not_import_deferred_capability_or_business_router(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    sys.modules.pop("inc.capabilities.notification.definition", None)
+    sys.modules.pop("inc.api.http.routers_auth", None)
+    build_container(manifest=kernel_only, uow_factory=uow_factory, clock=clock, settings=settings)
+    assert "inc.capabilities.notification.definition" not in sys.modules
+    assert "inc.api.http.routers_auth" not in sys.modules
+
+
 async def test_cms_admin_routes_require_auth_not_404(
     client: Any,
 ) -> None:
@@ -100,7 +111,7 @@ async def test_manifest_feature_requires_missing_capability_fails(
 async def test_missing_required_port_fails(uow_factory: Any, clock: Any) -> None:
     manifest = AppManifest(
         name="bad",
-        capabilities=("oidc_provider",),
+        capabilities=("identity", "access", "oidc_provider", "audit"),
         adapters=(
             ("oidc.subject_authenticator", "identity.credential"),
             ("oidc.subject_claims", "identity.profile"),
@@ -112,6 +123,59 @@ async def test_missing_required_port_fails(uow_factory: Any, clock: Any) -> None
             manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
         )
     assert excinfo.value.code == "kernel.port_unbound"
+
+
+async def test_capability_dependency_fails_before_port_resolution(
+    uow_factory: Any, clock: Any
+) -> None:
+    manifest = AppManifest(
+        name="bad",
+        capabilities=("access", "oidc_provider", "audit"),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
+        )
+    assert excinfo.value.code == "kernel.capability_requires_missing"
+
+
+async def test_adapter_port_owner_must_be_enabled(uow_factory: Any, clock: Any) -> None:
+    manifest = AppManifest(
+        name="bad",
+        capabilities=("audit",),
+        adapters=(("taxonomy.target_exists", "content.exists"),),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
+        )
+    assert excinfo.value.code == "kernel.port_owner_missing"
+
+
+async def test_adapter_provider_must_be_enabled(uow_factory: Any, clock: Any) -> None:
+    manifest = AppManifest(
+        name="bad",
+        capabilities=("taxonomy",),
+        adapters=(("taxonomy.target_exists", "content.exists"),),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
+        )
+    assert excinfo.value.code == "kernel.adapter_dependency_missing"
+
+
+async def test_router_requirements_fail_fast(uow_factory: Any, clock: Any) -> None:
+    manifest = AppManifest(
+        name="bad",
+        capabilities=("identity",),
+        routers=("auth",),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
+        )
+    assert excinfo.value.code == "kernel.router_requires_missing"
 
 
 async def test_unknown_adapter_fails(uow_factory: Any, clock: Any) -> None:
@@ -141,6 +205,32 @@ async def test_duplicate_port_binding_fails(uow_factory: Any, clock: Any) -> Non
             manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
         )
     assert excinfo.value.code == "kernel.port_duplicate"
+
+
+async def test_notification_email_port_preserves_ordered_provider_bindings(
+    uow_factory: Any, clock: Any
+) -> None:
+    manifest = AppManifest(
+        name="notification-test",
+        capabilities=("settings", "notification"),
+        features=("site_settings",),
+        adapters=(
+            ("notification.email", "email.smtp"),
+            ("notification.email", "email.smtp2go"),
+        ),
+    )
+    container = build_container(
+        manifest=manifest,
+        uow_factory=uow_factory,
+        clock=clock,
+        settings=ApiSettings(),
+    )
+    assert container.services is not None
+    providers = container.services.adapters["notification.email"]
+    assert tuple(provider.key for provider in providers) == (
+        "email.smtp",
+        "email.smtp2go",
+    )
 
 
 async def test_frozen_container_rejects_registration(uow_factory: Any, clock: Any) -> None:

@@ -63,7 +63,7 @@ class FakeObjectStore:
     async def create_upload_intent(self, **_: Any) -> UploadIntentCredentials:
         return UploadIntentCredentials(upload_url="https://storage.example/upload")
 
-    async def stat(self, *, object_key: str) -> ObjectStat:
+    async def stat(self, *, bucket: str | None = None, object_key: str) -> ObjectStat:
         if self.fail_stat:
             raise _storage_error("provider down")
         stat = self.objects.get(object_key)
@@ -75,10 +75,12 @@ class FakeObjectStore:
             )
         return stat
 
-    async def read_url(self, *, object_key: str, expires_in_seconds: int) -> str:
+    async def read_url(
+        self, *, bucket: str | None = None, object_key: str, expires_in_seconds: int
+    ) -> str:
         return f"https://storage.example/{object_key}?x-expires={expires_in_seconds}"
 
-    async def delete(self, *, object_key: str) -> None:
+    async def delete(self, *, bucket: str | None = None, object_key: str) -> None:
         if self.fail_delete:
             raise _storage_error("delete failed")
         self.deleted.append(object_key)

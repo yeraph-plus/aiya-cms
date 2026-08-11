@@ -10,8 +10,36 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 
 - `GET /healthz`：进程 liveness，不访问依赖。
 - `GET /api/v1/health`：当前 manifest 的 readiness。
-- `GET /api/v1/auth/me`：当前 Principal、最小 subject profile 和 capability keys。
+- `GET /api/v1/me`：当前 Principal、最小 subject profile、capability keys 和已装配的用户摘要（当前包含 points 余额）。
+- `PATCH /api/v1/me`：当前 subject 自助修改 `display_name`、`avatar_asset_id`。
+- `POST /api/v1/me/avatar/upload-intents`：当前 subject 为头像申请受限上传意图，组合根选择头像 bucket。
+- `POST /api/v1/me/avatar/upload-intents/{intent_id}/finalize`：完成头像资产 workflow，将 ready asset ID 写回当前 subject 资料。
+- `GET /api/v1/auth/grants`：当前认证 subject 的已授权应用列表；只返回未撤销的 OIDC consent，使用 `auth` tag，不区分用户侧和管理员端。
+- `DELETE /api/v1/auth/grants/{client_id}`：当前认证 subject 撤销某应用授权；撤销 consent 并使该 subject/client 的 session 与 refresh family 失效，幂等返回 204，不要求管理员 capability。
+- `POST /api/v1/auth/register`：公开自助注册（无需 Bearer）；username/email 冲突返回稳定 conflict 错误；注册即签发 email_verification challenge，token 只经带外投递（notification 装配前由进程内调用方持有），从不出现在响应体。
+- `POST /api/v1/auth/verify-email`：公开端点；一次性 token 标记邮箱已验证，token 无效/已消费/过期返回稳定 validation 错误。
+- `POST /api/v1/auth/password-reset/request`：公开端点（无需 Bearer）；对未知或非 active 标识返回与成功等价的 202 响应，不泄露枚举；challenge token 只经带外投递，从不出现在响应体。
+- `POST /api/v1/auth/password-reset/confirm`：公开端点；一次性 token + 新密码，token 无效/已消费/过期返回稳定 validation 错误。
+- `POST /api/v1/check-in`：显式签到写端点（需认证）；幂等域为 subject + program + 业务日期，重复调用返回原结果。
+- `GET /api/v1/me/points/ledger`：当前 subject 默认 program 积分账本分页；未开户返回空分页，读路径零副作用。
+- `GET /api/v1/point-purchase/offers` / `POST /api/v1/point-purchase/orders`：受信价格目录读取与购买 workflow 启动（需认证 + `Idempotency-Key` 头）。
+- `POST /api/v1/webhooks/payments/{provider_key}`：支付 webhook；先取原始 bytes 验签（§8），duplicate receipt 返回已处理结果，不承担浏览器 Principal。
+- `POST /api/v1/admin/users/{user_id}/unban`：管理员解封端点（`identity.users.unban` 权限）；仅 `banned` 用户可解封并发出 `identity.user_unbanned.v1` 安全事件，非 banned 返回稳定 conflict，未知用户返回 404。
+- `POST /api/v1/admin/points/adjust`：管理员积分调整端点（`points.adjust` 权限）；`program_key` 可选，省略时使用 `credit`，请求携带 `reason` 与 `idempotency_key`，正数金额入 perpetual 桶，负数金额按 expires-at FIFO 扣桶（不足允许进入 debt），首次调整自动开户，重复 key 返回原流水结果；该写操作计入管理员审计。
+- `GET /api/v1/admin/points/ledger`：按主体和可选 program 查询管理员积分账户余额、桶和账本分页（`points.read` 权限）；只读且无副作用。
+- `GET /api/v1/admin/audit/entries`：按审计 action、actor、outcome 和时间范围分页查询不可变审计记录（`audit.read` 权限）。
+- `GET /api/v1/admin/execution/entries`：按 kind、key、status 和时间范围分页查询 kernel outbox、inbox receipt、task 的安全执行摘要（`audit.read` 权限），不返回 payload/result/自由文本异常。
+- `GET /api/v1/admin/assets`：按 state、provider、bucket 或 object key 分页查询稳定 asset references（`assets.read` 权限），不返回 signed URL。
+- `GET /api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms`：读取一个 opaque target 的当前 term assignments（`taxonomy.read` 权限），按 dimension 分组返回；它不为 content 列表提供 taxonomy 过滤。
 - capability/feature routers：只有完整产品 manifest 显式挂载后存在。
+
+### 2.1 明确不导出的定义管理接口
+
+- `points program` 的定义管理由后端代码/ops 保留；当前不导出 `/api/v1/admin/points/programs` 的 GET/POST/PATCH/DELETE。现有 points 端点只消费已注册的 `program_key`。
+- `membership level` 的定义管理由后端代码/ops 保留；`GET /api/v1/admin/membership/levels` 是只读目录，当前不导出 POST/PATCH/DELETE 或通用状态写入。
+- `notification template` 的定义管理由后端 capability/feature 注册表保留；当前不导出 `/api/v1/admin/notifications/templates` 的读取或写入接口。未来 notification 管理端点只覆盖 delivery/attempt 查询与命名恢复 Command，除非模板合同另行完成规格闭环。
+
+上述 OpenAPI 缺席是刻意边界，不得通过反射数据库模型、自动 CRUD、前端手写 DTO 或占位页面绕过。未来导出必须逐项声明稳定 operationId、权限、版本/幂等、审计与错误合同。
 
 旧 Demo endpoint 不是兼容目标。interaction 和旧 dashboard endpoint 删除；管理员汇总由显式 readmodel providers 形成新契约。
 
@@ -97,6 +125,7 @@ Page DTO：
 - 根 `openapi.json` 和 `openapi.sha256` 是完整产品 manifest 的冻结 HTTP 契约。
 - `inc.api.openapi dump/check` 或替代命令以同一 manifest 确定性生成。
 - operationId、schema name、error response、security scheme 和 tags 必须稳定且唯一。
+- 每个 router 声明稳定 tags 以组织 `/docs`：公开端点使用领域 tag（`auth`、`check-in`、`points`、`point-purchase`、`membership-purchase`、`webhooks`、`oidc`、`system`）；管理员端点使用伞形 `admin` tag 加 `admin-<domain>` 子 tag（如 `admin-users`、`admin-content`）。tag 说明由组合根 `openapi_tags` 统一声明。
 - 管理员 TypeScript 类型由 snapshot 生成，禁止手写重复后端 DTO 或以 `unknown` 绕过。
 - API 变更必须在同一提交同步规格、失败测试、实现、snapshot/hash、生成类型和管理员调用。
 - OIDC Discovery/JWKS 的动态内容另有协议合同测试，不把运行密钥固化进 OpenAPI。

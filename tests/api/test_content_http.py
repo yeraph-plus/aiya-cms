@@ -63,6 +63,23 @@ async def test_unknown_type_is_validation_error(client: Any, admin_token: str) -
     assert response.json()["code"] == "content.unknown_type"
 
 
+async def test_admin_content_list_contains_all_registered_types(
+    client: Any, admin_token: str
+) -> None:
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for type_name, slug in (("post", "all-types-post"), ("page", "all-types-page")):
+        created = await client.post(
+            "/api/v1/admin/content",
+            json={"type_name": type_name, "title": type_name, "slug": slug, "data": {}},
+            headers=headers,
+        )
+        assert created.status_code == 200, created.text
+
+    listing = await client.get("/api/v1/admin/content", headers=headers)
+    assert listing.status_code == 200, listing.text
+    assert {item["type_name"] for item in listing.json()["items"]} == {"post", "page"}
+
+
 async def test_invalid_transition_conflict(client: Any, admin_token: str) -> None:
     headers = {"Authorization": f"Bearer {admin_token}"}
     created = await client.post(

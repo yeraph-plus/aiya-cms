@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from inc.capabilities.settings.groups import SettingFieldType
 
@@ -42,6 +42,7 @@ class SettingGroupDTO(BaseModel):
     version: int
     fields: tuple[SettingFieldDTO, ...]
     values: dict[str, Any]
+    sensitive_configured: dict[str, bool] = Field(default_factory=dict)
     updated_by: str | None = None
     updated_at: datetime | None = None
 
@@ -57,3 +58,4 @@ class UpdateSettingGroupInput(BaseModel):
 
     expected_version: int
     values: dict[str, Any]
+    clear_sensitive_fields: tuple[str, ...] | None = None

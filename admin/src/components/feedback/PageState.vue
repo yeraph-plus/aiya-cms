@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { errorMessage } from '@/api/errors';
+import { errorMessage, requestIdOf } from '@/api/errors';
 
 type PageStateKind = 'loading' | 'error' | 'empty' | 'ready';
 
@@ -15,6 +15,8 @@ const displayTitle = computed(() => {
     if (props.state === 'error' && props.error != null) return errorMessage(props.error);
     return props.title;
 });
+
+const requestId = computed(() => requestIdOf(props.error));
 </script>
 
 <template>
@@ -24,6 +26,7 @@ const displayTitle = computed(() => {
     <div v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-10">
         <i class="pi pi-exclamation-triangle text-3xl text-red-500"></i>
         <Message severity="error" :closable="false" class="w-full">{{ displayTitle }}</Message>
+        <span v-if="requestId" class="text-xs text-muted-color">Request ID: {{ requestId }}</span>
         <span v-if="description" class="text-muted-color text-sm">{{ description }}</span>
     </div>
     <div v-else-if="state === 'empty'" class="flex flex-col items-center gap-3 py-10">

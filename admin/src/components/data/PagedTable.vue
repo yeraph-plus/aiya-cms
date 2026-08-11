@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(
+const props = withDefaults(
     defineProps<{
         value: unknown[];
         loading?: boolean;
@@ -23,8 +23,9 @@ const emit = defineEmits<{
 }>();
 
 const onPage = (event: { page: number; rows: number }) => {
-    emit('update:page', event.page + 1);
-    emit('update:size', event.rows);
+    const nextPage = event.page + 1;
+    if (nextPage !== props.page) emit('update:page', nextPage);
+    if (event.rows !== props.size) emit('update:size', event.rows);
 };
 </script>
 

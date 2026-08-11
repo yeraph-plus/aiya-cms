@@ -18,6 +18,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from inc.adapters import ContentBatchExists, resolve_adapters
+from inc.adapters.registry import (
+    ADAPTER_REQUIREMENTS,
+    KNOWN_ADAPTERS,
+    MULTI_PROVIDER_PORTS,
+    PORT_CONTRACTS,
+)
 from inc.api.config import DEFAULT_ISSUER
 from inc.capabilities.access import (
     AccessDiagnostics,
@@ -42,6 +48,8 @@ from inc.capabilities.content import (
     ScheduledPublishActivity,
     register_publish_workflow,
 )
+from inc.capabilities.engagement import EngagementCommands, EngagementQueries
+from inc.capabilities.engagement.ports import ContentEngagementTarget
 from inc.capabilities.identity import (
     CredentialAuthenticator,
     IdentityDiagnostics,
@@ -119,73 +127,142 @@ from inc.kernel.tasks import (
 from inc.kernel.time import Clock
 from inc.kernel.workflow import WorkflowRegistry, WorkflowRunner
 
-CAPABILITY_SPECS: dict[str, CapabilitySpec] = {}
-FEATURE_SPECS: dict[str, FeatureSpec] = {}
+CAPABILITY_DEFINITIONS: dict[str, tuple[str, str]] = {
+    "identity": ("inc.capabilities.identity.definition", "spec"),
+    "access": ("inc.capabilities.access.definition", "spec"),
+    "oidc_provider": ("inc.capabilities.oidc_provider.definition", "spec"),
+    "audit": ("inc.capabilities.audit.definition", "spec"),
+    "settings": ("inc.capabilities.settings.definition", "spec"),
+    "content": ("inc.capabilities.content.definition", "spec"),
+    "taxonomy": ("inc.capabilities.taxonomy.definition", "spec"),
+    "assets": ("inc.capabilities.assets.definition", "spec"),
+    "notification": ("inc.capabilities.notification.definition", "spec"),
+    "points": ("inc.capabilities.points.definition", "spec"),
+    "payments": ("inc.capabilities.payments.definition", "spec"),
+    "membership": ("inc.capabilities.membership.definition", "spec"),
+    "engagement": ("inc.capabilities.engagement.definition", "spec"),
+}
 
-for _module, _attr in (
-    ("inc.capabilities.identity.definition", "spec"),
-    ("inc.capabilities.access.definition", "spec"),
-    ("inc.capabilities.oidc_provider.definition", "spec"),
-    ("inc.capabilities.audit.definition", "spec"),
-    ("inc.capabilities.settings.definition", "spec"),
-    ("inc.capabilities.content.definition", "spec"),
-    ("inc.capabilities.taxonomy.definition", "spec"),
-    ("inc.capabilities.assets.definition", "spec"),
-    ("inc.capabilities.points.definition", "spec"),
-    ("inc.capabilities.payments.definition", "spec"),
-    ("inc.capabilities.membership.definition", "spec"),
-):
-    _spec = getattr(importlib.import_module(_module), _attr)
-    CAPABILITY_SPECS[_module.rsplit(".", 2)[1]] = _spec
+STAT_PROVIDER_MODULES: dict[str, str] = {
+    "identity": "inc.capabilities.identity.stat",
+    "access": "inc.capabilities.access.stat",
+    "oidc_provider": "inc.capabilities.oidc_provider.stat",
+    "audit": "inc.capabilities.audit.stat",
+    "settings": "inc.capabilities.settings.stat",
+    "content": "inc.capabilities.content.stat",
+    "taxonomy": "inc.capabilities.taxonomy.stat",
+    "assets": "inc.capabilities.assets.stat",
+    "notification": "inc.capabilities.notification.stat",
+    "points": "inc.capabilities.points.stat",
+    "payments": "inc.capabilities.payments.stat",
+    "membership": "inc.capabilities.membership.stat",
+    "engagement": "inc.capabilities.engagement.stat",
+}
 
-for _module, _attr in (
-    ("inc.features.post.definition", "spec"),
-    ("inc.features.page.definition", "spec"),
-    ("inc.features.site_settings.definition", "spec"),
-    ("inc.features.check_in.definition", "spec"),
-    ("inc.features.point_purchase.definition", "spec"),
-    ("inc.features.membership_purchase.definition", "spec"),
-    ("inc.features.site_cleanup.definition", "spec"),
-):
-    _spec = getattr(importlib.import_module(_module), _attr)
-    FEATURE_SPECS[_module.rsplit(".", 2)[1]] = _spec
+FEATURE_DEFINITIONS: dict[str, tuple[str, str]] = {
+    "post": ("inc.features.post.definition", "spec"),
+    "page": ("inc.features.page.definition", "spec"),
+    "site_settings": ("inc.features.site_settings.definition", "spec"),
+    "check_in": ("inc.features.check_in.definition", "spec"),
+    "point_purchase": ("inc.features.point_purchase.definition", "spec"),
+    "membership_purchase": ("inc.features.membership_purchase.definition", "spec"),
+    "site_cleanup": ("inc.features.site_cleanup.definition", "spec"),
+    "content_engagement": ("inc.features.content_engagement.definition", "spec"),
+}
 
 REQUIRED_PORTS: dict[str, tuple[str, ...]] = {
-    "oidc_provider": (
-        "oidc.subject_authenticator",
-        "oidc.subject_claims",
-        "oidc.authorization_decision",
-        "oidc.security_events",
-    ),
-    "taxonomy": ("taxonomy.target_exists",),
-    "assets": ("assets.object_storage",),
-    "payments": ("payments.provider",),
-    "membership": ("membership.subject_exists", "membership.points_ledger"),
+    capability: tuple(
+        port for port, (owner, _providers) in PORT_CONTRACTS.items() if owner == capability
+    )
+    for capability in {owner for owner, _providers in PORT_CONTRACTS.values()}
 }
 
 AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
 SECURITY_EVENT_KEYS = ("identity.user_banned.v1", "identity.password_changed.v1")
-KNOWN_ROUTERS = frozenset(
-    {
-        "health",
-        "auth",
-        "identity",
-        "access",
-        "content",
-        "taxonomy",
-        "settings",
-        "assets",
-        "audit",
-        "execution",
-        "oidc",
-        "check_in",
-        "points",
-        "points_admin",
-        "point_purchase",
-        "payments",
-        "membership_purchase",
-    }
-)
+
+
+@dataclass(frozen=True, slots=True)
+class RouterBinding:
+    """Lazy router module binding and its manifest requirements."""
+
+    module: str | None
+    capabilities: tuple[str, ...] = ()
+    features: tuple[str, ...] = ()
+
+
+class _ContentEngagementReader:
+    """Composition adapter from content DTOs to the engagement port."""
+
+    def __init__(self, queries: ContentQueries) -> None:
+        self._queries = queries
+
+    async def get(self, content_id: Any) -> ContentEngagementTarget | None:
+        content = await self._queries.get(content_id)
+        if content is None:
+            return None
+        return ContentEngagementTarget(
+            content_id=content_id,
+            type_name=content.type_name,
+            status=content.status,
+            published_at=content.published_at,
+        )
+
+
+ROUTER_BINDINGS: dict[str, RouterBinding] = {
+    "health": RouterBinding(module=None),
+    "auth": RouterBinding(
+        module="inc.api.http.routers_auth",
+        capabilities=("identity", "assets", "settings", "points"),
+        features=("check_in",),
+    ),
+    "identity": RouterBinding(module="inc.api.http.routers_identity", capabilities=("identity",)),
+    "access": RouterBinding(module="inc.api.http.routers_access", capabilities=("access",)),
+    "content": RouterBinding(module="inc.api.http.routers_content", capabilities=("content",)),
+    "content_public": RouterBinding(
+        module="inc.api.http.routers_content_public",
+        capabilities=("content", "engagement"),
+        features=("content_engagement",),
+    ),
+    "engagement": RouterBinding(
+        module="inc.api.http.routers_engagement",
+        capabilities=("engagement",),
+        features=("content_engagement",),
+    ),
+    "dashboard": RouterBinding(module="inc.api.http.routers_dashboard", capabilities=("access",)),
+    "taxonomy": RouterBinding(module="inc.api.http.routers_taxonomy", capabilities=("taxonomy",)),
+    "settings": RouterBinding(module="inc.api.http.routers_settings", capabilities=("settings",)),
+    "assets": RouterBinding(module="inc.api.http.routers_assets", capabilities=("assets",)),
+    "audit": RouterBinding(module="inc.api.http.routers_audit", capabilities=("audit",)),
+    "execution": RouterBinding(module="inc.api.http.routers_execution", capabilities=("audit",)),
+    "oidc": RouterBinding(
+        module=None,
+        capabilities=("oidc_provider", "identity", "access", "audit"),
+    ),
+    "check_in": RouterBinding(
+        module="inc.api.http.routers_check_in",
+        capabilities=("points",),
+        features=("check_in",),
+    ),
+    "points": RouterBinding(module="inc.api.http.routers_points", capabilities=("points",)),
+    "points_admin": RouterBinding(
+        module="inc.api.http.routers_points_admin", capabilities=("points",)
+    ),
+    "point_purchase": RouterBinding(
+        module="inc.api.http.routers_point_purchase",
+        capabilities=("payments", "points"),
+        features=("point_purchase",),
+    ),
+    "payments": RouterBinding(module="inc.api.http.routers_payments", capabilities=("payments",)),
+    "membership_purchase": RouterBinding(
+        module="inc.api.http.routers_membership_purchase",
+        capabilities=("payments", "membership", "points"),
+        features=("membership_purchase",),
+    ),
+    "membership_admin": RouterBinding(
+        module="inc.api.http.routers_membership_admin", capabilities=("membership",)
+    ),
+}
+KNOWN_ROUTERS = frozenset(ROUTER_BINDINGS)
 KNOWN_WORKERS = frozenset({"outbox", "workflow", "task"})
 
 
@@ -238,6 +315,7 @@ class Services:
     payments_queries: PaymentsQueries
     membership_levels: MembershipLevelRegistry | None = None
     membership_queries: MembershipQueries | None = None
+    me: Any | None = None
     adapters: dict[str, Any] = field(default_factory=dict)
     settings: Any = None
     asset_providers: dict[str, Any] = field(default_factory=dict)
@@ -247,6 +325,9 @@ class Services:
     oidc_grants: GrantConsentService | None = None
     payment_providers: dict[str, Any] = field(default_factory=dict)
     payment_webhook_secrets: dict[str, str] = field(default_factory=dict)
+    engagement_commands: EngagementCommands | None = None
+    engagement_queries: EngagementQueries | None = None
+    admin_summaries: AdminSummaryRegistry | None = None
     task_worker: TaskWorker | None = None
     cron_scheduler: CronScheduler | None = None
 
@@ -270,6 +351,9 @@ class ApplicationContainer:
         self._started = False
         self._tasks: list[asyncio.Task[Any]] = []
         self._points_expire: ExpireBuckets | None = None
+        self.capability_specs: dict[str, CapabilitySpec] = {}
+        self.feature_specs: dict[str, FeatureSpec] = {}
+        self._feature_modules: dict[str, Any] = {}
         self.schema_registry = EventSchemaRegistry()
         self.handler_registry = EventHandlerRegistry()
         self.workflow_registry = WorkflowRegistry()
@@ -292,13 +376,32 @@ class ApplicationContainer:
             raise _fail("kernel.registry_frozen", f"container is frozen; cannot modify {key}")
 
     def _validate_manifest(self) -> None:
+        self.capability_specs.clear()
+        self.feature_specs.clear()
+        self._feature_modules.clear()
         for name in self._manifest.capabilities:
-            if name not in CAPABILITY_SPECS:
+            definition = CAPABILITY_DEFINITIONS.get(name)
+            if definition is None:
                 raise _fail("kernel.capability_unknown", f"capability {name!r} is not registered")
+            module_name, attribute = definition
+            spec = getattr(importlib.import_module(module_name), attribute)
+            self.capability_specs[name] = spec
+            for required in spec.requires:
+                if required not in self._manifest.capabilities:
+                    raise _fail(
+                        "kernel.capability_requires_missing",
+                        f"capability {name!r} requires capability {required!r}",
+                    )
         for name in self._manifest.features:
-            if name not in FEATURE_SPECS:
+            definition = FEATURE_DEFINITIONS.get(name)
+            if definition is None:
                 raise _fail("kernel.feature_unknown", f"feature {name!r} is not registered")
-            for required in FEATURE_SPECS[name].requires:
+            module_name, attribute = definition
+            module = importlib.import_module(module_name)
+            self._feature_modules[name] = module
+            spec = getattr(module, attribute)
+            self.feature_specs[name] = spec
+            for required in spec.requires:
                 if required not in self._manifest.capabilities:
                     raise _fail(
                         "kernel.feature_requires_missing",
@@ -313,8 +416,8 @@ class ApplicationContainer:
                 "feature 'site_cleanup' requires feature 'site_settings'",
             )
         for group_name, group, known in (
-            ("capability", self._manifest.capabilities, set(CAPABILITY_SPECS)),
-            ("feature", self._manifest.features, set(FEATURE_SPECS)),
+            ("capability", self._manifest.capabilities, set(CAPABILITY_DEFINITIONS)),
+            ("feature", self._manifest.features, set(FEATURE_DEFINITIONS)),
             ("router", self._manifest.routers, KNOWN_ROUTERS),
             ("worker", self._manifest.workers, KNOWN_WORKERS),
         ):
@@ -329,11 +432,75 @@ class ApplicationContainer:
                     "kernel.registry_unknown",
                     f"unknown {group_name} in manifest: {sorted(unknown)}",
                 )
+        capabilities = set(self._manifest.capabilities)
+        features = set(self._manifest.features)
+        for router_name in self._manifest.routers:
+            binding = ROUTER_BINDINGS[router_name]
+            missing_capabilities = set(binding.capabilities) - capabilities
+            if missing_capabilities:
+                raise _fail(
+                    "kernel.router_requires_missing",
+                    f"router {router_name!r} requires capabilities {sorted(missing_capabilities)}",
+                )
+            missing_features = set(binding.features) - features
+            if missing_features:
+                raise _fail(
+                    "kernel.router_requires_missing",
+                    f"router {router_name!r} requires features {sorted(missing_features)}",
+                )
         if self._manifest.cron_enabled and "task" not in self._manifest.workers:
             raise _fail(
                 "kernel.cron_worker_missing",
                 "cron_enabled requires the task worker",
             )
+
+    def _validate_adapter_bindings(self) -> None:
+        """Validate port ownership and provider capabilities before resolution."""
+
+        capabilities = set(self._manifest.capabilities)
+        seen_ports: set[str] = set()
+        for port, _adapter in self._manifest.adapters:
+            if port in seen_ports and port not in MULTI_PROVIDER_PORTS:
+                raise _fail(
+                    "kernel.port_duplicate",
+                    f"port {port} bound more than once",
+                )
+            seen_ports.add(port)
+        seen_ports.clear()
+        for port, adapter in self._manifest.adapters:
+            if port in seen_ports and port not in MULTI_PROVIDER_PORTS:
+                raise _fail(
+                    "kernel.port_duplicate",
+                    f"port {port} bound more than once",
+                )
+            seen_ports.add(port)
+            if adapter not in KNOWN_ADAPTERS:
+                raise _fail(
+                    "kernel.adapter_unknown",
+                    f"unknown adapter {adapter!r} for port {port!r}",
+                )
+            contract = PORT_CONTRACTS.get(port)
+            if contract is None:
+                raise _fail("kernel.port_unknown", f"unknown port {port!r}")
+            owner, port_providers = contract
+            if owner not in capabilities:
+                raise _fail(
+                    "kernel.port_owner_missing",
+                    f"port {port!r} belongs to disabled capability {owner!r}",
+                )
+            adapter_providers = set(ADAPTER_REQUIREMENTS[adapter])
+            required_providers = set(port_providers)
+            missing = required_providers - capabilities
+            if missing:
+                raise _fail(
+                    "kernel.adapter_dependency_missing",
+                    f"port {port!r} requires provider capabilities {sorted(missing)}",
+                )
+            if not required_providers <= adapter_providers:
+                raise _fail(
+                    "kernel.adapter_contract_mismatch",
+                    f"adapter {adapter!r} cannot provide port {port!r}",
+                )
 
     def _register_cron(self, *, key: str, schedule: str, handler: Any) -> None:
         """Register one CronSpec and its persistent TaskInstance handler."""
@@ -397,12 +564,14 @@ class ApplicationContainer:
 
     def _register_permissions(self) -> None:
         for name in self._manifest.capabilities:
-            spec = CAPABILITY_SPECS[name]
+            spec = self.capability_specs[name]
             self.permission_registry.register_declared(name, spec.access_keys)
+        if "access" in self._manifest.capabilities:
+            self.permission_registry.register_alias("admin.dashboard.read", owner="access")
 
     def _register_declarations(self) -> None:
         for name in self._manifest.features:
-            module = importlib.import_module(f"inc.features.{name}.definition")
+            module = self._feature_modules[name]
             content_type = getattr(module, "content_type_spec", None)
             if content_type is not None:
                 self.content_types.register(content_type)
@@ -429,6 +598,18 @@ class ApplicationContainer:
         authorize = AuthorizeService(uow_factory=self._uow_factory, clock=self._clock)
         access_queries = AccessQueries(uow_factory=self._uow_factory)
         content_queries = ContentQueries(uow_factory=self._uow_factory, types=self.content_types)
+        engagement_commands: EngagementCommands | None = None
+        engagement_queries: EngagementQueries | None = None
+        if "engagement" in capabilities:
+            engagement_commands = EngagementCommands(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                content_reader=_ContentEngagementReader(content_queries),
+            )
+            engagement_queries = EngagementQueries(
+                uow_factory=self._uow_factory,
+                commands=engagement_commands,
+            )
         taxonomy_queries = TaxonomyQueries(
             uow_factory=self._uow_factory, dimensions=self.dimensions
         )
@@ -530,6 +711,23 @@ class ApplicationContainer:
             )
 
         features = set(self._manifest.features)
+        me_service: Any | None = None
+        if "check_in" in features:
+            from inc.features.check_in.api import MeService
+
+            me_service = MeService(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                hasher=hasher,
+                runner=runner,
+                identity_queries=identity_queries,
+                points_queries=points_queries,
+                behaviors=self.behaviors,
+                settings_queries=settings_queries,
+                asset_queries=asset_queries,
+                asset_providers=asset_providers,
+            )
         if "check_in" in features:
             from inc.features.check_in.workflows import (
                 CheckInContext,
@@ -717,6 +915,17 @@ class ApplicationContainer:
         if "audit" in capabilities:
             self.handler_registry.register(AUDIT_EVENT_KEY, AuditInboxHandler(clock=self._clock))
 
+        if "engagement" in capabilities and "content_engagement" in self._manifest.features:
+            from inc.capabilities.content.events import CONTENT_EVENT_SCHEMAS
+            from inc.capabilities.engagement.readmodels import ContentEngagementProjection
+
+            projection = ContentEngagementProjection(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+            )
+            for event_key in CONTENT_EVENT_SCHEMAS:
+                self.handler_registry.register(event_key, projection)
+
         dispatcher = OutboxDispatcher(
             uow_factory=self._uow_factory,
             schema_registry=self.schema_registry,
@@ -774,6 +983,18 @@ class ApplicationContainer:
                 PaymentsDiagnostics(uow_factory=self._uow_factory, clock=self._clock)
             )
 
+        # Statistics are capability-owned and explicitly registered; the
+        # dashboard only aggregates providers selected by this manifest.
+        for capability in self._manifest.capabilities:
+            module_name = STAT_PROVIDER_MODULES.get(capability)
+            if module_name is None:
+                continue
+            module = importlib.import_module(module_name)
+            provider_cls = module.Provider
+            self.admin_summary_registry.register(
+                provider_cls(uow_factory=self._uow_factory, clock=self._clock)
+            )
+
         cron_scheduler = CronScheduler(
             uow_factory=self._uow_factory,
             registry=self.cron_registry,
@@ -804,6 +1025,9 @@ class ApplicationContainer:
             asset_providers=asset_providers,
             content_queries=content_queries,
             taxonomy_queries=taxonomy_queries,
+            engagement_commands=engagement_commands,
+            engagement_queries=engagement_queries,
+            admin_summaries=self.admin_summary_registry,
             settings_queries=settings_queries,
             asset_queries=asset_queries,
             audit_queries=audit_queries,
@@ -813,6 +1037,7 @@ class ApplicationContainer:
             payments_queries=payments_queries,
             membership_levels=self.membership_levels,
             membership_queries=membership_queries,
+            me=me_service,
             scanner=scanner,
             oidc=oidc,
             oidc_grants=oidc_grants,
@@ -847,6 +1072,7 @@ class ApplicationContainer:
 
         self._require("build")
         self._validate_manifest()
+        self._validate_adapter_bindings()
         self._register_event_schemas()
         self._register_permissions()
         self._register_declarations()

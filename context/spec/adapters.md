@@ -2,23 +2,25 @@
 
 ## 1. 定位
 
-adapter 是组合根（`inc/api`）一侧的 Port 实现库，按消费方 capability 分目录组织。capability 定义 Port（`notification.ports.NotificationProvider`、`payments.ports.PaymentProvider`、`assets.ports.ObjectStorageProvider` 等），adapter 实现它们；api 层的 manifest 显式选择 adapter 并绑定到 Port，未绑定的必需 Port 启动失败。
+adapter 是 `inc/adapters` 下的 Port 实现库，按消费方 capability 分目录组织。capability 定义 Port（`notification.ports.NotificationProvider`、`payments.ports.PaymentProvider`、`assets.ports.ObjectStorageProvider` 等），adapter 实现它们；api 层的 manifest 显式选择 adapter 并绑定到 Port，未绑定的必需 Port 启动失败。
 
 adapter 与 capability、feature 同级是规格的一等成员：capability 只声明接口契约，feature 只编排业务，adapter 只负责外部集成（SDK client、凭据、超时、限流、webhook 验签和错误归一化）。业务层永远不直接实例化 provider SDK。
+
+`inc/adapters` 不隶属于 `inc/api`，可被 api 与 feature 使用：api 经 manifest 显式装配并绑定 Port；feature 在需要外部集成实现时按稳定 key 消费已冻结契约的 adapter。capability 不得反向导入 adapter。未装配 capability 的 manifest 不得通过任何 adapter 连接外部 provider。
 
 ## 2. 目录合同
 
 ```text
-inc/api/adapters/
-  registry.py                  # 组合根解析与内存/dev adapter（identity/auth/taxonomy/assets）
+inc/adapters/
+  registry.py                  # 组合根解析与非 SDK adapter（identity/auth/taxonomy）
   <capability>/                # 按消费方 capability 分目录
     __init__.py                # 目录说明与占位声明
     <provider>.py              # 一个外部集成一个文件
 ```
 
-- 目录名使用消费方 capability 名：`notification`、`payments`、`content`。
+- 目录名使用消费方 capability 名：`notification`、`payments`、`assets`、`content`、`membership`。
 - 每个 adapter 文件只实现一个 Port 契约，使用 provider 的公开 Query/Command 获取数据，不读取其 Repository/ORM。
-- adapter 属于 `inc/api`，可导入 capability/feature 的公开声明；capability、feature 不得反向导入 adapter。
+- adapter 属于 `inc/adapters`，可导入 capability/feature 的公开声明；capability 不得反向导入 adapter。
 - adapter 只声明与冻结契约对齐的稳定 key（如 `email.smtp`）；manifest 以 key 引用，禁止 import 即注册。
 
 ## 3. 已装配与计划 adapter
@@ -27,28 +29,46 @@ inc/api/adapters/
 
 | 文件 | 状态 | 说明 |
 | --- | --- | --- |
-| `notification/email_smtp.py` | 已实现（key `email.smtp`） | aiosmtplib 封装；错误分类、稳定 idempotency key 透传、超时归 unknown |
-| `notification/smtp2go.py` | 计划占位 | Smtp2Go 事务邮件 SDK 接入；provider 契约冻结后实现 |
+| `notification/email_smtp.py` | 已实现（key `email.smtp`） | aiosmtplib 封装；运行时开关、错误分类、稳定 idempotency key 透传、超时归 unknown |
+| `notification/smtp2go.py` | 已实现（key `email.smtp2go`） | 使用 requests 调用 SMTP2GO REST `/v3/email/send`；固定 region endpoint、运行时开关、错误分类和 provider reference 归一化 |
 
-SMTP 连接参数与凭据（host/port/username/password/from_address、use_tls/starttls）由 `site_settings` feature 的 `notification` settings 组填写；adapter 在装配时从该组构造 `SmtpSettings`。凭据字段登记为 sensitive，不进入公共 DTO、事件、日志和审计摘要。
+邮件连接参数与凭据由 `site_settings` feature 的 `notification` settings 组填写；两个 adapter 复用现有 `default_from_name`、`smtp_from_address` 和 `email_enabled` 字段。`email.smtp` 额外读取 `smtp_enabled` 与现有 SMTP 字段，`email.smtp2go` 读取 `smtp2go_enabled`、`smtp2go_api_key` 与 `smtp2go_region`。adapter 每次投递时读取当前组值，不持有跨调用的设置快照。
+
+`smtp2go_region` 只能映射到 SMTP2GO 官方 global/US/EU HTTPS endpoint，不允许由 settings 提供任意 base URL。SMTP2GO API key 与 SMTP password 登记为 sensitive；管理 HTTP 只返回是否已配置，不回显原值。requests 的同步调用必须放入有硬 connect/read timeout 的线程，不得阻塞异步 activity event loop，也不得对 POST 自动重试。
+
+两个 Email adapter 在各自内部检查总开关和 provider 开关；禁用或缺少必需配置返回归一化 `unavailable`，不伪装为发送失败。notification 只经 Port 消费由组合根注入的有序 provider 元组，不导入 adapter 实现。
 
 ### 3.2 payments（消费 `PaymentProvider`）
 
 | 文件 | 状态 | 说明 |
 | --- | --- | --- |
+| `payments/dev_fake.py` | 已实现（key `payments.dev_fake`） | 开发/演示用确定性 fake provider：内存会话、HMAC-SHA256 webhook 签名（模块常量测试密钥）、capture/failure/refund 事件构造辅助；生产 manifest 禁止绑定（`kernel.adapter_production_denied`） |
 | `payments/paypal.py` | 计划占位 | PayPal Orders API v2；webhook 验签（transmission-id/signature/timestamp） |
 | `payments/epay.py` | 计划占位 | Epay（易支付）网关 SDK；webhook 验签与回调归一化 |
 
-provider 连接配置与凭据在 provider 契约冻结后按 settings 组或 secret provider 约定补充，不提前写死字段。
+provider 连接配置与凭据在 provider 契约冻结后按 settings 组或 secret provider 约定补充，不提前写死字段。dev_fake 的 webhook 测试密钥是公开的模块常量，仅用于开发与测试闭环，不构成生产凭据。
 
-### 3.3 content（消费 `ObjectStorageProvider` 等）
+### 3.3 assets（消费 `ObjectStorageProvider`）
 
 | 文件 | 状态 | 说明 |
 | --- | --- | --- |
-| `content/s3.py` | 计划占位 | AWS S3/S3-compatible（boto3）：presigned 上传/读取 URL、stat、幂等 delete |
+| `assets/s3.py` | 已实现（key `s3`） | AWS S3/S3-compatible boto3：按组合根选择系统/头像 bucket，presigned 上传/读取 URL、stat、幂等 delete；连接配置和凭据来自 `site_settings.object_storage` |
+
+S3 adapter 每次 Port 调用读取当前 settings 组并创建本次调用的 SDK 配置；不持有跨调用的凭据快照。RustFS 作为 Compose 集成测试的 S3-compatible provider。
+
+### 3.4 content（内容外部集成）
+
+| 文件 | 状态 | 说明 |
+| --- | --- | --- |
 | `content/openlist.py` | 计划占位 | OpenList 内容分发 SDK；目标 Port 待冻结 |
 
-开发期对象存储使用 `registry.py` 的 `InMemoryObjectStorage`（key `dev_memory`），生产 manifest 禁止绑定（`kernel.adapter_production_denied`）。
+### 3.5 membership（消费 `SubjectExistsPort`、`PointsLedgerPort`）
+
+| 文件 | 状态 | 说明 |
+| --- | --- | --- |
+| `membership/__init__.py` | 已实现 | `IdentitySubjectExists`（`membership.subject_exists`，经 identity 查询解析 opaque subject）与 `PointsGrantLedger`（`membership.points_ledger`，只向 points 公开 `CreditPoints` 传数值/到期时刻/幂等键） |
+
+membership adapter 只传递数值与 opaque 引用，不读取 points 或 identity 的业务表；`membership.points_ledger` 使用 points 行为 `membership.grant`，由 `membership_purchase` feature 声明该行为。
 
 ## 4. 占位文件规则
 
@@ -59,12 +79,13 @@ provider 连接配置与凭据在 provider 契约冻结后按 settings 组或 se
 ## 5. 装配与校验
 
 - adapter 由 `registry.py` 的解析函数按 manifest 绑定创建；重复绑定、未知 adapter、必需 Port 未绑定均启动失败。
-- 生产环境只允许已审计的 provider adapter，dev 专用 adapter（`dev_memory`）显式拒绝。
-- adapter 的稳定 key、依赖和配置校验在容器 freeze 前完成。
+- 生产环境只允许已审计的 provider adapter；当前完整 manifest 使用已审计的 S3-compatible adapter。
+- adapter 的稳定 key、依赖和绑定配置校验在容器 freeze 前完成；由 settings 提供的运行配置在每次调用时验证。
+- `taxonomy.target_exists` 的 `content.exists` adapter 把 taxonomy 的 opaque `target_type` 解释为 content type name：仅当内容存在且 `type_name` 匹配（如 post feature 声明 `target_types=("post",)`）时返回 true。taxonomy HTTP 路由必须经 manifest 绑定获取该检查，不得自建存在性逻辑。
 
 ## 6. 验收
 
 - 单独导入任意 adapter 目录/占位文件无副作用。
 - 未装配 capability 的 manifest 不连接任何外部 provider。
-- SMTP 凭据只来自 settings `notification` 组，不来自环境变量或代码常量；sensitive 字段不出现在公共读取/事件/日志。
+- SMTP 凭据只来自 settings `notification` 组；S3 凭据只来自 settings `object_storage` 组；sensitive 字段不出现在公共读取/事件/日志。
 - 计划占位文件可安全导入，且不产生运行时注册。

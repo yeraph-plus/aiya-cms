@@ -25,6 +25,9 @@ CAPABILITY_PUBLIC_SUBS = frozenset(
     {"", "definition", "schemas", "commands", "queries", "ports", "activities", "events"}
 )
 FEATURE_PUBLIC_SUBS = frozenset({"", "definition", "schemas", "api", "workflows"})
+ADAPTER_PUBLIC_CAPABILITY_SUBS = frozenset(
+    {"", "definition", "schemas", "commands", "queries", "ports", "activities", "events"}
+)
 API_CAPABILITY_SUBS = CAPABILITY_PUBLIC_SUBS | frozenset(
     {"api", "diagnostics", "metrics", "readmodels", "adapters"}
 )
@@ -91,6 +94,33 @@ def test_api_never_imports_capability_internals() -> None:
             elif module.startswith("inc.modules."):
                 offenders.append(f"{path}: imports modules layer {module}")
     assert offenders == []
+
+
+def test_adapters_use_only_public_capability_surfaces() -> None:
+    adapters_root = INC_ROOT / "adapters"
+    assert adapters_root.is_dir(), "inc/adapters skeleton missing"
+    offenders: list[str] = []
+    for path in iter_source_files(adapters_root):
+        for module in first_party_imports(path):
+            if module.startswith("inc.capabilities."):
+                sub = _submodule(module, 3)
+                if sub not in ADAPTER_PUBLIC_CAPABILITY_SUBS:
+                    offenders.append(f"{path}: imports capability internals {module}")
+            elif module.startswith("inc.api."):
+                offenders.append(f"{path}: imports composition root {module}")
+            elif module.startswith("inc.features."):
+                sub = _submodule(module, 3)
+                if sub not in FEATURE_PUBLIC_SUBS:
+                    offenders.append(f"{path}: imports feature internals {module}")
+    assert offenders == []
+
+
+def test_auth_router_delegates_self_service_orchestration_to_feature() -> None:
+    router = INC_ROOT / "api" / "http" / "routers_auth.py"
+    source = router.read_text(encoding="utf-8")
+    assert "services.me" in source
+    assert "FinalizeAsset" not in source
+    assert "_me_dto" not in source
 
 
 def test_modules_layer_is_removed_and_unreferenced() -> None:

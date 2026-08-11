@@ -15,6 +15,7 @@ from inc.kernel.boot import CapabilitySpec
 spec = CapabilitySpec(
     name="oidc_provider",
     schema_version="1",
+    requires=("identity", "access", "audit"),
     access_keys=(
         "oidc_provider.clients.read",
         "oidc_provider.clients.manage",

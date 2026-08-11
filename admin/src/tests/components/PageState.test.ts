@@ -17,6 +17,12 @@ describe('PageState', () => {
         expect(wrapper.text()).toContain('invalid input');
     });
 
+    it('renders the request id for an API error', () => {
+        const error = new ApiError(500, null, 'req-500');
+        const wrapper = mount(PageState, { props: { state: 'error', error }, global: { stubs } });
+        expect(wrapper.text()).toContain('req-500');
+    });
+
     it('renders empty state with title and description', () => {
         const wrapper = mount(PageState, { props: { state: 'empty', title: 'No users', description: 'Try another filter' }, global: { stubs } });
         expect(wrapper.text()).toContain('No users');

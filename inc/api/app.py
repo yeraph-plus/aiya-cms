@@ -111,6 +111,7 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "Buy membership via the trusted offer catalog.",
     },
     {"name": "content", "description": "Published content reads."},
+    {"name": "comments", "description": "Published comment reads and authenticated submission."},
     {"name": "engagement", "description": "Views, likes, ratings and favorites."},
     {"name": "webhooks", "description": "Provider webhook callbacks (signature verified)."},
     {
@@ -122,6 +123,7 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-users", "description": "User administration."},
     {"name": "admin-access", "description": "Roles, grants and permission keys."},
     {"name": "admin-content", "description": "Content lifecycle management."},
+    {"name": "admin-comments", "description": "Comment moderation."},
     {"name": "admin-taxonomy", "description": "Taxonomy dimensions and terms."},
     {"name": "admin-settings", "description": "Setting group management."},
     {"name": "admin-assets", "description": "Asset upload and metadata management."},
@@ -132,6 +134,11 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-dashboard", "description": "Capability-owned administrator statistics."},
     {"name": "admin-engagement", "description": "Engagement projection administration."},
     {"name": "admin-membership", "description": "Membership subscriptions and renewals."},
+    {
+        "name": "admin-notifications",
+        "description": "Notification delivery recovery and diagnostics.",
+    },
+    {"name": "admin-oidc", "description": "OIDC static client administration."},
 ]
 
 

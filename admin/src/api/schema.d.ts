@@ -160,6 +160,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Admin */
+        get: operations["list_admin_api_v1_admin_comments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin */
+        get: operations["get_admin_api_v1_admin_comments__comment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/comments/{comment_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_v1_admin_comments__comment_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/comments/{comment_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete */
+        post: operations["delete_api_v1_admin_comments__comment_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/comments/{comment_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject */
+        post: operations["reject_api_v1_admin_comments__comment_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/content": {
         parameters: {
             query?: never;
@@ -497,6 +582,229 @@ export interface paths {
         put?: never;
         /** Terminate Subscription */
         post: operations["terminate_subscription_api_v1_admin_membership_subscriptions__subscription_id__terminate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notifications/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deliveries */
+        get: operations["list_deliveries_api_v1_admin_notifications_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notifications/deliveries/{delivery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Delivery */
+        get: operations["get_delivery_api_v1_admin_notifications_deliveries__delivery_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notifications/deliveries/{delivery_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Delivery */
+        post: operations["cancel_delivery_api_v1_admin_notifications_deliveries__delivery_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notifications/deliveries/{delivery_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Delivery */
+        post: operations["retry_delivery_api_v1_admin_notifications_deliveries__delivery_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/oidc/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Clients */
+        get: operations["list_clients_api_v1_admin_oidc_clients_get"];
+        put?: never;
+        /** Register Client */
+        post: operations["register_client_api_v1_admin_oidc_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/oidc/clients/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Client */
+        get: operations["get_client_api_v1_admin_oidc_clients__client_id__get"];
+        /** Update Client */
+        put: operations["update_client_api_v1_admin_oidc_clients__client_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/oidc/clients/{client_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Client */
+        post: operations["disable_client_api_v1_admin_oidc_clients__client_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/oidc/clients/{client_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable Client */
+        post: operations["enable_client_api_v1_admin_oidc_clients__client_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/oidc/clients/{client_id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Client Secret */
+        post: operations["rotate_client_secret_api_v1_admin_oidc_clients__client_id__rotate_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/payments/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Orders */
+        get: operations["list_orders_api_v1_admin_payments_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/payments/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Order */
+        get: operations["get_order_api_v1_admin_payments_orders__order_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/payments/orders/{order_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Order */
+        post: operations["cancel_order_api_v1_admin_payments_orders__order_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/payments/orders/{order_id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Order */
+        post: operations["reconcile_order_api_v1_admin_payments_orders__order_id__reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -963,6 +1271,24 @@ export interface paths {
         put?: never;
         /** Check In */
         post: operations["check_in_api_v1_check_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{target_type}/{target_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Published */
+        get: operations["list_published_api_v1_content__target_type___target_id__comments_get"];
+        put?: never;
+        /** Submit */
+        post: operations["submit_api_v1_content__target_type___target_id__comments_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1630,6 +1956,90 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * ClientDTO
+         * @description Admin-visible client registration (never contains secrets).
+         */
+        ClientDTO: {
+            /**
+             * Allow Refresh
+             * @default true
+             */
+            allow_refresh: boolean;
+            /** Allowed Audiences */
+            allowed_audiences?: string[];
+            /** Allowed Scopes */
+            allowed_scopes: string[];
+            /** Auth Method */
+            auth_method: string;
+            /** Client Id */
+            client_id: string;
+            /** Client Type */
+            client_type: string;
+            /** Grant Types */
+            grant_types?: string[];
+            /** Name */
+            name: string;
+            /** Post Logout Redirect Uris */
+            post_logout_redirect_uris?: string[];
+            /** Redirect Uris */
+            redirect_uris: string[];
+            /** Response Types */
+            response_types?: string[];
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /**
+             * Trusted
+             * @default false
+             */
+            trusted: boolean;
+        };
+        /**
+         * ClientRegistrationResult
+         * @description Result of client registration; secret shown exactly once.
+         */
+        ClientRegistrationResult: {
+            client: components["schemas"]["ClientDTO"];
+            /** Client Secret */
+            client_secret?: string | null;
+        };
+        /** CommentDTO */
+        CommentDTO: {
+            /** Author Id */
+            author_id: string;
+            /** Author Type */
+            author_type: string;
+            /** Body */
+            body: string | null;
+            /** Deleted At */
+            deleted_at?: string | null;
+            /** Id */
+            id: string;
+            /** Moderation Reason */
+            moderation_reason?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Published At */
+            published_at?: string | null;
+            /** Rejected At */
+            rejected_at?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Target Id */
+            target_id: string;
+            /** Target Type */
+            target_type: string;
+            /** Version */
+            version: number;
+        };
         /** ConfiguredBucketsDTO */
         ConfiguredBucketsDTO: {
             /** Buckets */
@@ -1791,6 +2201,11 @@ export interface components {
             amount: number;
             /** Bucket Id */
             bucket_id: string;
+        };
+        /** DeleteCommentInput */
+        DeleteCommentInput: {
+            /** Reason */
+            reason?: string | null;
         };
         /** DimensionDTO */
         DimensionDTO: {
@@ -2079,6 +2494,122 @@ export interface components {
             /** State */
             state: string;
         };
+        /** NotificationDeliveryAttemptDTO */
+        NotificationDeliveryAttemptDTO: {
+            /** Delivery Attempt */
+            delivery_attempt: number;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Error Category */
+            error_category?: string | null;
+            /** Error Summary */
+            error_summary?: string | null;
+            /**
+             * Finished At
+             * Format: date-time
+             */
+            finished_at: string;
+            /** Id */
+            id: string;
+            /** Provider Key */
+            provider_key: string;
+            /** Provider Ref */
+            provider_ref?: string | null;
+            /** Provider Sequence */
+            provider_sequence: number;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+        };
+        /** NotificationDeliveryDTO */
+        NotificationDeliveryDTO: {
+            /** Attempt */
+            attempt: number;
+            /** Channel */
+            channel: string;
+            /** Delivered At */
+            delivered_at?: string | null;
+            /** Error Category */
+            error_category?: string | null;
+            /** Id */
+            id: string;
+            /** Intent Id */
+            intent_id: string;
+            /** Masked Address */
+            masked_address: string;
+            /** Next Retry At */
+            next_retry_at?: string | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Provider Ref */
+            provider_ref?: string | null;
+            /** Status */
+            status: string;
+        };
+        /** NotificationDeliveryDetailDTO */
+        NotificationDeliveryDetailDTO: {
+            /** Attempts */
+            attempts: components["schemas"]["NotificationDeliveryAttemptDTO"][];
+            delivery: components["schemas"]["NotificationDeliveryRecordDTO"];
+        };
+        /** NotificationDeliveryPageDTO */
+        NotificationDeliveryPageDTO: {
+            /** Items */
+            items: components["schemas"]["NotificationDeliveryRecordDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
+        /** NotificationDeliveryRecordDTO */
+        NotificationDeliveryRecordDTO: {
+            /** Attempt */
+            attempt: number;
+            /** Channel */
+            channel: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Delivered At */
+            delivered_at?: string | null;
+            /** Error Category */
+            error_category?: string | null;
+            /** Error Summary */
+            error_summary?: string | null;
+            /** Id */
+            id: string;
+            /** Intent Id */
+            intent_id: string;
+            /** Masked Address */
+            masked_address: string;
+            /** Next Retry At */
+            next_retry_at?: string | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Provider Ref */
+            provider_ref?: string | null;
+            /** Recipient Id */
+            recipient_id: string;
+            /** Recipient Type */
+            recipient_type: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Spec Key */
+            spec_key: string;
+            /** Status */
+            status: string;
+        };
         /**
          * OfferDTO
          * @description One trusted server-side offer (clients pick offer_key only).
@@ -2102,10 +2633,76 @@ export interface components {
             /** Items */
             items: components["schemas"]["OfferDTO"][];
         };
+        /** OrderDTO */
+        OrderDTO: {
+            /** Amount */
+            amount: number;
+            /** Captured Amount */
+            captured_amount: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Offer Key */
+            offer_key: string;
+            /** Offer Version */
+            offer_version: string;
+            /** Order Reference */
+            order_reference: string;
+            /** Provider Key */
+            provider_key: string;
+            /** Refunded Amount */
+            refunded_amount: number;
+            /** State */
+            state: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
+        };
+        /** OrderDetailDTO */
+        OrderDetailDTO: {
+            /** Attempts */
+            attempts: components["schemas"]["PaymentAttemptDTO"][];
+            order: components["schemas"]["OrderDTO"];
+            /** Refunds */
+            refunds: components["schemas"]["RefundDTO"][];
+        };
+        /** OrderPageDTO */
+        OrderPageDTO: {
+            /** Items */
+            items: components["schemas"]["OrderDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
         /** Page */
         Page_AuditEntryDTO_: {
             /** Items */
             items: components["schemas"]["AuditEntryDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page */
+        Page_CommentDTO_: {
+            /** Items */
+            items: components["schemas"]["CommentDTO"][];
             /** Page */
             page: number;
             /** Size */
@@ -2179,6 +2776,28 @@ export interface components {
         PasswordResetRequestInput: {
             /** Identifier */
             identifier: string;
+        };
+        /** PaymentAttemptDTO */
+        PaymentAttemptDTO: {
+            /** Attempt */
+            attempt: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Category */
+            error_category?: string | null;
+            /** Error Summary */
+            error_summary?: string | null;
+            /** Id */
+            id: string;
+            /** Order Id */
+            order_id: string;
+            /** Provider Ref */
+            provider_ref: string;
+            /** State */
+            state: string;
         };
         /** PointsAdjustInput */
         PointsAdjustInput: {
@@ -2270,6 +2889,33 @@ export interface components {
             /** State */
             state: string;
         };
+        /** RegisterClientBody */
+        RegisterClientBody: {
+            /**
+             * Allow Refresh
+             * @default true
+             */
+            allow_refresh: boolean;
+            /** Allowed Audiences */
+            allowed_audiences?: string[];
+            /** Allowed Scopes */
+            allowed_scopes?: string[];
+            /** Client Id */
+            client_id?: string | null;
+            /** Client Type */
+            client_type: string;
+            /** Name */
+            name: string;
+            /** Post Logout Redirect Uris */
+            post_logout_redirect_uris?: string[];
+            /** Redirect Uris */
+            redirect_uris: string[];
+            /**
+             * Trusted
+             * @default false
+             */
+            trusted: boolean;
+        };
         /** RegisterExternalAssetInput */
         RegisterExternalAssetInput: {
             /** Alt Text */
@@ -2306,6 +2952,11 @@ export interface components {
         RejectBody: {
             /** Reason */
             reason?: string | null;
+        };
+        /** RejectCommentInput */
+        RejectCommentInput: {
+            /** Reason */
+            reason: string;
         };
         /** RenewalRecordDTO */
         RenewalRecordDTO: {
@@ -2477,6 +3128,13 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** SubmitCommentBody */
+        SubmitCommentBody: {
+            /** Body */
+            body: string;
+            /** Parent Id */
+            parent_id?: string | null;
+        };
         /** SubscriptionDTO */
         SubscriptionDTO: {
             /** Auto Renew */
@@ -2544,6 +3202,17 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** UpdateClientBody */
+        UpdateClientBody: {
+            /** Allowed Audiences */
+            allowed_audiences?: string[] | null;
+            /** Allowed Scopes */
+            allowed_scopes?: string[] | null;
+            /** Post Logout Redirect Uris */
+            post_logout_redirect_uris?: string[];
+            /** Redirect Uris */
+            redirect_uris: string[];
         };
         /** UpdateContentInput */
         UpdateContentInput: {
@@ -2986,6 +3655,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapabilityDTO"];
+                };
+            };
+        };
+    };
+    list_admin_api_v1_admin_comments_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                status?: string | null;
+                target_type?: string | null;
+                target_id?: string | null;
+                author_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CommentDTO_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_api_v1_admin_comments__comment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_v1_admin_comments__comment_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_api_v1_admin_comments__comment_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteCommentInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_api_v1_admin_comments__comment_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectCommentInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3607,6 +4444,10 @@ export interface operations {
             query?: {
                 page?: number;
                 size?: number;
+                subject_type?: string | null;
+                subject_id?: string | null;
+                level_key?: string | null;
+                status?: string | null;
             };
             header?: never;
             path?: never;
@@ -3725,6 +4566,477 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubscriptionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deliveries_api_v1_admin_notifications_deliveries_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                status?: string | null;
+                channel?: string | null;
+                provider_key?: string | null;
+                spec_key?: string | null;
+                recipient_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationDeliveryPageDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_delivery_api_v1_admin_notifications_deliveries__delivery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationDeliveryDetailDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_delivery_api_v1_admin_notifications_deliveries__delivery_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationDeliveryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_delivery_api_v1_admin_notifications_deliveries__delivery_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationDeliveryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_clients_api_v1_admin_oidc_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientDTO"][];
+                };
+            };
+        };
+    };
+    register_client_api_v1_admin_oidc_clients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterClientBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRegistrationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_client_api_v1_admin_oidc_clients__client_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_client_api_v1_admin_oidc_clients__client_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateClientBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_client_api_v1_admin_oidc_clients__client_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_client_api_v1_admin_oidc_clients__client_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_client_secret_api_v1_admin_oidc_clients__client_id__rotate_secret_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientRegistrationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_orders_api_v1_admin_payments_orders_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                state?: string | null;
+                provider_key?: string | null;
+                subject_type?: string | null;
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPageDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_order_api_v1_admin_payments_orders__order_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDetailDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_order_api_v1_admin_payments_orders__order_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_order_api_v1_admin_payments_orders__order_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderDTO"];
                 };
             };
             /** @description Validation Error */
@@ -4784,6 +6096,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CheckInResultDTO"];
+                };
+            };
+        };
+    };
+    list_published_api_v1_content__target_type___target_id__comments_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                target_type: string;
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CommentDTO_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_v1_content__target_type___target_id__comments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_type: string;
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitCommentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

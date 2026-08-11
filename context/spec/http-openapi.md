@@ -6,6 +6,8 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 
 普通业务 API 使用 `/api/v1`。OIDC 协议端点按 `capabilities/oidc-provider.md` 使用 issuer 下的标准路径和标准错误格式，不强行套入业务 API 前缀/错误 DTO。
 
+管理员 SPA 除共同认证面外只消费 `/api/v1/admin/**`：共同认证面包括 `/api/v1/auth/**`、带 `auth` tag 的 `/api/v1/me` 投影和 issuer 下的 OIDC 协议端点。管理员页面不得调用普通用户侧 content、points、membership、purchase 或 engagement 路由。该限制由前端 adapter 合同测试和 OpenAPI 路由测试共同守护。
+
 ## 2. 基础端点
 
 - `GET /healthz`：进程 liveness，不访问依赖。
@@ -31,6 +33,7 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 - `GET /api/v1/admin/execution/entries`：按 kind、key、status 和时间范围分页查询 kernel outbox、inbox receipt、task 的安全执行摘要（`audit.read` 权限），不返回 payload/result/自由文本异常。
 - `GET /api/v1/admin/assets`：按 state、provider、bucket 或 object key 分页查询稳定 asset references（`assets.read` 权限），不返回 signed URL。
 - `GET /api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms`：读取一个 opaque target 的当前 term assignments（`taxonomy.read` 权限），按 dimension 分组返回；它不为 content 列表提供 taxonomy 过滤。
+- `GET /api/v1/admin/notifications/deliveries` 与 `GET /api/v1/admin/notifications/deliveries/{delivery_id}`：查询 delivery、intent 与 attempt 安全摘要（`notification.read` 权限）；恢复面只导出 `POST .../retry` 和 `POST .../cancel` 命名 Command。
 - capability/feature routers：只有完整产品 manifest 显式挂载后存在。
 
 ### 2.1 明确不导出的定义管理接口
@@ -40,6 +43,10 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 - `notification template` 的定义管理由后端 capability/feature 注册表保留；当前不导出 `/api/v1/admin/notifications/templates` 的读取或写入接口。未来 notification 管理端点只覆盖 delivery/attempt 查询与命名恢复 Command，除非模板合同另行完成规格闭环。
 
 上述 OpenAPI 缺席是刻意边界，不得通过反射数据库模型、自动 CRUD、前端手写 DTO 或占位页面绕过。未来导出必须逐项声明稳定 operationId、权限、版本/幂等、审计与错误合同。
+
+payments 管理面导出订单分页、单笔 attempt/refund 摘要以及 cancel/reconcile/refund 语义 Command；禁止管理员直接 PATCH state 或 DELETE 账单。
+
+OIDC 协议端点继续位于 issuer 标准路径；OIDC client 的管理员配置属于业务管理面，使用 `/api/v1/admin/oidc/clients`，只导出读取、注册、受限更新、启停和 secret rotation 语义操作。
 
 旧 Demo endpoint 不是兼容目标。interaction 和旧 dashboard endpoint 删除；管理员汇总由显式 readmodel providers 形成新契约。
 

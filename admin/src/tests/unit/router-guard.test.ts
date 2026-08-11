@@ -18,6 +18,7 @@ vi.mock('@/api/auth', () => ({
 import router from '@/router';
 import { clearSession, sessionState } from '@/auth/session';
 import { APP_NAME } from '@/env';
+import { translate } from '@/i18n';
 
 function resetSession(): void {
     clearSession();
@@ -28,8 +29,8 @@ async function signIn(capabilities: string[] = ['content.read']): Promise<void> 
     getUserMock.mockResolvedValue({ access_token: 'token-1', expired: false });
     fetchMeMock.mockResolvedValue({ id: 'u1', display_name: 'Admin', capabilities });
     resetSession();
-    const target = capabilities.includes('content.read') ? '/content' : '/identity/users';
-    const expected = capabilities.includes('content.read') ? 'content-list' : 'identity-users';
+    const target = capabilities.includes('content.read') ? '/content/articles' : '/users';
+    const expected = capabilities.includes('content.read') ? 'content-articles' : 'users';
     await router.push(target);
     expect(router.currentRoute.value.name).toBe(expected);
 }
@@ -39,7 +40,7 @@ function registerProtectedRoute(routerInstance: Router): () => void {
         path: '/test-guard',
         name: 'test-guard',
         component: { template: '<div />' },
-        meta: { title: 'Test Guard', requiresAuth: true, requiredCapability: 'identity.users.read', shell: 'app' }
+        meta: { titleKey: 'routes.dashboard', requiresAuth: true, requiredCapability: 'identity.users.read', shell: 'app' }
     });
     return remove;
 }
@@ -76,24 +77,24 @@ describe('router guard', () => {
 
     it('keeps an authenticated deep link stable across refresh-style navigation', async () => {
         await signIn(['content.read']);
-        await router.push('/content');
+        await router.push('/content/articles');
 
-        expect(router.currentRoute.value.name).toBe('content-list');
-        expect(document.title).toBe(`Articles · ${APP_NAME}`);
+        expect(router.currentRoute.value.name).toBe('content-articles');
+        expect(document.title).toBe(`${translate('routes.content.articles')} · ${APP_NAME}`);
     });
 
     it('redirects an authenticated user away from login', async () => {
         await signIn();
         await router.push('/auth/login');
 
-        expect(router.currentRoute.value.name).toBe('content-list');
+        expect(router.currentRoute.value.name).toBe('content-articles');
     });
 
     it('redirects an authenticated user away from the callback route', async () => {
         await signIn();
         await router.push('/callback');
 
-        expect(router.currentRoute.value.name).toBe('content-list');
+        expect(router.currentRoute.value.name).toBe('content-articles');
     });
 
     it('sends a signed-in user without the capability to access denied', async () => {
@@ -115,7 +116,7 @@ describe('router guard', () => {
             await router.push('/test-guard');
 
             expect(router.currentRoute.value.name).toBe('test-guard');
-            expect(document.title).toBe(`Test Guard · ${APP_NAME}`);
+            expect(document.title).toBe(`${translate('routes.dashboard')} · ${APP_NAME}`);
         } finally {
             remove();
         }
@@ -139,12 +140,12 @@ describe('router guard', () => {
 
     it('retries session initialization on the next navigation after a failure', async () => {
         getUserMock.mockRejectedValueOnce(new Error('op unavailable'));
-        await router.push('/content');
+        await router.push('/content/articles');
 
         expect(router.currentRoute.value.name).toBe('login');
 
         getUserMock.mockResolvedValue(null);
-        await router.push('/content');
+        await router.push('/content/articles');
 
         expect(getUserMock).toHaveBeenCalledTimes(2);
         expect(router.currentRoute.value.name).toBe('login');

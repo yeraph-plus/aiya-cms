@@ -16,8 +16,9 @@ mount a manifest that binds only audited providers. Do not deploy ``cms`` with
 any other/unset environment value — real traffic would silently run on the fake
 provider, which also ships a hardcoded webhook secret.
 
-notification is not enabled by this manifest; any notification-enabled
-deployment must bind its providers explicitly.
+notification is enabled with the settings-backed SMTP adapter. Constructing
+the adapter opens no connection; provider I/O occurs only inside an explicitly
+started delivery workflow.
 """
 
 from __future__ import annotations
@@ -46,6 +47,8 @@ cms = AppManifest(
         "audit",
         "settings",
         "content",
+        "comments",
+        "notification",
         "taxonomy",
         "assets",
         "points",
@@ -69,6 +72,9 @@ cms = AppManifest(
         ("oidc.authorization_decision", "access.authorize"),
         ("oidc.security_events", "oidc.session_revoker"),
         ("taxonomy.target_exists", "content.exists"),
+        ("comments.target_exists", "content.exists"),
+        ("notification.recipient", "identity.notification_recipient"),
+        ("notification.email", "email.smtp"),
         ("assets.object_storage", "assets.s3"),
         ("payments.provider", "payments.dev_fake"),
         ("membership.subject_exists", "membership.subject_exists"),
@@ -82,6 +88,8 @@ cms = AppManifest(
         "access",
         "content",
         "content_public",
+        "comments",
+        "notifications_admin",
         "engagement",
         "taxonomy",
         "settings",
@@ -96,6 +104,7 @@ cms = AppManifest(
         "payments",
         "membership_purchase",
         "membership_admin",
+        "oidc_admin",
     ),
     workers=("outbox", "workflow", "task"),
     cron_enabled=True,

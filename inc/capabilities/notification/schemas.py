@@ -39,6 +39,47 @@ class NotificationDeliveryDTO(BaseModel):
     delivered_at: datetime | None = None
 
 
+class NotificationDeliveryRecordDTO(NotificationDeliveryDTO):
+    spec_key: str
+    recipient_type: str
+    recipient_id: str
+    requested_at: datetime
+    created_at: datetime
+    error_summary: str | None = None
+
+
+class NotificationDeliveryAttemptDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    delivery_id: str
+    delivery_attempt: int
+    provider_sequence: int
+    provider_key: str
+    status: str
+    provider_ref: str | None = None
+    error_category: str | None = None
+    error_summary: str | None = None
+    started_at: datetime
+    finished_at: datetime
+
+
+class NotificationDeliveryPageDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[NotificationDeliveryRecordDTO]
+    total: int
+    page: int
+    size: int
+
+
+class NotificationDeliveryDetailDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    delivery: NotificationDeliveryRecordDTO
+    attempts: list[NotificationDeliveryAttemptDTO]
+
+
 class RequestNotificationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

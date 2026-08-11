@@ -51,6 +51,16 @@ adapter 负责 SDK、credential、签名算法、timeout、provider idempotency�
 
 ## 6. Commands 与 webhook
 
+管理员运行态接口直接导出 payments capability 的语义读写面：
+
+- `GET /api/v1/admin/payments/orders`：按 state、provider、subject 过滤并分页读取订单。
+- `GET /api/v1/admin/payments/orders/{order_id}`：读取订单及其 attempt/refund 摘要，不返回 provider 原始 payload。
+- `POST /api/v1/admin/payments/orders/{order_id}/cancel`：调用 `CancelPaymentOrder`。
+- `POST /api/v1/admin/payments/orders/{order_id}/reconcile`：调用 `ReconcilePaymentOrder`。
+- `POST /api/v1/admin/payments/orders/{order_id}/refund`：调用 `RequestRefund`。
+
+管理端不提供万能更新或删除订单接口；状态变化只能通过上述 Command 和已验签 webhook 发生。
+
 - `CreatePaymentOrder`
 - `StartPaymentAttempt`
 - `CancelPaymentOrder`

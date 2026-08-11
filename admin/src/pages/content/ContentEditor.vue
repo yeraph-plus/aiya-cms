@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import {
     archiveContent,
     createContent,
@@ -24,14 +25,16 @@ import { errorMessage } from '@/api/errors';
 import { hasCapability } from '@/auth/session';
 import ConfirmAction from '@/components/feedback/ConfirmAction.vue';
 import PageState from '@/components/feedback/PageState.vue';
-import PageToolbar from '@/components/data/PageToolbar.vue';
+import PageShell from '@/components/shell/PageShell.vue';
 
+const { t, locale } = useI18n();
 const route = useRoute();
-const router = useRouter();
-const typeOptions = [
-    { label: 'Post', value: 'post' },
-    { label: 'Page', value: 'page' }
-];
+const props = withDefaults(defineProps<{ contentId?: string | null; embedded?: boolean }>(), { contentId: null, embedded: false });
+const emit = defineEmits<{ saved: [content: ContentDTO]; purged: [contentId: string] }>();
+const typeOptions = computed(() => [
+    { label: t('workbenches.content.post'), value: 'post' },
+    { label: t('workbenches.content.page'), value: 'page' }
+]);
 const content = ref<ContentDTO | null>(null);
 const loading = ref(false);
 const saving = ref(false);
@@ -57,10 +60,8 @@ const form = reactive({
     excerpt: ''
 });
 
-const contentId = computed(() => {
-    const value = route.params.contentId;
-    return typeof value === 'string' ? value : null;
-});
+const activeContentId = ref<string | null>(props.contentId);
+const contentId = computed(() => activeContentId.value);
 const isNew = computed(() => contentId.value === null);
 const isPost = computed(() => form.typeName === 'post');
 const canWrite = computed(() => hasCapability('content.write'));
@@ -185,10 +186,11 @@ async function save(): Promise<void> {
         if (isNew.value) {
             const created = await createContent(newContentBody());
             content.value = created;
+            activeContentId.value = created.id;
             fillForm(created);
-            await router.replace({ name: 'content-editor', params: { contentId: created.id } });
             await loadTaxonomy();
-            notice.value = 'Content created.';
+            notice.value = t('workbenches.content.created');
+            emit('saved', created);
         } else if (content.value) {
             const updated = await updateContent(content.value.id, {
                 expected_version: content.value.version,
@@ -199,7 +201,8 @@ async function save(): Promise<void> {
             });
             content.value = updated;
             fillForm(updated);
-            notice.value = 'Content saved.';
+            notice.value = t('workbenches.content.saved');
+            emit('saved', updated);
         }
     } catch (caught) {
         formError.value = caught;
@@ -229,7 +232,7 @@ async function saveTaxonomy(): Promise<void> {
                 })
             )
         );
-        notice.value = 'Taxonomy assignments saved.';
+        notice.value = t('workbenches.content.taxonomySaved');
     } catch (caught) {
         formError.value = caught;
     } finally {
@@ -251,7 +254,7 @@ async function saveReferences(): Promise<void> {
         content.value = await fetchContentItem(content.value.id);
         fillForm(content.value);
         await loadReferences();
-        notice.value = 'References saved.';
+        notice.value = t('workbenches.content.referencesSaved');
     } catch (caught) {
         formError.value = caught;
     } finally {
@@ -275,37 +278,37 @@ async function runAction(action: () => Promise<ContentDTO>, successMessage: stri
 }
 
 async function submit(): Promise<void> {
-    await runAction(() => submitContent(content.value?.id ?? ''), 'Content submitted.');
+    await runAction(() => submitContent(content.value?.id ?? ''), t('workbenches.content.submitted'));
 }
 
 async function reject(): Promise<void> {
-    await runAction(() => rejectContent(content.value?.id ?? '', null), 'Content rejected.');
+    await runAction(() => rejectContent(content.value?.id ?? '', null), t('workbenches.content.rejected'));
 }
 
 async function schedule(): Promise<void> {
     if (!scheduleAt.value) return;
-    await runAction(() => scheduleContent(content.value?.id ?? '', { publish_at: new Date(scheduleAt.value).toISOString() }), 'Content scheduled.');
+    await runAction(() => scheduleContent(content.value?.id ?? '', { publish_at: new Date(scheduleAt.value).toISOString() }), t('workbenches.content.scheduled'));
 }
 
 async function unschedule(): Promise<void> {
-    await runAction(() => unscheduleContent(content.value?.id ?? ''), 'Schedule cancelled.');
+    await runAction(() => unscheduleContent(content.value?.id ?? ''), t('workbenches.content.unscheduled'));
 }
 
 async function publish(): Promise<void> {
-    await runAction(() => publishContent(content.value?.id ?? ''), 'Content published.');
+    await runAction(() => publishContent(content.value?.id ?? ''), t('workbenches.content.published'));
 }
 
 async function archive(): Promise<void> {
-    await runAction(() => archiveContent(content.value?.id ?? ''), 'Content archived.');
+    await runAction(() => archiveContent(content.value?.id ?? ''), t('workbenches.content.archived'));
 }
 
 async function restore(): Promise<void> {
-    await runAction(() => restoreContent(content.value?.id ?? ''), 'Content restored to draft.');
+    await runAction(() => restoreContent(content.value?.id ?? ''), t('workbenches.content.restored'));
 }
 
 async function togglePin(): Promise<void> {
     if (!content.value) return;
-    await runAction(() => setContentPin(content.value?.id ?? '', { is_pinned: !content.value?.is_pinned, pin_rank: content.value?.pin_rank ?? 0 }), content.value.is_pinned ? 'Content unpinned.' : 'Content pinned.');
+    await runAction(() => setContentPin(content.value?.id ?? '', { is_pinned: !content.value?.is_pinned, pin_rank: content.value?.pin_rank ?? 0 }), content.value.is_pinned ? t('workbenches.content.unpinnedNotice') : t('workbenches.content.pinnedNotice'));
 }
 
 async function purge(): Promise<void> {
@@ -313,9 +316,12 @@ async function purge(): Promise<void> {
     actionLoading.value = true;
     formError.value = null;
     try {
-        await purgeContent(content.value.id);
-        notice.value = 'Content purged.';
-        await router.push({ name: 'content-list' });
+        const purgedContentId = content.value.id;
+        await purgeContent(purgedContentId);
+        notice.value = t('workbenches.content.purged');
+        content.value = null;
+        activeContentId.value = null;
+        emit('purged', purgedContentId);
     } catch (caught) {
         formError.value = caught;
     } finally {
@@ -328,30 +334,28 @@ function canAction(capability: string): boolean {
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Date(value).toLocaleString() : '-';
+    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
 }
 
 watch(
-    () => route.params.contentId,
-    () => {
-        if (!isNew.value) void load();
-    }
+    () => props.contentId,
+    (value) => {
+        activeContentId.value = value ?? null;
+        content.value = null;
+        void load();
+    },
+    { immediate: true }
 );
-
-onMounted(() => {
-    void load();
-});
 </script>
 
 <template>
-    <PageToolbar :title="isNew ? 'New Content' : 'Edit Content'" subtitle="Basic fields and lifecycle actions use the content contract.">
+    <PageShell :title="isNew ? t('workbenches.content.newTitle') : t('workbenches.content.editTitle')" :description="t('workbenches.content.editorDescription')" :loading="loading" :refreshable="!isNew" @refresh="load">
         <template #actions>
-            <Button label="Back to list" icon="pi pi-arrow-left" severity="secondary" @click="router.push({ name: 'content-list' })" />
-            <Button v-if="canWrite" label="Save" icon="pi pi-save" :loading="saving" @click="save" />
+            <Button v-if="canWrite" :label="t('common.save')" icon="pi pi-save" :loading="saving" @click="save" />
         </template>
 
         <PageState v-if="loading" state="loading" />
-        <PageState v-else-if="error" state="error" :error="error" description="The content could not be loaded." />
+        <PageState v-else-if="error" state="error" :error="error" :description="t('workbenches.content.loadFailed')" />
         <template v-else>
             <Message v-if="formError" severity="error" :closable="false">{{ errorMessage(formError) }}</Message>
             <Message v-if="notice" severity="success" :closable="false">{{ notice }}</Message>
@@ -361,28 +365,28 @@ onMounted(() => {
                     <div class="card flex flex-col gap-4">
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div class="flex flex-col gap-2">
-                                <label for="content-type" class="font-medium">Content type</label>
+                                <label for="content-type" class="font-medium">{{ t('workbenches.content.type') }}</label>
                                 <Select id="content-type" v-model="form.typeName" :options="typeOptions" option-label="label" option-value="value" :disabled="!isNew" fluid />
                             </div>
                             <div class="flex flex-col gap-2">
-                                <label for="content-version" class="font-medium">Version</label>
+                                <label for="content-version" class="font-medium">{{ t('workbenches.content.version') }}</label>
                                 <InputText id="content-version" :model-value="String(content?.version ?? 0)" disabled />
                             </div>
                         </div>
                         <div class="flex flex-col gap-2">
-                            <label for="content-title" class="font-medium">Title</label>
+                            <label for="content-title" class="font-medium">{{ t('workbenches.content.title') }}</label>
                             <InputText id="content-title" v-model="form.title" :disabled="!canWrite" maxlength="200" />
                         </div>
                         <div class="flex flex-col gap-2">
-                            <label for="content-slug" class="font-medium">Slug</label>
+                            <label for="content-slug" class="font-medium">{{ t('workbenches.content.slug') }}</label>
                             <InputText id="content-slug" v-model="form.slug" :disabled="!canWrite" maxlength="200" />
                         </div>
                         <div class="flex flex-col gap-2">
-                            <label for="content-excerpt" class="font-medium">Excerpt</label>
+                            <label for="content-excerpt" class="font-medium">{{ t('workbenches.content.excerpt') }}</label>
                             <Textarea id="content-excerpt" v-model="form.excerpt" :disabled="!canWrite" rows="3" auto-resize />
                         </div>
                         <div class="flex flex-col gap-2">
-                            <label for="content-body" class="font-medium">Body</label>
+                            <label for="content-body" class="font-medium">{{ t('workbenches.content.body') }}</label>
                             <Textarea id="content-body" v-model="form.body" :disabled="!canWrite" rows="10" auto-resize />
                         </div>
                     </div>
@@ -390,10 +394,10 @@ onMounted(() => {
                     <div v-if="!isNew && content && content.type_name === 'post' && canReadTaxonomy" class="card flex flex-col gap-4">
                         <div class="flex items-center justify-between gap-3">
                             <div>
-                                <h2 class="text-lg font-semibold">Taxonomy</h2>
-                                <p class="text-sm text-muted-color">Assignments are loaded from the target-specific taxonomy endpoint.</p>
+                                <h2 class="text-lg font-semibold">{{ t('workbenches.content.taxonomy') }}</h2>
+                                <p class="text-sm text-muted-color">{{ t('workbenches.content.taxonomyHint') }}</p>
                             </div>
-                            <Button v-if="canManageTaxonomy" label="Save assignments" icon="pi pi-check" :loading="actionLoading" @click="saveTaxonomy" />
+                            <Button v-if="canManageTaxonomy" :label="t('workbenches.content.saveAssignments')" icon="pi pi-check" :loading="actionLoading" @click="saveTaxonomy" />
                         </div>
                         <PageState v-if="taxonomyLoading" state="loading" />
                         <Message v-else-if="taxonomyError" severity="error" :closable="false">{{ errorMessage(taxonomyError) }}</Message>
@@ -428,71 +432,71 @@ onMounted(() => {
 
                     <div v-if="!isNew && content" class="card flex flex-col gap-4">
                         <div>
-                            <h2 class="text-lg font-semibold">References</h2>
-                            <p class="text-sm text-muted-color">Enter target content IDs separated by commas or new lines.</p>
+                            <h2 class="text-lg font-semibold">{{ t('workbenches.content.references') }}</h2>
+                            <p class="text-sm text-muted-color">{{ t('workbenches.content.referencesHint') }}</p>
                         </div>
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                             <div class="flex flex-col gap-2">
-                                <label for="reference-kind" class="font-medium">Kind</label>
+                                <label for="reference-kind" class="font-medium">{{ t('workbenches.content.kind') }}</label>
                                 <InputText id="reference-kind" v-model="referenceKind" :disabled="!canWrite" />
                             </div>
                             <div class="flex flex-col gap-2 md:col-span-2">
-                                <label for="reference-targets" class="font-medium">Target IDs</label>
+                                <label for="reference-targets" class="font-medium">{{ t('workbenches.content.targetIds') }}</label>
                                 <Textarea id="reference-targets" v-model="referenceTargets" :disabled="!canWrite" rows="3" auto-resize />
                             </div>
                         </div>
                         <div class="flex justify-end">
-                            <Button v-if="canWrite" label="Save references" icon="pi pi-link" :loading="actionLoading" @click="saveReferences" />
+                            <Button v-if="canWrite" :label="t('workbenches.content.saveReferences')" icon="pi pi-link" :loading="actionLoading" @click="saveReferences" />
                         </div>
                         <DataTable v-if="references.length" :value="references" size="small">
-                            <Column field="kind" header="Kind" />
-                            <Column field="target_content_id" header="Target content" />
+                            <Column field="kind" :header="t('workbenches.content.kind')" />
+                            <Column field="target_content_id" :header="t('workbenches.content.targetContent')" />
                         </DataTable>
                     </div>
                 </div>
 
                 <div v-if="!isNew && content" class="flex flex-col gap-4">
                     <div class="card flex flex-col gap-3">
-                        <h2 class="text-lg font-semibold">Status</h2>
+                        <h2 class="text-lg font-semibold">{{ t('workbenches.content.status') }}</h2>
                         <div class="flex items-center gap-2">
-                            <Tag :value="content.status" /><span class="text-sm text-muted-color">Updated {{ formatDate(content.updated_at) }}</span>
+                            <Tag :value="content.status" /><span class="text-sm text-muted-color">{{ t('workbenches.content.updated') }} {{ formatDate(content.updated_at) }}</span>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            <Button v-if="content.status === 'draft' || content.status === 'rejected'" label="Submit" :disabled="!canAction('content.write')" :loading="actionLoading" @click="submit" />
-                            <Button v-if="content.status === 'pending'" label="Reject" severity="warn" :disabled="!canAction('content.write')" :loading="actionLoading" @click="reject" />
-                            <Button v-if="content.status === 'draft' || content.status === 'pending'" label="Schedule" severity="secondary" :disabled="!canAction('content.schedule')" :loading="actionLoading" @click="schedule" />
-                            <Button v-if="content.status === 'scheduled'" label="Unschedule" severity="secondary" :disabled="!canAction('content.schedule')" :loading="actionLoading" @click="unschedule" />
+                            <Button v-if="content.status === 'draft' || content.status === 'rejected'" :label="t('workbenches.content.submit')" :disabled="!canAction('content.write')" :loading="actionLoading" @click="submit" />
+                            <Button v-if="content.status === 'pending'" :label="t('workbenches.content.reject')" severity="warn" :disabled="!canAction('content.write')" :loading="actionLoading" @click="reject" />
+                            <Button v-if="content.status === 'draft' || content.status === 'pending'" :label="t('workbenches.content.schedule')" severity="secondary" :disabled="!canAction('content.schedule')" :loading="actionLoading" @click="schedule" />
+                            <Button v-if="content.status === 'scheduled'" :label="t('workbenches.content.unschedule')" severity="secondary" :disabled="!canAction('content.schedule')" :loading="actionLoading" @click="unschedule" />
                             <Button
                                 v-if="content.status === 'draft' || content.status === 'pending' || content.status === 'scheduled'"
-                                label="Publish"
+                                :label="t('workbenches.content.publish')"
                                 severity="success"
                                 :disabled="!canAction('content.publish')"
                                 :loading="actionLoading"
                                 @click="publish"
                             />
-                            <Button v-if="content.status === 'published'" label="Archive" severity="warn" :disabled="!canAction('content.archive')" :loading="actionLoading" @click="archive" />
-                            <Button v-if="content.status === 'archived'" label="Restore" severity="secondary" :disabled="!canAction('content.write')" :loading="actionLoading" @click="restore" />
+                            <Button v-if="content.status === 'published'" :label="t('workbenches.content.archive')" severity="warn" :disabled="!canAction('content.archive')" :loading="actionLoading" @click="archive" />
+                            <Button v-if="content.status === 'archived'" :label="t('workbenches.content.restore')" severity="secondary" :disabled="!canAction('content.write')" :loading="actionLoading" @click="restore" />
                         </div>
                         <div v-if="content.status === 'draft' || content.status === 'pending'" class="flex flex-col gap-2">
-                            <label for="publish-at" class="font-medium">Schedule at (local time)</label>
+                            <label for="publish-at" class="font-medium">{{ t('workbenches.content.scheduleAt') }}</label>
                             <InputText id="publish-at" v-model="scheduleAt" type="datetime-local" :disabled="!canAction('content.schedule')" />
                         </div>
                     </div>
 
                     <div class="card flex flex-col gap-3">
-                        <h2 class="text-lg font-semibold">Pinning</h2>
+                        <h2 class="text-lg font-semibold">{{ t('workbenches.content.pinning') }}</h2>
                         <div class="flex items-center justify-between gap-3">
-                            <span>{{ content.is_pinned ? `Pinned at rank ${content.pin_rank}` : 'Not pinned' }}</span>
-                            <Button v-if="canAction('content.pin')" :label="content.is_pinned ? 'Unpin' : 'Pin'" icon="pi pi-star" severity="secondary" @click="togglePin" />
+                            <span>{{ content.is_pinned ? t('workbenches.content.pinnedAtRank', { rank: content.pin_rank }) : t('workbenches.content.notPinned') }}</span>
+                            <Button v-if="canAction('content.pin')" :label="content.is_pinned ? t('workbenches.content.unpin') : t('workbenches.content.pin')" icon="pi pi-star" severity="secondary" @click="togglePin" />
                         </div>
                     </div>
 
                     <div v-if="content.status === 'archived'" class="card flex flex-col gap-3">
-                        <h2 class="text-lg font-semibold">Danger zone</h2>
-                        <ConfirmAction v-if="hasCapability('content.purge')" label="Purge content" message="Purge this archived content permanently?" header="Purge content" :disabled="actionLoading" @confirmed="purge" />
+                        <h2 class="text-lg font-semibold">{{ t('workbenches.content.dangerZone') }}</h2>
+                        <ConfirmAction v-if="hasCapability('content.purge')" :label="t('workbenches.content.purge')" :message="t('workbenches.content.purgeConfirm')" :header="t('workbenches.content.purge')" :disabled="actionLoading" @confirmed="purge" />
                     </div>
                 </div>
             </div>
         </template>
-    </PageToolbar>
+    </PageShell>
 </template>

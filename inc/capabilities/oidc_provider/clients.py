@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from inc.capabilities.oidc_provider.models import (
     OidcClient,
@@ -48,6 +48,41 @@ class ClientCommandContext:
     outbox: OutboxWriter
     audit_actor_id: str | None = None
     audit_trace_id: str | None = None
+
+
+class ClientQueries:
+    """Read-only administrator surface for static client registrations."""
+
+    def __init__(self, *, uow_factory: UoWFactory) -> None:
+        self._uow_factory = uow_factory
+
+    async def list_clients(self) -> list[ClientDTO]:  # type: ignore[return]
+        async with self._uow_factory() as uow:
+            rows = (
+                (
+                    await uow.session.execute(
+                        select(OidcClient).order_by(OidcClient.client_id, OidcClient.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return [_to_dto(row) for row in rows]
+
+    async def get_client(  # type: ignore[return]
+        self, client_id: str
+    ) -> ClientDTO | None:
+        async with self._uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(OidcClient).where(OidcClient.client_id == client_id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            return _to_dto(row) if row is not None else None
 
 
 def _require_valid_redirect_uri(value: str) -> None:
@@ -283,3 +318,100 @@ class DisableClient:
             )
             await uow.commit()
             return _to_dto(client)
+
+
+class EnableClient:
+    def __init__(self, ctx: ClientCommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, client_id: str) -> ClientDTO:  # type: ignore[return]
+        async with self._ctx.uow_factory() as uow:
+            client = (
+                (
+                    await uow.session.execute(
+                        select(OidcClient).where(OidcClient.client_id == client_id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if client is None:
+                raise OidcError("invalid_request", "unknown client")
+            client.status = "active"
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="oidc.client.enabled",
+                client_id=client_id,
+            )
+            await uow.commit()
+            return _to_dto(client)
+
+
+class RotateClientSecret:
+    """Rotate a confidential client secret and return the new value once."""
+
+    def __init__(self, ctx: ClientCommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(  # type: ignore[return]
+        self, *, client_id: str
+    ) -> ClientRegistrationResult:
+        async with self._ctx.uow_factory() as uow:
+            client = (
+                (
+                    await uow.session.execute(
+                        select(OidcClient).where(OidcClient.client_id == client_id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if client is None:
+                raise OidcError("invalid_request", "unknown client")
+            if client.client_type != "confidential":
+                raise OidcError("invalid_request", "public clients do not have a secret")
+
+            now = self._ctx.clock.utc_now()
+            active_secrets = (
+                (
+                    await uow.session.execute(
+                        select(OidcClientSecret).where(
+                            OidcClientSecret.client_id == client_id,
+                            OidcClientSecret.revoked_at.is_(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for secret_row in active_secrets:
+                secret_row.revoked_at = now
+            latest_version = int(
+                (
+                    await uow.session.execute(
+                        select(func.max(OidcClientSecret.version)).where(
+                            OidcClientSecret.client_id == client_id
+                        )
+                    )
+                ).scalar_one_or_none()
+                or 0
+            )
+            client_secret = secrets.token_urlsafe(48)
+            uow.session.add(
+                OidcClientSecret(
+                    client_id=client_id,
+                    secret_digest=_digest(client_secret),
+                    version=latest_version + 1,
+                    expires_at=None,
+                )
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="oidc.client.secret_rotated",
+                client_id=client_id,
+                details={"version": latest_version + 1},
+            )
+            await uow.commit()
+            return ClientRegistrationResult(client=_to_dto(client), client_secret=client_secret)

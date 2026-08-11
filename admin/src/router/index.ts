@@ -3,6 +3,8 @@ import { publicRoutes } from './public-routes';
 import { appRoutes } from './app-routes';
 import { hasCapability, initializeSession, isAuthenticated, sessionState } from '@/auth/session';
 import { APP_NAME } from '@/env';
+import { i18n, translate } from '@/i18n';
+import { watch } from 'vue';
 
 const routes = [...publicRoutes, ...appRoutes];
 
@@ -14,7 +16,7 @@ const router = createRouter({
 const devAuthBypass = import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH === '1';
 
 function authenticatedHome(): string {
-    for (const name of ['system-dashboard', 'identity-users', 'content-list', 'system-settings', 'system-audit', 'system-assets', 'system-execution']) {
+    for (const name of ['dashboard', 'users', 'content-articles', 'user-permissions', 'user-points', 'user-membership', 'user-payments', 'settings', 'system-audit', 'system-assets', 'system-operations', 'system-oidc']) {
         const requiredCapability = router.resolve({ name }).meta.requiredCapability;
         if (typeof requiredCapability !== 'string' || hasCapability(requiredCapability)) return name;
     }
@@ -41,17 +43,18 @@ router.beforeEach(async (to) => {
         return { name: 'accessDenied' };
     }
 
-    if (to.meta.title) {
-        document.title = `${to.meta.title} · ${APP_NAME}`;
-    }
+    document.title = `${translate(to.meta.titleKey)} · ${APP_NAME}`;
 
     return true;
 });
 
 router.afterEach((to) => {
-    if (!to.meta.title) {
-        document.title = APP_NAME;
-    }
+    document.title = to.meta.titleKey ? `${translate(to.meta.titleKey)} · ${APP_NAME}` : APP_NAME;
+});
+
+watch(i18n.global.locale, () => {
+    const titleKey = router.currentRoute.value.meta.titleKey;
+    document.title = titleKey ? `${translate(titleKey)} · ${APP_NAME}` : APP_NAME;
 });
 
 export default router;

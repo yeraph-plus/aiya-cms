@@ -58,11 +58,22 @@ def build_router(
     async def list_subscriptions(
         page: int = Query(default=1, ge=1),
         size: int = Query(default=20, ge=1, le=100),
+        subject_type: str | None = Query(default=None, min_length=1, max_length=32),
+        subject_id: str | None = Query(default=None, min_length=1, max_length=200),
+        level_key: str | None = Query(default=None, min_length=1, max_length=100),
+        status: str | None = Query(default=None, min_length=1, max_length=32),
         ctx: AppContext = Depends(require_capability("membership.read")),
     ) -> Page[SubscriptionDTO]:
         del ctx
         assert services.membership_queries is not None
-        return await services.membership_queries.list_subscriptions(page=page, size=size)
+        return await services.membership_queries.list_subscriptions(
+            page=page,
+            size=size,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            level_key=level_key,
+            status=status,
+        )
 
     @router.get(
         "/membership/subscriptions/{subscription_id}/renewals",

@@ -1,7 +1,7 @@
 import type { MenuItem as LayoutMenuItem } from '@/layout/composables/layout';
 
-export interface NavMenuItem extends Omit<LayoutMenuItem, 'items'> {
-    label: string;
+export interface NavMenuItem extends Omit<LayoutMenuItem, 'items' | 'label'> {
+    labelKey: string;
     to?: string;
     capability?: string;
     routeName?: string;
@@ -10,115 +10,136 @@ export interface NavMenuItem extends Omit<LayoutMenuItem, 'items'> {
 
 export const productMenu: NavMenuItem[] = [
     {
-        label: 'Identity',
-        icon: 'pi pi-fw pi-id-card',
-        path: '/identity',
-        items: [
-            {
-                label: 'Users',
-                icon: 'pi pi-fw pi-users',
-                to: '/identity/users',
-                routeName: 'identity-users',
-                capability: 'identity.users.read'
-            },
-            {
-                label: 'Roles & Permissions',
-                icon: 'pi pi-fw pi-lock',
-                to: '/identity/roles',
-                routeName: 'identity-roles',
-                capability: 'access.roles.read'
-            },
-            {
-                label: 'Capability Catalog',
-                icon: 'pi pi-fw pi-key',
-                to: '/identity/capabilities',
-                routeName: 'identity-capabilities',
-                capability: 'access.roles.read'
-            }
-        ]
+        labelKey: 'nav.dashboard',
+        icon: 'pi pi-fw pi-chart-bar',
+        to: '/dashboard',
+        routeName: 'dashboard',
+        capability: 'admin.dashboard.read'
     },
     {
-        label: 'Content',
-        icon: 'pi pi-fw pi-briefcase',
+        labelKey: 'nav.content.group',
+        icon: 'pi pi-fw pi-file-edit',
         path: '/content',
         items: [
             {
-                label: 'Articles',
+                labelKey: 'nav.content.write',
+                icon: 'pi pi-fw pi-pencil',
+                to: '/content/write',
+                routeName: 'content-write',
+                capability: 'content.write'
+            },
+            {
+                labelKey: 'nav.content.articles',
                 icon: 'pi pi-fw pi-file',
-                to: '/content',
-                routeName: 'content-list',
+                to: '/content/articles',
+                routeName: 'content-articles',
                 capability: 'content.read'
             },
             {
-                label: 'Taxonomy',
+                labelKey: 'nav.content.taxonomies',
                 icon: 'pi pi-fw pi-tags',
-                to: '/content/taxonomy',
-                routeName: 'content-taxonomy',
+                to: '/content/taxonomies',
+                routeName: 'content-taxonomies',
                 capability: 'taxonomy.read'
+            },
+            {
+                labelKey: 'nav.content.comments',
+                icon: 'pi pi-fw pi-comments',
+                to: '/content/comments',
+                routeName: 'content-comments',
+                capability: 'comments.read'
             }
         ]
     },
     {
-        label: 'System',
+        labelKey: 'nav.users.group',
+        icon: 'pi pi-fw pi-users',
+        path: '/users',
+        items: [
+            {
+                labelKey: 'nav.users.list',
+                icon: 'pi pi-fw pi-users',
+                to: '/users',
+                routeName: 'users',
+                capability: 'identity.users.read'
+            },
+            {
+                labelKey: 'nav.users.permissions',
+                icon: 'pi pi-fw pi-shield',
+                to: '/users/permissions',
+                routeName: 'user-permissions',
+                capability: 'access.roles.read'
+            },
+            {
+                labelKey: 'nav.users.points',
+                icon: 'pi pi-fw pi-star',
+                to: '/users/points',
+                routeName: 'user-points',
+                capability: 'points.read'
+            },
+            {
+                labelKey: 'nav.users.membership',
+                icon: 'pi pi-fw pi-id-card',
+                to: '/users/membership',
+                routeName: 'user-membership',
+                capability: 'membership.read'
+            },
+            {
+                labelKey: 'nav.users.payments',
+                icon: 'pi pi-fw pi-credit-card',
+                to: '/users/payments',
+                routeName: 'user-payments',
+                capability: 'payments.read'
+            }
+        ]
+    },
+    {
+        labelKey: 'nav.system.group',
         icon: 'pi pi-fw pi-cog',
         path: '/system',
         items: [
             {
-                label: 'Dashboard',
-                icon: 'pi pi-fw pi-chart-bar',
-                to: '/dashboard',
-                routeName: 'system-dashboard',
-                capability: 'admin.dashboard.read'
-            },
-            {
-                label: 'Settings',
-                icon: 'pi pi-fw pi-sliders-h',
-                to: '/system/settings',
-                routeName: 'system-settings',
-                capability: 'settings.read'
-            },
-            {
-                label: 'Audit Log',
+                labelKey: 'nav.system.audit',
                 icon: 'pi pi-fw pi-history',
                 to: '/system/audit',
                 routeName: 'system-audit',
                 capability: 'audit.read'
             },
             {
-                label: 'Execution Log',
+                labelKey: 'nav.system.operations',
                 icon: 'pi pi-fw pi-sync',
-                to: '/system/execution',
-                routeName: 'system-execution',
+                to: '/system/operations',
+                routeName: 'system-operations',
                 capability: 'audit.read'
             },
             {
-                label: 'Assets',
+                labelKey: 'nav.system.assets',
                 icon: 'pi pi-fw pi-images',
                 to: '/system/assets',
                 routeName: 'system-assets',
                 capability: 'assets.read'
             },
             {
-                label: 'Diagnostics',
-                icon: 'pi pi-fw pi-heart',
-                to: '/system/diagnostics',
-                routeName: 'system-diagnostics',
-                capability: 'access.roles.read'
+                labelKey: 'nav.system.notifications',
+                icon: 'pi pi-fw pi-bell',
+                to: '/system/notifications',
+                routeName: 'system-notifications',
+                capability: 'notification.read'
+            },
+            {
+                labelKey: 'nav.system.oidc',
+                icon: 'pi pi-fw pi-lock',
+                to: '/system/oidc',
+                routeName: 'system-oidc',
+                capability: 'oidc_provider.clients.read'
             }
         ]
     },
     {
-        label: 'Operations',
-        icon: 'pi pi-fw pi-sync',
-        path: '/operations',
-        items: [
-            {
-                label: 'Points Adjustment',
-                icon: 'pi pi-fw pi-star',
-                to: '/operations/points',
-                routeName: 'operations-points',
-                capability: 'points.adjust'
-            }
-        ]
+        labelKey: 'nav.settings',
+        icon: 'pi pi-fw pi-sliders-h',
+        to: '/settings',
+        routeName: 'settings',
+        capability: 'settings.read'
     }
 ];

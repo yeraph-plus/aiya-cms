@@ -212,9 +212,10 @@ async def test_notification_email_port_preserves_ordered_provider_bindings(
 ) -> None:
     manifest = AppManifest(
         name="notification-test",
-        capabilities=("settings", "notification"),
+        capabilities=("identity", "settings", "notification"),
         features=("site_settings",),
         adapters=(
+            ("notification.recipient", "identity.notification_recipient"),
             ("notification.email", "email.smtp"),
             ("notification.email", "email.smtp2go"),
         ),

@@ -76,6 +76,36 @@ class RefundDTO(BaseModel):
     reason: str
 
 
+class PaymentAttemptDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    order_id: str
+    provider_ref: str
+    attempt: int
+    state: str
+    error_category: str | None = None
+    error_summary: str | None = None
+    created_at: datetime
+
+
+class OrderDetailDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order: OrderDTO
+    attempts: list[PaymentAttemptDTO]
+    refunds: list[RefundDTO]
+
+
+class OrderPageDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[OrderDTO]
+    page: int
+    size: int
+    total: int
+
+
 # events -------------------------------------------------------------
 
 

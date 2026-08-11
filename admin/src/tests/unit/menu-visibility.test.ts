@@ -16,19 +16,23 @@ const registered = (names: string[]) => {
 
 describe('product menu', () => {
     it('defines the explicit product groups from the plan', () => {
-        expect(productMenu.map((group) => group.label)).toEqual(['Identity', 'Content', 'System', 'Operations']);
-        const content = productMenu.find((group) => group.label === 'Content');
-        const system = productMenu.find((group) => group.label === 'System');
-        expect(content?.items?.map((item) => item.to)).toEqual(['/content', '/content/taxonomy']);
+        expect(productMenu.map((group) => group.labelKey)).toEqual(['nav.dashboard', 'nav.content.group', 'nav.users.group', 'nav.system.group', 'nav.settings']);
+        const content = productMenu.find((group) => group.labelKey === 'nav.content.group');
+        const users = productMenu.find((group) => group.labelKey === 'nav.users.group');
+        const system = productMenu.find((group) => group.labelKey === 'nav.system.group');
+        expect(content?.items?.map((item) => item.to)).toEqual(['/content/write', '/content/articles', '/content/taxonomies', '/content/comments']);
+        expect(users?.items?.map((item) => item.to)).toEqual(['/users', '/users/permissions', '/users/points', '/users/membership', '/users/payments']);
         expect(system?.items?.map((item) => item.to)).toContain('/system/assets');
+        expect(system?.items?.map((item) => item.to)).toContain('/system/notifications');
+        expect(system?.items?.map((item) => item.to)).toContain('/system/oidc');
     });
 
     it('does not contain demo or blocked contract entries', () => {
         const items = allItems(productMenu);
-        const labels = items.map((item) => item.label.toLowerCase());
+        const labels = items.map((item) => item.labelKey.toLowerCase());
         expect(labels.join(' ')).not.toContain('demo');
         expect(labels).not.toContain('seo');
-        for (const blocked of ['oidc', 'notification', 'payment', 'ledger', 'media library', 'overview placeholder']) {
+        for (const blocked of ['media library', 'overview placeholder']) {
             expect(labels.join(' ')).not.toContain(blocked);
         }
     });
@@ -36,8 +40,8 @@ describe('product menu', () => {
     it('every item with a route declares a capability and a route name', () => {
         for (const item of allItems(productMenu)) {
             if (item.to) {
-                expect(item.capability, `menu item ${item.label}`).toBeDefined();
-                expect(item.routeName, `menu item ${item.label}`).toBeDefined();
+                expect(item.capability, `menu item ${item.labelKey}`).toBeDefined();
+                expect(item.routeName, `menu item ${item.labelKey}`).toBeDefined();
             }
         }
     });
@@ -46,25 +50,22 @@ describe('product menu', () => {
 describe('menu capability filtering', () => {
     it('hides items without the required capability', () => {
         const visible = filterMenu(productMenu, { capabilities: capabilities(['settings.read']), isRouteRegistered: allRegistered() });
-        const labels = allItems(visible).map((item) => item.label);
-        expect(labels).toContain('Settings');
-        expect(labels).not.toContain('Users');
-        expect(labels).not.toContain('Posts');
-        expect(labels).not.toContain('Pages');
+        const labels = allItems(visible).map((item) => item.labelKey);
+        expect(labels).toContain('nav.settings');
+        expect(labels).not.toContain('nav.users.list');
     });
 
     it('hides a parent group when no child survives', () => {
         const visible = filterMenu(productMenu, { capabilities: capabilities(['settings.read']), isRouteRegistered: allRegistered() });
-        const groups = visible.map((group) => group.label);
-        expect(groups).not.toContain('Identity');
-        expect(groups).not.toContain('Content');
-        expect(groups).not.toContain('Operations');
-        expect(groups).toContain('System');
+        const groups = visible.map((group) => group.labelKey);
+        expect(groups).not.toContain('nav.users.group');
+        expect(groups).not.toContain('nav.content.group');
+        expect(groups).toContain('nav.settings');
     });
 
     it('does not expose an overview placeholder before a summary provider exists', () => {
         const visible = filterMenu(productMenu, { capabilities: capabilities([]), isRouteRegistered: allRegistered() });
-        expect(visible.map((group) => group.label)).not.toContain('Home');
+        expect(visible.map((group) => group.labelKey)).not.toContain('nav.placeholder');
     });
 });
 
@@ -80,10 +81,10 @@ describe('menu route registration filtering', () => {
     it('keeps items whose route is registered', () => {
         const visible = filterMenu(productMenu, {
             capabilities: capabilities(['identity.users.read']),
-            isRouteRegistered: registered(['identity-users'])
+            isRouteRegistered: registered(['users'])
         });
         expect(visible).toHaveLength(1);
-        expect(visible[0].label).toBe('Identity');
-        expect(visible[0].items?.map((item) => item.label)).toEqual(['Users']);
+        expect(visible[0].labelKey).toBe('nav.users.group');
+        expect(visible[0].items?.map((item) => item.labelKey)).toEqual(['nav.users.list']);
     });
 });

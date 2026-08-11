@@ -2,8 +2,15 @@
 import { useLayout } from '@/layout/composables/layout';
 import AppConfigurator from './AppConfigurator.vue';
 import { APP_NAME } from '@/env';
+import { useI18n } from 'vue-i18n';
+import { setLocale } from '@/i18n';
 
 const { toggleMenu, toggleDarkMode, isDarkTheme } = useLayout();
+const { locale, t } = useI18n();
+
+function toggleLocale(): void {
+    setLocale(locale.value === 'zh-CN' ? 'en-US' : 'zh-CN');
+}
 
 const onSignOut = async () => {
     const { signOut } = await import('@/auth/session');
@@ -17,7 +24,7 @@ const onSignOut = async () => {
             <button class="layout-menu-button layout-topbar-action" @click="toggleMenu">
                 <i class="pi pi-bars"></i>
             </button>
-            <router-link to="/content" class="layout-topbar-logo">
+            <router-link to="/dashboard" class="layout-topbar-logo">
                 <span class="aiya-cms-mark" aria-hidden="true"></span>
                 <span>{{ APP_NAME }}</span>
             </router-link>
@@ -25,6 +32,10 @@ const onSignOut = async () => {
 
         <div class="layout-topbar-actions">
             <div class="layout-config-menu">
+                <button type="button" class="layout-topbar-action" :title="t('common.language')" @click="toggleLocale">
+                    <i class="pi pi-language"></i>
+                    <span>{{ locale === 'zh-CN' ? 'EN' : '中' }}</span>
+                </button>
                 <button type="button" class="layout-topbar-action" @click="toggleDarkMode">
                     <i :class="['pi', { 'pi-moon': isDarkTheme, 'pi-sun': !isDarkTheme }]" />
                 </button>
@@ -51,7 +62,7 @@ const onSignOut = async () => {
                 <div class="layout-topbar-menu-content">
                     <button type="button" class="layout-topbar-action" @click="onSignOut">
                         <i class="pi pi-sign-out"></i>
-                        <span>Sign Out</span>
+                        <span>{{ t('common.signOut') }}</span>
                     </button>
                 </div>
             </div>

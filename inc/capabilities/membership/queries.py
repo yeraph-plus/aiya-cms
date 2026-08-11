@@ -64,11 +64,27 @@ class MembershipQueries:
             return _to_subscription(row)
 
     async def list_subscriptions(  # type: ignore[return]
-        self, *, page: int, size: int
+        self,
+        *,
+        page: int,
+        size: int,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        level_key: str | None = None,
+        status: str | None = None,
     ) -> Page[SubscriptionDTO]:
         async with self._uow_factory() as uow:
-            statement = select(MembershipSubscription).order_by(
-                MembershipSubscription.created_at.desc()
+            statement = select(MembershipSubscription)
+            if subject_type is not None:
+                statement = statement.where(MembershipSubscription.subject_type == subject_type)
+            if subject_id is not None:
+                statement = statement.where(MembershipSubscription.subject_id == subject_id)
+            if level_key is not None:
+                statement = statement.where(MembershipSubscription.level_key == level_key)
+            if status is not None:
+                statement = statement.where(MembershipSubscription.status == status)
+            statement = statement.order_by(
+                MembershipSubscription.created_at.desc(), MembershipSubscription.id.desc()
             )
             result: Page[MembershipSubscription] = await fetch_page(
                 uow.session, statement, page=page, size=size

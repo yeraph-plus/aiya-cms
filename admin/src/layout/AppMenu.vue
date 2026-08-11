@@ -6,14 +6,27 @@ import type { MenuItem } from '@/layout/composables/layout';
 import { productMenu } from '@/navigation/menu';
 import { filterMenu } from '@/navigation/visibility';
 import { sessionCapabilities } from '@/auth/session';
+import { useI18n } from 'vue-i18n';
+import type { NavMenuItem } from '@/navigation/menu';
 
 const router = useRouter();
+const { t } = useI18n();
+
+function localize(items: NavMenuItem[]): MenuItem[] {
+    return items.map(({ labelKey, items: children, ...item }) => ({
+        ...item,
+        label: t(labelKey),
+        items: children ? localize(children) : undefined
+    }));
+}
 
 const model = computed<MenuItem[]>(() => {
-    return filterMenu(productMenu, {
-        capabilities: sessionCapabilities.value,
-        isRouteRegistered: (name) => (name ? router.hasRoute(name) : true)
-    });
+    return localize(
+        filterMenu(productMenu, {
+            capabilities: sessionCapabilities.value,
+            isRouteRegistered: (name) => (name ? router.hasRoute(name) : true)
+        })
+    );
 });
 </script>
 

@@ -5,10 +5,12 @@ import Aura from '@primeuix/themes/aura';
 import Lara from '@primeuix/themes/lara';
 import Nora from '@primeuix/themes/nora';
 import type { Preset } from '@primeuix/themes/types';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { MenuMode } from '@/layout/composables/layout';
 
 const { layoutConfig, isDarkTheme, changeMenuMode } = useLayout();
+const { t } = useI18n();
 
 const presets: Record<string, Preset> = {
     Aura,
@@ -19,9 +21,9 @@ const preset = ref(layoutConfig.preset);
 const presetOptions = ref(Object.keys(presets));
 
 const menuMode = ref<MenuMode>(layoutConfig.menuMode);
-const menuModeOptions = ref([
-    { label: 'Static', value: 'static' },
-    { label: 'Overlay', value: 'overlay' }
+const menuModeOptions = computed(() => [
+    { label: t('appearance.static'), value: 'static' },
+    { label: t('appearance.overlay'), value: 'overlay' }
 ]);
 
 interface ColorOption {
@@ -211,7 +213,7 @@ function onPresetChange() {
     >
         <div class="flex flex-col gap-4">
             <div>
-                <span class="text-sm text-muted-color font-semibold">Primary</span>
+                <span class="text-sm text-muted-color font-semibold">{{ t('appearance.primary') }}</span>
                 <div class="pt-2 flex gap-2 flex-wrap justify-between">
                     <button
                         v-for="primaryColor of primaryColors"
@@ -225,7 +227,7 @@ function onPresetChange() {
                 </div>
             </div>
             <div>
-                <span class="text-sm text-muted-color font-semibold">Surface</span>
+                <span class="text-sm text-muted-color font-semibold">{{ t('appearance.surface') }}</span>
                 <div class="pt-2 flex gap-2 flex-wrap justify-between">
                     <button
                         v-for="surface of surfaces"
@@ -242,11 +244,11 @@ function onPresetChange() {
                 </div>
             </div>
             <div class="flex flex-col gap-2">
-                <span class="text-sm text-muted-color font-semibold">Presets</span>
+                <span class="text-sm text-muted-color font-semibold">{{ t('appearance.presets') }}</span>
                 <SelectButton v-model="preset" @change="onPresetChange" :options="presetOptions" :allowEmpty="false" />
             </div>
             <div class="flex flex-col gap-2">
-                <span class="text-sm text-muted-color font-semibold">Menu Mode</span>
+                <span class="text-sm text-muted-color font-semibold">{{ t('appearance.menuMode') }}</span>
                 <SelectButton v-model="menuMode" @change="changeMenuMode" :options="menuModeOptions" :allowEmpty="false" optionLabel="label" optionValue="value" />
             </div>
         </div>

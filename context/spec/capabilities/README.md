@@ -11,6 +11,7 @@ capability 是拥有业务模型、表、命令、查询、事件、诊断和迁
 - [`oidc-provider.md`](oidc-provider.md)：作为 OpenID Provider 对外提供单点登录。
 - [`audit.md`](audit.md)：跨能力安全审计事实的不可变持久化和查询。
 - [`content.md`](content.md)：通用内容、类型声明、状态、定时发布、置顶和引用。
+- [`comments.md`](comments.md)：面向 opaque target 的评论提交、层级回复和审核状态机。
 - [`engagement.md`](engagement.md)：内容浏览、点赞/收藏、评分事实及聚合快照。
 - [`taxonomy.md`](taxonomy.md)：平面多维标签。
 - [`settings.md`](settings.md)：声明式配置组、Field 定义、逐字段持久化和 SEO 默认值。
@@ -19,8 +20,6 @@ capability 是拥有业务模型、表、命令、查询、事件、诊断和迁
 - [`points.md`](points.md)：积分计划、账户、不可变账本和行为规格。
 - [`payments.md`](payments.md)：外部支付订单、webhook 和退款事实。
 - [`membership.md`](membership.md)：会员等级、订阅周期、续费到期与授予积分额度。
-
-comments 不属于首个重建闭环；未来若加入，必须成为独立 capability，不回到 kernel/content 内核。
 
 ## 统一包合同
 

@@ -113,9 +113,9 @@ flowchart TD
 
 ## 10. 初始能力范围
 
-首个重建闭环包含 identity、access、oidc_provider、audit、content、taxonomy、settings、assets、points、payments，以及 post、page、check_in、point_purchase features。notification 的契约已建立；是否进入某个运行时 manifest 由组合根显式选择，未装配时不得产生路由、worker、cron 或外部连接。
+首个重建闭环包含 identity、access、oidc_provider、audit、content、comments、taxonomy、settings、assets、points、payments、membership、engagement，以及 post、page、check_in、point_purchase、membership_purchase、content_engagement features。notification 的契约已建立；是否进入某个运行时 manifest 由组合根显式选择，未装配时不得产生路由、worker、cron 或外部连接。
 
-comments、搜索、commerce 商品、下载、webhook 平台和 WordPress 兼容不在首个闭环。未来加入时必须遵守同一 capability/feature 边界，不得回填到 kernel。
+搜索、commerce 商品、下载、webhook 平台和 WordPress 兼容不在首个闭环。未来加入时必须遵守同一 capability/feature 边界，不得回填到 kernel。
 
 ## 11. 架构验收
 

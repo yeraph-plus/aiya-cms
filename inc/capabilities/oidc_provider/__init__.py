@@ -9,6 +9,15 @@ revoker bound to the SecurityEventSubscriber Port.
 
 from __future__ import annotations
 
+from inc.capabilities.oidc_provider.clients import (
+    ClientCommandContext,
+    ClientQueries,
+    DisableClient,
+    EnableClient,
+    RegisterClient,
+    RotateClientSecret,
+    UpdateClient,
+)
 from inc.capabilities.oidc_provider.handlers import OidcDiagnostics, SecurityEventRevoker
 from inc.capabilities.oidc_provider.keys import InMemorySigningKeyStore, KeyService
 from inc.capabilities.oidc_provider.services import (
@@ -24,15 +33,22 @@ from inc.capabilities.oidc_provider.sessions import OidcSessionRevoker
 
 __all__ = [
     "AuthorizationService",
+    "ClientQueries",
+    "ClientCommandContext",
+    "DisableClient",
+    "EnableClient",
     "GrantConsentService",
     "InMemorySigningKeyStore",
     "KeyService",
     "LogoutService",
     "OidcDiagnostics",
     "OidcSessionRevoker",
+    "RegisterClient",
     "RevocationService",
     "SecurityEventRevoker",
     "ServiceContext",
     "TokenService",
+    "RotateClientSecret",
+    "UpdateClient",
     "UserInfoService",
 ]

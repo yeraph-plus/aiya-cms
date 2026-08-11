@@ -25,19 +25,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function errorMessage(error: unknown): string {
     if (error instanceof ApiError) {
+        const message = isRecord(error.body) ? error.body.message : undefined;
+        if (typeof message === 'string') return message;
         const detail = isRecord(error.body) ? error.body.detail : undefined;
         if (typeof detail === 'string') return detail;
-        if (Array.isArray(detail)) return '请求参数校验失败';
-        if (error.status === 401) return '会话已失效，请重新登录';
-        if (error.status === 403) return '权限不足，无法执行该操作';
-        if (error.status === 404) return '请求的资源不存在';
-        if (error.status === 409) return '资源已被他人修改，请刷新后重试';
-        if (error.status >= 500) return '服务器内部错误，请稍后重试';
-        return `请求失败（${error.status}）`;
+        if (Array.isArray(detail)) return translate('errors.validation');
+        if (error.status === 401) return translate('errors.unauthorized');
+        if (error.status === 403) return translate('errors.forbidden');
+        if (error.status === 404) return translate('errors.notFound');
+        if (error.status === 409) return translate('errors.conflict');
+        if (error.status >= 500) return translate('errors.server');
+        return translate('errors.requestFailed', { status: error.status });
     }
-    return '请求失败，请检查网络后重试';
+    return translate('errors.network');
 }
 
 export function requestIdOf(error: unknown): string | undefined {
     return error instanceof ApiError ? error.requestId : undefined;
 }
+import { translate } from '@/i18n';

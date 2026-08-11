@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { banUser, deleteUser, fetchUser, unbanUser, type SubjectDTO } from '@/api/identity';
 import { hasCapability } from '@/auth/session';
 import ApiErrorMessage from '@/components/feedback/ApiErrorMessage.vue';
 import ConfirmAction from '@/components/feedback/ConfirmAction.vue';
 import PageState from '@/components/feedback/PageState.vue';
 
+const { t, locale } = useI18n();
 const props = defineProps<{ userId: string }>();
 
 const emit = defineEmits<{
@@ -89,7 +91,7 @@ function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'second
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Date(value).toLocaleString() : '-';
+    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
 }
 
 watch(
@@ -101,7 +103,7 @@ watch(
 
 <template>
     <PageState v-if="loading && !user" state="loading" />
-    <PageState v-else-if="error" state="error" :error="error" description="用户详情加载失败，请稍后重试。" />
+    <PageState v-else-if="error" state="error" :error="error" />
     <template v-else-if="user">
         <div class="flex flex-col gap-6">
             <Card>
@@ -110,23 +112,23 @@ watch(
                 <template #content>
                     <div class="grid grid-cols-12 gap-6">
                         <div class="col-span-12 flex flex-col gap-2">
-                            <span class="text-sm text-muted-color">Display name</span>
+                            <span class="text-sm text-muted-color">{{ t('users.displayName') }}</span>
                             <span>{{ user.display_name || '-' }}</span>
                         </div>
                         <div class="col-span-12 flex flex-col gap-2">
-                            <span class="text-sm text-muted-color">Email</span>
+                            <span class="text-sm text-muted-color">{{ t('users.email') }}</span>
                             <span class="break-all">{{ user.email }}</span>
                         </div>
                         <div class="col-span-12 flex flex-col gap-2">
-                            <span class="text-sm text-muted-color">Status</span>
+                            <span class="text-sm text-muted-color">{{ t('workbenches.status') }}</span>
                             <Tag :value="user.status" :severity="statusSeverity(user.status)" class="w-fit" />
                         </div>
                         <div class="col-span-12 flex flex-col gap-2">
-                            <span class="text-sm text-muted-color">Email verified</span>
-                            <span>{{ user.email_verified ? '是' : '否' }}</span>
+                            <span class="text-sm text-muted-color">{{ t('users.emailVerified') }}</span>
+                            <span>{{ user.email_verified ? t('common.yes') : t('common.no') }}</span>
                         </div>
                         <div class="col-span-12 flex flex-col gap-2">
-                            <span class="text-sm text-muted-color">Created</span>
+                            <span class="text-sm text-muted-color">{{ t('users.created') }}</span>
                             <span>{{ formatDate(user.created_at) }}</span>
                         </div>
                     </div>
@@ -134,19 +136,19 @@ watch(
             </Card>
 
             <Card>
-                <template #title>Account actions</template>
+                <template #title>{{ t('users.accountActions') }}</template>
                 <template #content>
                     <div class="flex flex-col gap-4">
                         <div v-if="user.status === 'active'" class="flex flex-col gap-2">
-                            <label :for="`ban-reason-${user.id}`" class="font-medium">Ban reason</label>
-                            <Textarea :id="`ban-reason-${user.id}`" v-model="banReason" rows="3" auto-resize placeholder="说明封禁原因（可选）" :disabled="processing || !canBan" />
+                            <label :for="`ban-reason-${user.id}`" class="font-medium">{{ t('users.banReason') }}</label>
+                            <Textarea :id="`ban-reason-${user.id}`" v-model="banReason" rows="3" auto-resize :placeholder="t('users.banReasonPlaceholder')" :disabled="processing || !canBan" />
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            <ConfirmAction v-if="user.status === 'active'" label="封禁用户" message="确定封禁该用户吗？封禁后将拒绝新的认证。" :disabled="processing || !canBan" @confirmed="ban" />
-                            <ConfirmAction v-if="user.status === 'banned'" label="解除封禁" message="确定解除该用户的封禁吗？" severity="warn" :disabled="processing || !canUnban" @confirmed="unban" />
-                            <ConfirmAction label="删除用户" message="确定删除该用户吗？该操作不可逆。" :disabled="processing || !canDelete || user.status === 'deleted'" @confirmed="remove" />
+                            <ConfirmAction v-if="user.status === 'active'" :label="t('users.ban')" :message="t('users.banConfirm')" :disabled="processing || !canBan" @confirmed="ban" />
+                            <ConfirmAction v-if="user.status === 'banned'" :label="t('users.unban')" :message="t('users.unbanConfirm')" severity="warn" :disabled="processing || !canUnban" @confirmed="unban" />
+                            <ConfirmAction :label="t('users.delete')" :message="t('users.deleteConfirm')" :disabled="processing || !canDelete || user.status === 'deleted'" @confirmed="remove" />
                         </div>
-                        <Message v-if="!canBan && !canUnban && !canDelete" severity="info" :closable="false">当前账号没有用户管理写权限。</Message>
+                        <Message v-if="!canBan && !canUnban && !canDelete" severity="info" :closable="false">{{ t('users.readOnly') }}</Message>
                     </div>
                 </template>
             </Card>

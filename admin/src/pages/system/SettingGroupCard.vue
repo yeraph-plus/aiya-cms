@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useToast } from 'primevue/usetoast';
 import { createUploadIntent, finalizeUpload, uploadToProvider, waitForAsset } from '@/api/assets';
 import { resetSettingGroup, updateSettingGroup, type SettingGroupDTO } from '@/api/settings';
@@ -9,6 +10,7 @@ import SettingField from '@/components/forms/SettingField.vue';
 import { editableSettingValues, type SettingValues } from '@/components/forms/setting-fields';
 import { hasCapability } from '@/auth/session';
 
+const { t, locale } = useI18n();
 const props = defineProps<{ group: SettingGroupDTO }>();
 
 const emit = defineEmits<{
@@ -42,7 +44,7 @@ async function save(): Promise<void> {
             clear_sensitive_fields: [...clearSensitiveFields.value]
         });
         emit('updated', updated);
-        toast.add({ severity: 'success', summary: '已保存', detail: '设置组已更新。', life: 3000 });
+        toast.add({ severity: 'success', summary: t('workbenches.settings.saved'), detail: t('workbenches.settings.savedDetail'), life: 3000 });
     } catch (caught) {
         actionError.value = caught;
     } finally {
@@ -67,7 +69,7 @@ async function reset(): Promise<void> {
     try {
         const updated = await resetSettingGroup(props.group.group_key);
         emit('updated', updated);
-        toast.add({ severity: 'success', summary: '已重置', detail: '设置组已恢复默认值。', life: 3000 });
+        toast.add({ severity: 'success', summary: t('workbenches.settings.resetDone'), detail: t('workbenches.settings.resetDoneDetail'), life: 3000 });
     } catch (caught) {
         actionError.value = caught;
     } finally {
@@ -112,15 +114,15 @@ watch(() => props.group, syncValues, { immediate: true });
 
             <ApiErrorMessage v-if="actionError" class="mt-6" :error="actionError" />
             <Message v-if="uploadError" class="mt-6" severity="warn" :closable="false">{{ uploadError.message }}</Message>
-            <Message v-if="!canUpdate()" class="mt-6" severity="info" :closable="false">当前账号没有该设置组的更新权限，页面为只读模式。</Message>
+            <Message v-if="!canUpdate()" class="mt-6" severity="info" :closable="false">{{ t('workbenches.settings.readOnly') }}</Message>
         </template>
         <template #footer>
             <div class="flex flex-wrap items-center justify-between gap-3 w-full">
-                <span v-if="group.updated_at" class="text-sm text-muted-color">最近更新：{{ new Date(group.updated_at).toLocaleString() }}</span>
-                <span v-else class="text-sm text-muted-color">尚未持久化修改</span>
+                <span v-if="group.updated_at" class="text-sm text-muted-color">{{ t('workbenches.settings.lastUpdated', { time: new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(group.updated_at)) }) }}</span>
+                <span v-else class="text-sm text-muted-color">{{ t('workbenches.settings.notPersisted') }}</span>
                 <div class="flex flex-wrap gap-2">
-                    <ConfirmAction label="恢复默认" header="恢复设置默认值" message="确定恢复该设置组的全部默认值吗？此操作会创建新的版本。" :disabled="!canUpdate() || saving" @confirmed="reset" />
-                    <Button label="保存" icon="pi pi-save" :loading="saving" :disabled="!canUpdate()" @click="save" />
+                    <ConfirmAction :label="t('workbenches.settings.reset')" :header="t('workbenches.settings.resetTitle')" :message="t('workbenches.settings.resetConfirm')" :disabled="!canUpdate() || saving" @confirmed="reset" />
+                    <Button :label="t('common.save')" icon="pi pi-save" :loading="saving" :disabled="!canUpdate()" @click="save" />
                 </div>
             </div>
         </template>

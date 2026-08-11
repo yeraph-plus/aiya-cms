@@ -24,6 +24,15 @@ capability/feature 注册 NotificationSpec：
 
 未来的管理员通知页面只管理 delivery/attempt 的只读查询以及 `RetryDelivery`、`CancelPendingNotification` 等已命名运行态 Command。SMTP/SMS provider 配置继续通过受控 settings group 管理，不构成模板管理接口。若以后要开放模板维护，必须先定义版本发布、变量 schema 兼容、预览安全、权限和审计合同，再显式加入 RouterSpec/OpenAPI。
 
+当前管理侧 HTTP 面固定为：
+
+- `GET /api/v1/admin/notifications/deliveries`：按 status、channel、provider、spec、recipient 过滤并稳定分页；
+- `GET /api/v1/admin/notifications/deliveries/{delivery_id}`：返回 intent、delivery 与 attempt 列表；
+- `POST /api/v1/admin/notifications/deliveries/{delivery_id}/retry`：调用 `RetryDelivery`；
+- `POST /api/v1/admin/notifications/deliveries/{delivery_id}/cancel`：调用 `CancelPendingNotification`。
+
+不得以 generic PATCH 或状态字段覆盖替代命名 Command。
+
 ## 3. 表所有权
 
 - `notification_templates`：key/version/channel/locale、subject/body、状态和变量 schema version。

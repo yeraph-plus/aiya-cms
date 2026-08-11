@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import { fetchUsers, type SubjectDTO, type SubjectPageDTO, type UserListQuery } from '@/api/identity';
 import PageState from '@/components/feedback/PageState.vue';
-import PageToolbar from '@/components/data/PageToolbar.vue';
+import PageShell from '@/components/shell/PageShell.vue';
 import PagedTable from '@/components/data/PagedTable.vue';
-import UserDetailDrawer from './UserDetailDrawer.vue';
-import PointsAdjustDrawer from './PointsAdjustDrawer.vue';
+import UserWorkspaceDrawer from './UserWorkspaceDrawer.vue';
 import { hasCapability } from '@/auth/session';
 
+const { t, locale } = useI18n();
 const statusOptions = ['active', 'banned', 'deleted'];
 const route = useRoute();
 const router = useRouter();
@@ -19,19 +20,13 @@ const error = ref<unknown>(null);
 const page = ref(1);
 const size = ref(20);
 const selectedUserId = ref<string | null>(null);
-const drawerVisible = computed({
+const workspaceVisible = computed({
     get: () => selectedUserId.value !== null,
     set: (visible: boolean) => {
         if (!visible) selectedUserId.value = null;
     }
 });
-const pointsUserId = ref<string | null>(null);
-const pointsDrawerVisible = computed({
-    get: () => pointsUserId.value !== null,
-    set: (visible: boolean) => {
-        if (!visible) pointsUserId.value = null;
-    }
-});
+const workspaceTab = ref<'account' | 'points'>('account');
 const canAdjustPoints = computed(() => hasCapability('points.adjust'));
 
 function routeString(key: string): string | undefined {
@@ -102,15 +97,17 @@ function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'second
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Date(value).toLocaleString() : '-';
+    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
 }
 
 function openUser(userId: string): void {
+    workspaceTab.value = 'account';
     selectedUserId.value = userId;
 }
 
 function openPoints(userId: string): void {
-    pointsUserId.value = userId;
+    workspaceTab.value = 'points';
+    selectedUserId.value = userId;
 }
 
 function updateUser(updated: SubjectDTO): void {
@@ -139,54 +136,46 @@ onMounted(() => {
 </script>
 
 <template>
-    <PageToolbar title="Users" subtitle="管理用户主体和账号状态。">
-        <template #actions>
-            <Button icon="pi pi-refresh" label="刷新" severity="secondary" :loading="loading" @click="refresh" />
-        </template>
+    <PageShell :title="t('routes.users.list')" :description="t('users.description')" :loading="loading" @refresh="refresh">
 
         <div class="card">
             <form class="flex flex-wrap items-end gap-4" @submit.prevent="applyFilters">
                 <div class="flex min-w-56 flex-col gap-2">
-                    <label for="user-status" class="font-medium">Status</label>
-                    <Select id="user-status" v-model="filters.status" :options="statusOptions" show-clear placeholder="全部状态" fluid />
+                    <label for="user-status" class="font-medium">{{ t('workbenches.status') }}</label>
+                    <Select id="user-status" v-model="filters.status" :options="statusOptions" show-clear :placeholder="t('common.all')" fluid />
                 </div>
-                <Button type="submit" label="应用筛选" icon="pi pi-search" />
+                <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" />
             </form>
         </div>
 
         <PageState v-if="loading && !result" state="loading" />
-        <PageState v-else-if="error" state="error" :error="error" description="用户列表加载失败，请稍后重试。" />
-        <PageState v-else-if="result && result.total === 0" state="empty" title="暂无用户" description="当前筛选条件没有匹配的用户。" />
+        <PageState v-else-if="error" state="error" :error="error" />
+        <PageState v-else-if="result && result.total === 0" state="empty" :title="t('users.empty')" :description="t('users.emptyDescription')" />
         <PagedTable v-else-if="result" :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
-            <Column field="username" header="Username" style="min-width: 12rem" />
-            <Column field="display_name" header="Display name" style="min-width: 12rem">
+            <Column field="username" :header="t('users.username')" style="min-width: 12rem" />
+            <Column field="display_name" :header="t('users.displayName')" style="min-width: 12rem">
                 <template #body="{ data }">{{ data.display_name || '-' }}</template>
             </Column>
-            <Column field="email" header="Email" style="min-width: 16rem" />
-            <Column field="status" header="Status" style="min-width: 8rem">
+            <Column field="email" :header="t('users.email')" style="min-width: 16rem" />
+            <Column field="status" :header="t('workbenches.status')" style="min-width: 8rem">
                 <template #body="{ data }"><Tag :value="data.status" :severity="statusSeverity(data.status)" /></template>
             </Column>
-            <Column field="email_verified" header="Email verified" style="min-width: 10rem">
+            <Column field="email_verified" :header="t('users.emailVerified')" style="min-width: 10rem">
                 <template #body="{ data }"><i class="pi" :class="data.email_verified ? 'pi-check-circle text-green-500' : 'pi-times-circle text-red-500'" /></template>
             </Column>
-            <Column field="created_at" header="Created" style="min-width: 12rem">
+            <Column field="created_at" :header="t('users.created')" style="min-width: 12rem">
                 <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
             </Column>
-            <Column header="Actions" style="width: 8rem">
+            <Column :header="t('common.actions')" style="width: 8rem">
                 <template #body="{ data }">
                     <div class="flex flex-wrap gap-1">
-                        <Button label="查看" text @click="openUser(data.id)" />
-                        <Button v-if="canAdjustPoints" label="积分管理" text icon="pi pi-star" @click="openPoints(data.id)" />
+                        <Button :label="t('users.view')" text @click="openUser(data.id)" />
+                        <Button v-if="canAdjustPoints" :label="t('users.managePoints')" text icon="pi pi-star" @click="openPoints(data.id)" />
                     </div>
                 </template>
             </Column>
         </PagedTable>
 
-        <Drawer v-model:visible="drawerVisible" header="User detail" position="right" class="!w-full md:!w-[42rem]">
-            <UserDetailDrawer v-if="selectedUserId" :user-id="selectedUserId" @updated="updateUser" @deleted="removeUser" />
-        </Drawer>
-        <Drawer v-model:visible="pointsDrawerVisible" header="积分管理" position="right" class="!w-full md:!w-[42rem]">
-            <PointsAdjustDrawer v-if="pointsUserId" :subject-id="pointsUserId" />
-        </Drawer>
-    </PageToolbar>
+        <UserWorkspaceDrawer v-model="workspaceVisible" :user-id="selectedUserId" :initial-tab="workspaceTab" @updated="updateUser" @deleted="removeUser" />
+    </PageShell>
 </template>

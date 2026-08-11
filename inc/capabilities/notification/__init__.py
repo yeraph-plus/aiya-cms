@@ -11,6 +11,7 @@ from __future__ import annotations
 from inc.capabilities.notification.activities import DeliverActivity, build_deliver_workflow_spec
 from inc.capabilities.notification.commands import CommandContext
 from inc.capabilities.notification.diagnostics import NotificationDiagnostics
+from inc.capabilities.notification.queries import NotificationQueries
 from inc.capabilities.notification.specs import (
     DeliveryPolicy,
     NotificationSpec,
@@ -22,6 +23,7 @@ __all__ = [
     "DeliverActivity",
     "DeliveryPolicy",
     "NotificationDiagnostics",
+    "NotificationQueries",
     "NotificationSpec",
     "NotificationSpecRegistry",
     "build_deliver_workflow_spec",

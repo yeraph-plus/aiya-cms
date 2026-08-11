@@ -1,8 +1,10 @@
 ﻿<script setup lang="ts">
 import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
+const { t } = useI18n();
 const message = typeof route.query.message === 'string' ? route.query.message : '';
 const requestId = typeof route.query.requestId === 'string' ? route.query.requestId : '';
 </script>
@@ -17,11 +19,11 @@ const requestId = typeof route.query.requestId === 'string' ? route.query.reques
                         <div class="flex justify-center items-center border-2 border-pink-500 rounded-full" style="height: 3.2rem; width: 3.2rem">
                             <i class="pi pi-fw pi-exclamation-circle text-2xl! text-pink-500"></i>
                         </div>
-                        <h1 class="text-surface-900 dark:text-surface-0 font-bold text-5xl mb-2">Error Occured</h1>
-                        <span class="text-muted-color mb-8">{{ message || 'The request could not be completed. Please try again.' }}</span>
-                        <span v-if="requestId" class="text-xs text-muted-color mb-8">Request ID: {{ requestId }}</span>
+                        <h1 class="text-surface-900 dark:text-surface-0 font-bold text-5xl mb-2">{{ t('pages.errorTitle') }}</h1>
+                        <span class="text-muted-color mb-8">{{ message || t('pages.errorDescription') }}</span>
+                        <span v-if="requestId" class="text-xs text-muted-color mb-8">{{ t('pages.requestId') }}: {{ requestId }}</span>
                         <div class="col-span-12 mt-8 text-center">
-                            <Button as="router-link" label="Go to Content" to="/content" severity="danger" />
+                            <Button as="router-link" :label="t('pages.goToDashboard')" to="/dashboard" severity="danger" />
                         </div>
                     </div>
                 </div>

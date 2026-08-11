@@ -20,6 +20,8 @@ ALL_CAPABILITIES = (
     "audit",
     "settings",
     "content",
+    "comments",
+    "notification",
     "taxonomy",
     "assets",
     "points",

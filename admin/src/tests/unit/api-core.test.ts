@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { ApiError, errorMessage, requestIdOf } from '@/api/errors';
 import { pageCount, pageQuery, isPageDTO } from '@/api/pagination';
+import { setLocale } from '@/i18n';
+
+beforeEach(() => setLocale('zh-CN'));
 
 describe('ApiError', () => {
     it('extracts status, code, body and request id', () => {
@@ -20,6 +23,12 @@ describe('ApiError', () => {
         expect(errorMessage(new ApiError(409, null))).toBe('资源已被他人修改，请刷新后重试');
         expect(errorMessage(new ApiError(500, null))).toBe('服务器内部错误，请稍后重试');
         expect(errorMessage(new Error('boom'))).toBe('请求失败，请检查网络后重试');
+    });
+
+    it('localizes only frontend fallbacks and leaves backend messages untouched', () => {
+        setLocale('en-US');
+        expect(errorMessage(new ApiError(403, null))).toBe('You do not have permission to perform this action.');
+        expect(errorMessage(new ApiError(422, { message: 'identity.challenge_invalid' }))).toBe('identity.challenge_invalid');
     });
 
     it('requestIdOf only resolves for ApiError', () => {

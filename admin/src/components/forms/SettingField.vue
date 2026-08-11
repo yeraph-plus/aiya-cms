@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { FileUploadUploaderEvent } from 'primevue/fileupload';
 import type { SettingFieldDTO } from '@/api/settings';
 import { isSettingScalar, isSettingScalarArray, settingAccept, settingFieldComponent, settingIsMultiple, settingMaxLength, settingMaxSize, settingOptions, settingPlaceholder, settingRows, type SettingValue } from './setting-fields';
 
+const { t } = useI18n();
 const props = withDefaults(
     defineProps<{
         field: SettingFieldDTO;
@@ -128,7 +130,7 @@ async function upload(event: FileUploadUploaderEvent): Promise<void> {
         <small v-if="field.desc" class="text-muted-color">{{ field.desc }}</small>
         <div v-if="field.sensitive" class="flex items-center gap-2 text-sm text-muted-color">
             <span>{{ sensitiveConfigured ? '已配置；留空保存将保留现值' : '尚未配置' }}</span>
-            <Button v-if="sensitiveConfigured" label="清除" severity="danger" text size="small" :disabled="disabled" @click="emit('clear-sensitive')" />
+            <Button v-if="sensitiveConfigured" :label="t('common.clear')" severity="danger" text size="small" :disabled="disabled" @click="emit('clear-sensitive')" />
         </div>
 
         <component :is="fieldComponent" v-if="field.type !== 'radio' && field.type !== 'upload'" v-model="componentValue" v-bind="componentProps" :disabled="disabled" />
@@ -144,7 +146,7 @@ async function upload(event: FileUploadUploaderEvent): Promise<void> {
             <component :is="fieldComponent" :accept="settingAccept(field)" :max-file-size="settingMaxSize(field)" :multiple="settingIsMultiple(field)" :custom-upload="true" :disabled="disabled || uploading" @uploader="upload" />
             <span v-if="typeof modelValue === 'string' && modelValue" class="text-sm text-muted-color">当前资产 ID：{{ modelValue }}</span>
             <span v-else-if="Array.isArray(modelValue) && modelValue.length" class="text-sm text-muted-color">已选择 {{ modelValue.length }} 个资产</span>
-            <small v-if="uploading" class="text-muted-color">正在上传并等待资产确认...</small>
+            <small v-if="uploading" class="text-muted-color">{{ t('workbenches.settings.uploading') }}</small>
         </div>
     </div>
 </template>

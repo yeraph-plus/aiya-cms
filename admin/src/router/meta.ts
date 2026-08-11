@@ -1,7 +1,7 @@
 import 'vue-router';
 
 export interface RouteMeta {
-    title: string;
+    titleKey: string;
     requiresAuth: boolean;
     requiredCapability?: string;
     shell: 'auth' | 'app';
@@ -9,7 +9,7 @@ export interface RouteMeta {
 
 declare module 'vue-router' {
     interface RouteMeta {
-        title: string;
+        titleKey: string;
         requiresAuth: boolean;
         requiredCapability?: string;
         shell: 'auth' | 'app';

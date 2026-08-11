@@ -97,6 +97,7 @@ OIDC 自己声明并消费：
 ## 9. Client 管理和 consent
 
 - 首版只允许管理员 API/ops Command 管理 client；不暴露 Dynamic Client Registration 协议。
+- 管理员 HTTP 面固定为 `/api/v1/admin/oidc/clients`：列表/单项读取调用 `ClientQueries`，注册、更新 redirect/scope、启用、禁用与 confidential secret rotation 分别调用具名 Command；不允许通用 PATCH 任意协议状态，也不回显历史 secret。
 - redirect URI、post logout URI 以完整字符串集合保存，不支持通配符。
 - public client auth method 为 `none`；confidential client 首版支持 `client_secret_basic`。
 - trusted first-party client 可以配置跳过重复 consent，但 scope 仍受注册和 access 决策约束。

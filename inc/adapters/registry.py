@@ -17,6 +17,7 @@ from inc.capabilities.access import AuthorizeService
 from inc.capabilities.access.schemas import Principal
 from inc.capabilities.content import ContentQueries
 from inc.capabilities.identity import CredentialAuthenticator, IdentityQueries
+from inc.capabilities.notification.ports import RecipientTarget
 from inc.capabilities.oidc_provider import OidcSessionRevoker
 from inc.capabilities.oidc_provider.ports import (
     AuthorizationDecisionReader,
@@ -35,9 +36,11 @@ PORT_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "oidc.authorization_decision": ("oidc_provider", ("access",)),
     "oidc.security_events": ("oidc_provider", ("oidc_provider",)),
     "taxonomy.target_exists": ("taxonomy", ("content",)),
+    "comments.target_exists": ("comments", ("content",)),
     "assets.object_storage": ("assets", ()),
     "payments.provider": ("payments", ()),
     "notification.email": ("notification", ("settings",)),
+    "notification.recipient": ("notification", ("identity",)),
     "membership.subject_exists": ("membership", ("identity",)),
     "membership.points_ledger": ("membership", ("points",)),
 }
@@ -53,6 +56,7 @@ ADAPTER_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "payments.dev_fake": (),
     "email.smtp": ("settings",),
     "email.smtp2go": ("settings",),
+    "identity.notification_recipient": ("identity",),
     "membership.subject_exists": ("identity",),
     "membership.points_ledger": ("points",),
 }
@@ -154,6 +158,32 @@ class TaxonomyContentExists:
         return content is not None and content.type_name == target_type
 
 
+class IdentityNotificationRecipient:
+    """Resolve identity email targets without exposing identity persistence."""
+
+    def __init__(self, *, queries: IdentityQueries) -> None:
+        self._queries = queries
+
+    async def resolve(
+        self, recipient_type: str, recipient_id: str, channel: str
+    ) -> RecipientTarget | None:
+        if recipient_type != "identity" or channel != "email":
+            return None
+        try:
+            subject = await self._queries.get_subject(recipient_id)
+        except ValueError:
+            return None
+        if subject is None or subject.status != "active" or not subject.email:
+            return None
+        local, separator, domain = subject.email.partition("@")
+        if not separator:
+            masked = subject.email[:2] + "***"
+        else:
+            visible = local[:2] if len(local) > 2 else local[:1]
+            masked = f"{visible}***@{domain}"
+        return RecipientTarget(channel="email", address=subject.email, masked_address=masked)
+
+
 class ContentBatchExists:
     """Bulk existence for taxonomy orphan diagnostics."""
 
@@ -211,6 +241,8 @@ def resolve_adapters(
                     message="adapter 'oidc.session_revoker' requires the oidc_provider capability",
                 )
             resolved[port] = session_revoker
+        elif adapter == "identity.notification_recipient":
+            resolved[port] = IdentityNotificationRecipient(queries=identity_queries)
         elif adapter == "content.exists":
             if content_queries is None:
                 raise KernelError(

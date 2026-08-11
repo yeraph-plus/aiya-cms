@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { fetchExecutionEntries, type ExecutionEntryDTO, type ExecutionPageDTO } from '@/api/execution';
 import PageState from '@/components/feedback/PageState.vue';
-import PageToolbar from '@/components/data/PageToolbar.vue';
+import PageShell from '@/components/shell/PageShell.vue';
 import PagedTable from '@/components/data/PagedTable.vue';
 
+const { t, locale } = useI18n();
 const filters = reactive({ kind: '', key: '', status: '' });
 const result = ref<ExecutionPageDTO | null>(null);
 const loading = ref(false);
@@ -47,7 +49,7 @@ function onSize(value: number): void {
 }
 
 function formatDate(value: string): string {
-    return new Date(value).toLocaleString();
+    return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
 function errorValue(entry: ExecutionEntryDTO): string {
@@ -58,45 +60,42 @@ onMounted(() => void load());
 </script>
 
 <template>
-    <PageToolbar title="Execution Log" subtitle="查看 outbox、inbox receipt 和 task 的安全执行摘要。">
-        <template #actions>
-            <Button icon="pi pi-refresh" label="刷新" severity="secondary" :loading="loading" @click="load" />
-        </template>
+    <PageShell :title="t('routes.system.operations')" :description="t('workbenches.execution.description')" :loading="loading" @refresh="load">
 
         <div class="card">
             <form class="grid grid-cols-12 gap-4 items-end" @submit.prevent="applyFilters">
                 <div class="col-span-12 md:col-span-4 xl:col-span-3 flex flex-col gap-2">
-                    <label for="execution-kind" class="font-medium">Kind</label>
-                    <Select id="execution-kind" v-model="filters.kind" :options="['outbox', 'inbox', 'task']" show-clear placeholder="全部" fluid />
+                    <label for="execution-kind" class="font-medium">{{ t('workbenches.execution.kind') }}</label>
+                    <Select id="execution-kind" v-model="filters.kind" :options="['outbox', 'inbox', 'task']" show-clear :placeholder="t('common.all')" fluid />
                 </div>
                 <div class="col-span-12 md:col-span-4 xl:col-span-4 flex flex-col gap-2">
-                    <label for="execution-key" class="font-medium">Key</label>
+                    <label for="execution-key" class="font-medium">{{ t('workbenches.execution.key') }}</label>
                     <InputText id="execution-key" v-model="filters.key" placeholder="content.publish.scan.v1.tick" />
                 </div>
                 <div class="col-span-12 md:col-span-4 xl:col-span-3 flex flex-col gap-2">
-                    <label for="execution-status" class="font-medium">Status</label>
-                    <InputText id="execution-status" v-model="filters.status" placeholder="completed / dead" />
+                    <label for="execution-status" class="font-medium">{{ t('workbenches.status') }}</label>
+                    <InputText id="execution-status" v-model="filters.status" :placeholder="t('workbenches.execution.statusPlaceholder')" />
                 </div>
                 <div class="col-span-12 xl:col-span-2">
-                    <Button type="submit" label="应用筛选" icon="pi pi-search" class="w-full" />
+                    <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" class="w-full" />
                 </div>
             </form>
         </div>
 
         <PageState v-if="loading && !result" state="loading" />
-        <PageState v-else-if="error" state="error" :error="error" description="执行记录加载失败，请稍后重试。" />
-        <PageState v-else-if="result && result.total === 0" state="empty" title="暂无执行记录" description="当前筛选条件没有匹配的记录。" />
+        <PageState v-else-if="error" state="error" :error="error" />
+        <PageState v-else-if="result && result.total === 0" state="empty" :title="t('workbenches.execution.empty')" :description="t('workbenches.execution.emptyDescription')" />
         <PagedTable v-else-if="result" :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
-            <Column field="occurred_at" header="时间" style="min-width: 12rem">
+            <Column field="occurred_at" :header="t('workbenches.execution.time')" style="min-width: 12rem">
                 <template #body="{ data }">{{ formatDate(data.occurred_at) }}</template>
             </Column>
-            <Column field="kind" header="Kind" style="min-width: 8rem" />
-            <Column field="key" header="Key" style="min-width: 24rem" />
-            <Column field="status" header="Status" style="min-width: 10rem" />
-            <Column field="attempts" header="Attempts" style="min-width: 8rem" />
-            <Column field="error_category" header="Error" style="min-width: 10rem">
+            <Column field="kind" :header="t('workbenches.execution.kind')" style="min-width: 8rem" />
+            <Column field="key" :header="t('workbenches.execution.key')" style="min-width: 24rem" />
+            <Column field="status" :header="t('workbenches.status')" style="min-width: 10rem" />
+            <Column field="attempts" :header="t('workbenches.execution.attempts')" style="min-width: 8rem" />
+            <Column field="error_category" :header="t('workbenches.execution.error')" style="min-width: 10rem">
                 <template #body="{ data }">{{ errorValue(data) }}</template>
             </Column>
         </PagedTable>
-    </PageToolbar>
+    </PageShell>
 </template>

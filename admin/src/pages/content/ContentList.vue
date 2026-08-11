@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import { fetchContent, type ContentDTO, type ContentListQuery, type ContentPageDTO } from '@/api/content';
 import { hasCapability } from '@/auth/session';
 import PageState from '@/components/feedback/PageState.vue';
-import PageToolbar from '@/components/data/PageToolbar.vue';
+import EntityDrawerShell from '@/components/shell/EntityDrawerShell.vue';
+import PageShell from '@/components/shell/PageShell.vue';
 import PagedTable from '@/components/data/PagedTable.vue';
+import ContentEditor from './ContentEditor.vue';
 
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const statusOptions = ['draft', 'pending', 'rejected', 'scheduled', 'published', 'archived'];
-const typeOptions = [
-    { label: 'All types', value: null },
-    { label: 'Post', value: 'post' },
-    { label: 'Page', value: 'page' }
-];
+const typeOptions = computed(() => [
+    { label: t('workbenches.content.allTypes'), value: null },
+    { label: t('workbenches.content.post'), value: 'post' },
+    { label: t('workbenches.content.page'), value: 'page' }
+]);
 const filters = reactive({ status: null as string | null, typeName: null as string | null });
 const result = ref<ContentPageDTO | null>(null);
 const loading = ref(false);
@@ -22,6 +26,13 @@ const error = ref<unknown>(null);
 const page = ref(1);
 const size = ref(20);
 const canWrite = computed(() => hasCapability('content.write'));
+const selectedContentId = ref<string | null>(null);
+const editorVisible = computed({
+    get: () => selectedContentId.value !== null,
+    set: (visible: boolean) => {
+        if (!visible) selectedContentId.value = null;
+    }
+});
 
 function routeString(key: string): string | undefined {
     const value = route.query[key];
@@ -87,11 +98,20 @@ function onSize(value: number): void {
 }
 
 function openNew(): void {
-    void router.push({ name: 'content-new' });
+    void router.push({ name: 'content-write' });
 }
 
 function openEditor(contentId: string): void {
-    void router.push({ name: 'content-editor', params: { contentId } });
+    selectedContentId.value = contentId;
+}
+
+function contentSaved(): void {
+    void load();
+}
+
+function contentPurged(): void {
+    selectedContentId.value = null;
+    void load();
 }
 
 function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'secondary' | 'info' {
@@ -102,7 +122,7 @@ function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'second
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Date(value).toLocaleString() : '-';
+    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
 }
 
 function contentTypeLabel(item: ContentDTO): string {
@@ -116,47 +136,50 @@ onMounted(() => {
 </script>
 
 <template>
-    <PageToolbar title="Articles" subtitle="Manage every registered content type from one list.">
+    <PageShell :title="t('routes.content.articles')" :description="t('workbenches.content.description')" :loading="loading" @refresh="refresh">
         <template #actions>
-            <Button v-if="canWrite" icon="pi pi-plus" label="New content" @click="openNew" />
-            <Button icon="pi pi-refresh" label="Refresh" severity="secondary" :loading="loading" @click="refresh" />
+            <Button v-if="canWrite" icon="pi pi-plus" :label="t('workbenches.content.new')" @click="openNew" />
         </template>
 
         <div class="card">
             <form class="flex flex-wrap items-end gap-4" @submit.prevent="applyFilters">
                 <div class="flex min-w-52 flex-col gap-2">
-                    <label for="content-type" class="font-medium">Content type</label>
+                    <label for="content-type" class="font-medium">{{ t('workbenches.content.type') }}</label>
                     <Select id="content-type" v-model="filters.typeName" :options="typeOptions" option-label="label" option-value="value" fluid />
                 </div>
                 <div class="flex min-w-52 flex-col gap-2">
-                    <label for="content-status" class="font-medium">Status</label>
-                    <Select id="content-status" v-model="filters.status" :options="statusOptions" show-clear placeholder="All statuses" fluid />
+                    <label for="content-status" class="font-medium">{{ t('workbenches.status') }}</label>
+                    <Select id="content-status" v-model="filters.status" :options="statusOptions" show-clear :placeholder="t('common.all')" fluid />
                 </div>
-                <Button type="submit" label="Apply filters" icon="pi pi-search" />
+                <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" />
             </form>
         </div>
 
         <PageState v-if="loading && !result" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" description="The content list could not be loaded." />
-        <PageState v-else-if="result && result.total === 0" state="empty" title="No content" description="No content matches the current filters." />
+        <PageState v-else-if="result && result.total === 0" state="empty" :title="t('workbenches.content.empty')" :description="t('workbenches.content.emptyDescription')" />
         <PagedTable v-else-if="result" :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
-            <Column field="title" header="Title" style="min-width: 18rem" />
-            <Column header="Type" style="min-width: 8rem">
+            <Column field="title" :header="t('workbenches.content.title')" style="min-width: 18rem" />
+            <Column :header="t('workbenches.content.type')" style="min-width: 8rem">
                 <template #body="{ data }">{{ contentTypeLabel(data) }}</template>
             </Column>
-            <Column field="slug" header="Slug" style="min-width: 14rem" />
-            <Column field="status" header="Status" style="min-width: 9rem">
+            <Column field="slug" :header="t('workbenches.content.slug')" style="min-width: 14rem" />
+            <Column field="status" :header="t('workbenches.status')" style="min-width: 9rem">
                 <template #body="{ data }"><Tag :value="data.status" :severity="statusSeverity(data.status)" /></template>
             </Column>
-            <Column field="is_pinned" header="Pinned" style="min-width: 7rem">
+            <Column field="is_pinned" :header="t('workbenches.content.pinned')" style="min-width: 7rem">
                 <template #body="{ data }"><i class="pi" :class="data.is_pinned ? 'pi-star-fill text-yellow-500' : 'pi-minus text-muted-color'" /></template>
             </Column>
-            <Column field="updated_at" header="Updated" style="min-width: 13rem">
+            <Column field="updated_at" :header="t('workbenches.content.updated')" style="min-width: 13rem">
                 <template #body="{ data }">{{ formatDate(data.updated_at) }}</template>
             </Column>
-            <Column header="Actions" style="width: 8rem">
-                <template #body="{ data }"><Button label="Edit" text icon="pi pi-pencil" @click="openEditor(data.id)" /></template>
+            <Column :header="t('common.actions')" style="width: 8rem">
+                <template #body="{ data }"><Button :label="t('common.edit')" text icon="pi pi-pencil" @click="openEditor(data.id)" /></template>
             </Column>
         </PagedTable>
-    </PageToolbar>
+
+        <EntityDrawerShell v-model="editorVisible" :title="t('workbenches.content.edit')" :description="selectedContentId || ''" width-class="!w-full xl:!w-[80rem]">
+            <ContentEditor v-if="selectedContentId" :content-id="selectedContentId" embedded @saved="contentSaved" @purged="contentPurged" />
+        </EntityDrawerShell>
+    </PageShell>
 </template>

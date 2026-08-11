@@ -1,5 +1,6 @@
 import type { paths } from './schema';
 import { ApiError } from './errors';
+import { assertAdminSpaApiPath } from './scope';
 
 export type PathKeys = keyof paths;
 type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
@@ -69,6 +70,7 @@ export function createApiClient(options: ApiClientOptions) {
     };
 
     const request = async <T>(req: RequestOptions): Promise<T> => {
+        assertAdminSpaApiPath(req.path);
         const headers: Record<string, string> = {
             'X-Request-ID': newRequestId()
         };

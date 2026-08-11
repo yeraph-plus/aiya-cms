@@ -24,6 +24,8 @@ subject 是 opaque reference，不建立 identity 外键。授予积分通过 Po
 
 运行期若存在内部受控 level Command，它只供 install/ops 或明确 feature 使用，未进入 RouterSpec/OpenAPI。未来要开放任何等级管理动作，必须先明确版本、存量订阅快照、权限、审计和并发语义，再单独导出命名 Command，不能把 `membership_levels` 表直接映射为通用 CRUD。
 
+`GET /api/v1/admin/membership/subscriptions` 支持 `subject_type`、`subject_id`、`level_key`、`status` 精确过滤，以便全局会员工作台和单用户 Drawer 复用同一个只读 Query；过滤不得隐式修改或续期订阅。
+
 ## 3. 状态机
 
 订阅状态至少为：

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useConfirm } from 'primevue/useconfirm';
+import { ref } from 'vue';
+import SensitiveActionDialog from '@/components/shell/SensitiveActionDialog.vue';
 
 const props = withDefaults(
     defineProps<{
@@ -20,19 +21,15 @@ const emit = defineEmits<{
     confirmed: [];
 }>();
 
-const confirm = useConfirm();
+const visible = ref(false);
 
-const onConfirm = (event: Event) => {
-    confirm.require({
-        target: event.currentTarget as HTMLElement,
-        message: props.message,
-        header: props.header,
-        accept: () => emit('confirmed')
-    });
-};
+function confirm(): void {
+    visible.value = false;
+    emit('confirmed');
+}
 </script>
 
 <template>
-    <Button :label="label" :severity="severity" :disabled="disabled" @click="onConfirm" />
-    <ConfirmPopup />
+    <Button :label="label" :severity="severity" :disabled="disabled" @click="visible = true" />
+    <SensitiveActionDialog v-model="visible" :title="header" :message="message" :confirm-label="label" :disabled="disabled" @confirm="confirm" />
 </template>

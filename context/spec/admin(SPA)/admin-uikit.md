@@ -100,7 +100,11 @@ primevue 5.0.0 全部 214 个导出均经自动导入解析器可用，常见未
 
 ## 5. 页面清单（路由）
 
-当前 `src/router/` 按生产合同拆分：`meta.ts`（固定 RouteMeta：title/requiresAuth/requiredCapability/shell）、`public-routes.ts`（login/callback/logged-out/access-denied/error/404 catch-all）、`app-routes.ts`（生产业务路由，显式注册 dashboard、identity users、settings 和 audit 页面；用户详情通过列表内 `Drawer` 展示，不创建 `users/*` 子路由；settings 组在同一页面循环渲染，不创建 `settings/*` 子路由，也不创建独立 SEO 页面）。Login 页保留网页表单登录（`POST {issuer}/oidc/login`，凭据由后端 OP 校验）；`/callback` 完成 OIDC code 交换。生产路由、守卫和菜单以 `context/admin-ts-migration-plan.md` 的 OpenAPI 对照表为施工基线：已有 endpoint 的页面先实现，OIDC clients、notifications、支付订单、积分流水、独立 assets 和 Admin summary 等缺少 endpoint 的页面必须先补后端合同，不得用占位页完成。认证错误态页面位于 `src/pages/auth/`，`Placeholder.vue`、`/pages/empty` 已删除。
+生产路由和菜单以 `admin.md` §4.1 为事实清单。`src/router/meta.ts` 使用 `titleKey/requiresAuth/requiredCapability/shell`；`src/navigation/menu.ts` 使用 `labelKey`，显示文本统一由 Vue I18n 解析。公共认证路由包含 login、register、verify-email、password-reset request/confirm、callback、logged-out、access-denied、error 和 404。
+
+业务主路由固定为 `/dashboard`、`/content/write|articles|taxonomies`、`/users`、`/system/audit|operations|assets`、`/settings`，其余目标在对应后端合同和真实页面完成后显式注册。详情/编辑按 `admin.md` §4.2 使用 Drawer/Dialog，不创建 record detail 子路由，不用 Placeholder 假装完成。
+
+共享业务壳位于 `src/components/shell/`：`PageShell`、`SurfaceCard`、`EntityDrawerShell`、`FormDialogShell`、`SensitiveActionDialog`。现有 `PageToolbar` 在迁移完成后删除，业务页面不得同时维护两套标题壳。
 
 demo 画廊页面位于 `src/demo/pages/`（仅开发路由 `/demo/**`，生产剔除）：uikit 15 个演示页、`Blocks.vue`、`Crud.vue`（业务列表 CRUD 参照模板）、`Documentation.vue`、`Landing.vue`、`Dashboard.vue`。Crud 模板要点：Toolbar（新建/批量删除/导出）+ DataTable（全局过滤/分页/CSV/多选）+ Dialog 表单 + 确认删除。
 

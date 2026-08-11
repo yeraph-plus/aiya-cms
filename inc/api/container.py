@@ -40,6 +40,7 @@ from inc.capabilities.assets import (
     CommandContext as AssetCommandContext,
 )
 from inc.capabilities.audit import AuditInboxHandler, AuditQueries, AuditRetentionActivity
+from inc.capabilities.comments import CommentQueries
 from inc.capabilities.content import (
     ContentDiagnostics,
     ContentPublishScanner,
@@ -64,8 +65,16 @@ from inc.capabilities.membership import (
     MembershipLevelRegistry,
     MembershipQueries,
 )
+from inc.capabilities.notification import (
+    DeliverActivity,
+    NotificationDiagnostics,
+    NotificationQueries,
+    NotificationSpecRegistry,
+    build_deliver_workflow_spec,
+)
 from inc.capabilities.oidc_provider import (
     AuthorizationService,
+    ClientQueries,
     GrantConsentService,
     InMemorySigningKeyStore,
     KeyService,
@@ -134,6 +143,7 @@ CAPABILITY_DEFINITIONS: dict[str, tuple[str, str]] = {
     "audit": ("inc.capabilities.audit.definition", "spec"),
     "settings": ("inc.capabilities.settings.definition", "spec"),
     "content": ("inc.capabilities.content.definition", "spec"),
+    "comments": ("inc.capabilities.comments.definition", "spec"),
     "taxonomy": ("inc.capabilities.taxonomy.definition", "spec"),
     "assets": ("inc.capabilities.assets.definition", "spec"),
     "notification": ("inc.capabilities.notification.definition", "spec"),
@@ -150,6 +160,7 @@ STAT_PROVIDER_MODULES: dict[str, str] = {
     "audit": "inc.capabilities.audit.stat",
     "settings": "inc.capabilities.settings.stat",
     "content": "inc.capabilities.content.stat",
+    "comments": "inc.capabilities.comments.stat",
     "taxonomy": "inc.capabilities.taxonomy.stat",
     "assets": "inc.capabilities.assets.stat",
     "notification": "inc.capabilities.notification.stat",
@@ -218,6 +229,7 @@ ROUTER_BINDINGS: dict[str, RouterBinding] = {
     "identity": RouterBinding(module="inc.api.http.routers_identity", capabilities=("identity",)),
     "access": RouterBinding(module="inc.api.http.routers_access", capabilities=("access",)),
     "content": RouterBinding(module="inc.api.http.routers_content", capabilities=("content",)),
+    "comments": RouterBinding(module="inc.api.http.routers_comments", capabilities=("comments",)),
     "content_public": RouterBinding(
         module="inc.api.http.routers_content_public",
         capabilities=("content", "engagement"),
@@ -260,6 +272,12 @@ ROUTER_BINDINGS: dict[str, RouterBinding] = {
     ),
     "membership_admin": RouterBinding(
         module="inc.api.http.routers_membership_admin", capabilities=("membership",)
+    ),
+    "oidc_admin": RouterBinding(
+        module="inc.api.http.routers_oidc_admin", capabilities=("oidc_provider",)
+    ),
+    "notifications_admin": RouterBinding(
+        module="inc.api.http.routers_notifications_admin", capabilities=("notification",)
     ),
 }
 KNOWN_ROUTERS = frozenset(ROUTER_BINDINGS)
@@ -306,6 +324,7 @@ class Services:
     dimensions: DimensionRegistry
     settings_groups: SettingGroupRegistry
     content_queries: ContentQueries
+    comments_queries: CommentQueries | None
     taxonomy_queries: TaxonomyQueries
     settings_queries: SettingsQueries
     audit_queries: AuditQueries
@@ -323,10 +342,15 @@ class Services:
     scanner: ContentPublishScanner | None = None
     oidc: dict[str, Any] | None = None
     oidc_grants: GrantConsentService | None = None
+    oidc_client_queries: ClientQueries | None = None
     payment_providers: dict[str, Any] = field(default_factory=dict)
     payment_webhook_secrets: dict[str, str] = field(default_factory=dict)
     engagement_commands: EngagementCommands | None = None
     engagement_queries: EngagementQueries | None = None
+    notification_queries: NotificationQueries | None = None
+    notification_specs: NotificationSpecRegistry | None = None
+    notification_resolver: Any | None = None
+    notification_providers: dict[str, tuple[Any, ...]] = field(default_factory=dict)
     admin_summaries: AdminSummaryRegistry | None = None
     task_worker: TaskWorker | None = None
     cron_scheduler: CronScheduler | None = None
@@ -365,6 +389,7 @@ class ApplicationContainer:
         self.settings_groups = SettingGroupRegistry()
         self.behaviors = PointBehaviorRegistry()
         self.membership_levels = MembershipLevelRegistry()
+        self.notification_specs = NotificationSpecRegistry()
         self.diagnostic_registry = DiagnosticRegistry()
         self.admin_summary_registry = AdminSummaryRegistry()
         self.services: Services | None = None
@@ -527,6 +552,11 @@ class ApplicationContainer:
 
             for key, schema in CONTENT_EVENT_SCHEMAS.items():
                 self.schema_registry.register(key, schema)
+        if "comments" in capabilities:
+            from inc.capabilities.comments.events import COMMENT_EVENT_SCHEMAS
+
+            for key, schema in COMMENT_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
         if "taxonomy" in capabilities:
             from inc.capabilities.taxonomy.events import TAXONOMY_EVENT_SCHEMAS
 
@@ -556,6 +586,11 @@ class ApplicationContainer:
             from inc.capabilities.membership.events import MEMBERSHIP_EVENT_SCHEMAS
 
             for key, schema in MEMBERSHIP_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
+        if "notification" in capabilities:
+            from inc.capabilities.notification.events import NOTIFICATION_EVENT_SCHEMAS
+
+            for key, schema in NOTIFICATION_EVENT_SCHEMAS.items():
                 self.schema_registry.register(key, schema)
         from inc.capabilities.audit.schemas import AuditEntryRecorded
 
@@ -598,6 +633,9 @@ class ApplicationContainer:
         authorize = AuthorizeService(uow_factory=self._uow_factory, clock=self._clock)
         access_queries = AccessQueries(uow_factory=self._uow_factory)
         content_queries = ContentQueries(uow_factory=self._uow_factory, types=self.content_types)
+        comments_queries = (
+            CommentQueries(uow_factory=self._uow_factory) if "comments" in capabilities else None
+        )
         engagement_commands: EngagementCommands | None = None
         engagement_queries: EngagementQueries | None = None
         if "engagement" in capabilities:
@@ -664,6 +702,31 @@ class ApplicationContainer:
             settings_queries=settings_queries,
         )
         self._validate_required_ports(adapters)
+
+        notification_queries: NotificationQueries | None = None
+        notification_resolver: Any | None = None
+        notification_providers: dict[str, tuple[Any, ...]] = {}
+        if "notification" in capabilities:
+            notification_queries = NotificationQueries(uow_factory=self._uow_factory)
+            notification_resolver = adapters["notification.recipient"]
+            notification_providers = {
+                "email": tuple(adapters["notification.email"]),
+            }
+            deliver_activity = DeliverActivity(
+                clock=self._clock,
+                outbox=outbox,
+                specs=self.notification_specs,
+                resolver=notification_resolver,
+                providers=notification_providers,
+            )
+            self.workflow_registry.register(build_deliver_workflow_spec(activity=deliver_activity))
+            self.diagnostic_registry.register(
+                NotificationDiagnostics(
+                    uow_factory=self._uow_factory,
+                    specs=self.notification_specs,
+                    clock=self._clock,
+                )
+            )
 
         asset_providers: dict[str, Any] = {}
         if "assets" in capabilities:
@@ -878,6 +941,7 @@ class ApplicationContainer:
             )
         oidc: dict[str, Any] | None = None
         oidc_grants: GrantConsentService | None = None
+        oidc_client_queries: ClientQueries | None = None
         if "oidc_provider" in capabilities:
             service_ctx = ServiceContext(
                 uow_factory=self._uow_factory,
@@ -899,6 +963,7 @@ class ApplicationContainer:
                 "ctx": service_ctx,
             }
             oidc_grants = GrantConsentService(service_ctx)
+            oidc_client_queries = ClientQueries(uow_factory=self._uow_factory)
             self._register_cron(
                 key="oidc.keys.cleanup.v1",
                 schedule="0 3 * * *",
@@ -1024,9 +1089,14 @@ class ApplicationContainer:
             settings=self._settings,
             asset_providers=asset_providers,
             content_queries=content_queries,
+            comments_queries=comments_queries,
             taxonomy_queries=taxonomy_queries,
             engagement_commands=engagement_commands,
             engagement_queries=engagement_queries,
+            notification_queries=notification_queries,
+            notification_specs=self.notification_specs if "notification" in capabilities else None,
+            notification_resolver=notification_resolver,
+            notification_providers=notification_providers,
             admin_summaries=self.admin_summary_registry,
             settings_queries=settings_queries,
             asset_queries=asset_queries,
@@ -1041,6 +1111,7 @@ class ApplicationContainer:
             scanner=scanner,
             oidc=oidc,
             oidc_grants=oidc_grants,
+            oidc_client_queries=oidc_client_queries,
             payment_providers=payment_providers,
             payment_webhook_secrets=payment_webhook_secrets,
             task_worker=task_worker,
@@ -1093,6 +1164,7 @@ class ApplicationContainer:
             self.settings_groups,
             self.behaviors,
             self.membership_levels,
+            self.notification_specs,
             self.diagnostic_registry,
             self.admin_summary_registry,
         ):

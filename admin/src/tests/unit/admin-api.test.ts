@@ -16,7 +16,7 @@ vi.mock('@/api/index', () => ({
 import { fetchAuditEntries } from '@/api/audit';
 import { fetchSettingGroup, fetchSettingGroups, resetSettingGroup, updateSettingGroup } from '@/api/settings';
 import { banUser, deleteUser, fetchUser, fetchUsers, unbanUser } from '@/api/identity';
-import { adjustPoints, fetchAdminPointsLedger, fetchPointsLedger } from '@/api/points';
+import { adjustPoints, fetchAdminPointsLedger } from '@/api/points';
 
 describe('admin domain adapters', () => {
     beforeEach(() => {
@@ -83,13 +83,11 @@ describe('admin domain adapters', () => {
         expect(body).not.toHaveProperty('bucket_id');
     });
 
-    it('binds self and admin points ledger reads to their generated endpoint groups', async () => {
-        await fetchPointsLedger({ page: 2, size: 25 });
+    it('binds points ledger reads only to the admin endpoint group', async () => {
         await fetchAdminPointsLedger({ subject_id: 'user-1', page: 1, size: 20 });
         await fetchAdminPointsLedger({ subject_id: 'user-1', program_key: 'credit', page: 1, size: 20 });
 
-        expect(getMock).toHaveBeenCalledWith('/api/v1/me/points/ledger', { page: 2, size: 25 }, undefined);
-        expect(getMock).toHaveBeenCalledWith('/api/v1/admin/points/ledger', { subject_id: 'user-1', page: 1, size: 20 }, undefined);
-        expect(getMock).toHaveBeenCalledWith('/api/v1/admin/points/ledger', { subject_id: 'user-1', program_key: 'credit', page: 1, size: 20 }, undefined);
+        expect(getMock).toHaveBeenNthCalledWith(1, '/api/v1/admin/points/ledger', { subject_id: 'user-1', page: 1, size: 20 }, undefined);
+        expect(getMock).toHaveBeenNthCalledWith(2, '/api/v1/admin/points/ledger', { subject_id: 'user-1', program_key: 'credit', page: 1, size: 20 }, undefined);
     });
 });

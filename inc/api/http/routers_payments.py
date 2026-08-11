@@ -14,18 +14,26 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Path, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
 from inc.capabilities.payments.commands import (
-    CommandContext as PaymentsCommandContext,
-)
-from inc.capabilities.payments.commands import (
+    CancelPaymentOrder,
     ProcessVerifiedWebhook,
+    ReconcilePaymentOrder,
     RequestRefund,
 )
-from inc.capabilities.payments.schemas import RefundDTO, RequestRefundInput
+from inc.capabilities.payments.commands import (
+    CommandContext as PaymentsCommandContext,
+)
+from inc.capabilities.payments.schemas import (
+    OrderDetailDTO,
+    OrderDTO,
+    OrderPageDTO,
+    RefundDTO,
+    RequestRefundInput,
+)
 from inc.features.membership_purchase.workflows import (
     BridgeContext as MembershipBridgeContext,
 )
@@ -41,7 +49,12 @@ from inc.features.point_purchase.workflows import (
 )
 from inc.kernel.errors import ErrorCategory, KernelError
 
-REQUIRED_PERMISSIONS: tuple[str, ...] = ("payments.refund",)
+REQUIRED_PERMISSIONS: tuple[str, ...] = (
+    "payments.read",
+    "payments.cancel",
+    "payments.refund",
+    "payments.reconcile",
+)
 
 
 def _payments_ctx(services: Services, request: Request) -> PaymentsCommandContext:
@@ -55,12 +68,91 @@ def _payments_ctx(services: Services, request: Request) -> PaymentsCommandContex
     )
 
 
+def _admin_payments_ctx(ctx: AppContext, services: Services) -> PaymentsCommandContext:
+    return PaymentsCommandContext(
+        uow_factory=ctx.uow_factory,
+        clock=ctx.clock,
+        outbox=services.outbox,
+        providers=services.payment_providers,
+        permissions=frozenset(ctx.principal.capabilities),
+        actor_id=ctx.principal.subject_id,
+        trace_id=ctx.trace_id,
+    )
+
+
+def _order_not_found(order_id: uuid.UUID) -> KernelError:
+    return KernelError(
+        code="payments.order_not_found",
+        category=ErrorCategory.NOT_FOUND,
+        message=f"payment order {order_id} was not found",
+    )
+
+
 def build_router(
     services: Services,
     require_capability: RequireCapability,
     require_authenticated: Any,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
+
+    @router.get(
+        "/admin/payments/orders",
+        response_model=OrderPageDTO,
+        tags=["admin", "admin-payments"],
+    )
+    async def list_orders(
+        page: int = Query(default=1, ge=1),
+        size: int = Query(default=20, ge=1, le=100),
+        state: str | None = Query(default=None),
+        provider_key: str | None = Query(default=None),
+        subject_type: str | None = Query(default=None),
+        subject_id: str | None = Query(default=None),
+        ctx: AppContext = Depends(require_capability("payments.read")),
+    ) -> OrderPageDTO:
+        return await services.payments_queries.list_orders(
+            page=page,
+            size=size,
+            state=state,
+            provider_key=provider_key,
+            subject_type=subject_type,
+            subject_id=subject_id,
+        )
+
+    @router.get(
+        "/admin/payments/orders/{order_id}",
+        response_model=OrderDetailDTO,
+        tags=["admin", "admin-payments"],
+    )
+    async def get_order(
+        order_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("payments.read")),
+    ) -> OrderDetailDTO:
+        detail = await services.payments_queries.get_order_detail(order_id)
+        if detail is None:
+            raise _order_not_found(order_id)
+        return detail
+
+    @router.post(
+        "/admin/payments/orders/{order_id}/cancel",
+        response_model=OrderDTO,
+        tags=["admin", "admin-payments"],
+    )
+    async def cancel_order(
+        order_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("payments.cancel")),
+    ) -> OrderDTO:
+        return await CancelPaymentOrder(_admin_payments_ctx(ctx, services))(order_id)
+
+    @router.post(
+        "/admin/payments/orders/{order_id}/reconcile",
+        response_model=OrderDTO,
+        tags=["admin", "admin-payments"],
+    )
+    async def reconcile_order(
+        order_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("payments.reconcile")),
+    ) -> OrderDTO:
+        return await ReconcilePaymentOrder(_admin_payments_ctx(ctx, services))(order_id)
 
     @router.post(
         "/webhooks/payments/{provider_key}",
@@ -118,15 +210,6 @@ def build_router(
         order_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("payments.refund")),
     ) -> RefundDTO:
-        payments_ctx = PaymentsCommandContext(
-            uow_factory=ctx.uow_factory,
-            clock=ctx.clock,
-            outbox=services.outbox,
-            providers=services.payment_providers,
-            permissions=frozenset(ctx.principal.capabilities),
-            actor_id=ctx.principal.subject_id,
-            trace_id=ctx.trace_id,
-        )
-        return await RequestRefund(payments_ctx)(order_id, body)
+        return await RequestRefund(_admin_payments_ctx(ctx, services))(order_id, body)
 
     return router

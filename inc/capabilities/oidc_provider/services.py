@@ -686,7 +686,7 @@ class TokenService:
         *,
         nonce: str | None = None,
     ) -> TokenResponse:
-        key = await self._ctx.keys.ensure_active_key()
+        key = await self._ctx.keys.require_active_key()
         now = self._ctx.clock.utc_now()
 
         claims = await self._ctx.claims_reader.claims_for(subject_id, scopes)

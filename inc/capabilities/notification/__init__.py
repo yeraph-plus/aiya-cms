@@ -16,7 +16,7 @@ from inc.capabilities.notification.auth import (
     AuthChallengeNotifier,
     ensure_auth_templates,
 )
-from inc.capabilities.notification.commands import CommandContext
+from inc.capabilities.notification.commands import CommandContext, UpdateNotificationTemplate
 from inc.capabilities.notification.diagnostics import NotificationDiagnostics
 from inc.capabilities.notification.queries import NotificationQueries
 from inc.capabilities.notification.retention import (
@@ -32,6 +32,7 @@ from inc.capabilities.notification.specs import (
 
 __all__ = [
     "CommandContext",
+    "UpdateNotificationTemplate",
     "AUTH_CHALLENGE_DELIVERY_MAX_ATTEMPTS",
     "AUTH_NOTIFICATION_SPECS",
     "AuthChallengeInput",

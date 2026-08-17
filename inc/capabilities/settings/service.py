@@ -120,8 +120,6 @@ def _field_dtos(spec: SettingGroupSpec) -> tuple[SettingFieldDTO, ...]:
     return tuple(
         SettingFieldDTO(
             slug=field.slug,
-            title=field.title,
-            desc=field.desc,
             type=field.type,
             type_sub=field.type_sub,
             default=defaults[field.slug],

@@ -30,10 +30,11 @@ describe('administrator production topology', () => {
         expect(nginx).toMatch(/X-Content-Type-Options/);
     });
 
-    it('keeps the unfinished user site behind an explicit compose profile', () => {
+    it('deploys the release API, static admin and public client together', () => {
         const compose = read(resolve(repoRoot, 'compose.yaml'));
-        expect(compose).toMatch(/AIYA_APP_PROFILE:\s*\$\{AIYA_APP_PROFILE:-management\}/);
+        expect(compose).toMatch(/AIYA_APP_PROFILE:\s*release/);
         expect(compose).toMatch(/\n\s{2}admin:\s*\n/);
-        expect(compose).toMatch(/profiles:\s*\[site\]/);
+        expect(compose).toMatch(/\n\s{2}site:\s*\n/);
+        expect(compose).not.toMatch(/profiles:/);
     });
 });

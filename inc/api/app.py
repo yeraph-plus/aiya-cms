@@ -104,19 +104,11 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "system", "description": "Liveness and readiness probes."},
     {"name": "auth", "description": "Authentication and account self-service."},
     {"name": "oidc", "description": "OIDC provider protocol endpoints."},
-    {"name": "check-in", "description": "Daily check-in; rewards points."},
-    {"name": "points", "description": "Points self-service ledger reads."},
-    {"name": "point-purchase", "description": "Buy points via the trusted offer catalog."},
-    {
-        "name": "membership-purchase",
-        "description": "Buy membership via the trusted offer catalog.",
-    },
     {"name": "content", "description": "Published content reads."},
     {"name": "comments", "description": "Published comment reads and authenticated submission."},
     {"name": "discussions", "description": "Community discussions and published post streams."},
     {"name": "community-tags", "description": "Community tag directory and metadata."},
     {"name": "engagement", "description": "Views, likes, ratings and favorites."},
-    {"name": "webhooks", "description": "Provider webhook callbacks (signature verified)."},
     {
         "name": "admin",
         "description": (
@@ -131,9 +123,9 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-taxonomy", "description": "Taxonomy dimensions and terms."},
     {"name": "admin-settings", "description": "Setting group management."},
     {"name": "admin-assets", "description": "Asset upload and metadata management."},
+    {"name": "admin-content-bucket", "description": "Image hosting lifecycle management."},
     {"name": "admin-audit", "description": "Audit log queries."},
     {"name": "admin-execution", "description": "Kernel execution log queries."},
-    {"name": "admin-payments", "description": "Payment order administration."},
     {"name": "admin-points", "description": "Points balance and ledger administration."},
     {"name": "admin-dashboard", "description": "Capability-owned administrator statistics."},
     {"name": "admin-session", "description": "Administrator identity and active permissions."},
@@ -201,6 +193,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
         try:
+            if services.keys is not None:
+                await services.keys.require_active_key()
             if start_workers:
                 await container.start()
             yield

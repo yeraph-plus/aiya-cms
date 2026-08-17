@@ -15,7 +15,7 @@ class NotificationIntentDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    spec_key: str
+    trigger_name: str
     recipient_type: str
     recipient_id: str
     state: str
@@ -40,7 +40,7 @@ class NotificationDeliveryDTO(BaseModel):
 
 
 class NotificationDeliveryRecordDTO(NotificationDeliveryDTO):
-    spec_key: str
+    trigger_name: str
     recipient_type: str
     recipient_id: str
     requested_at: datetime
@@ -80,10 +80,34 @@ class NotificationDeliveryDetailDTO(BaseModel):
     attempts: list[NotificationDeliveryAttemptDTO]
 
 
+class NotificationTemplateDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trigger_name: str
+    template_key: str
+    version: str
+    channel: str
+    locale: str
+    subject: str
+    body: str
+    variables_schema_version: str
+    status: str
+
+
+class UpdateNotificationTemplateInput(BaseModel):
+    """Capability-owned template edit input; trigger comes from the route."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=5000)
+    status: str = Field(default="active", pattern="^(active|disabled)$")
+
+
 class RequestNotificationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    spec_key: str
+    trigger_name: str
     recipient_type: str
     recipient_id: str
     variables: dict[str, Any] = Field(default_factory=dict)

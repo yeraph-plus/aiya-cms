@@ -6,6 +6,7 @@ Contract source: context/spec/capabilities/payments.md §6/§8.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,7 +26,7 @@ class OrderDTO(BaseModel):
     offer_version: str
     description: str
     amount: int
-    currency: str
+    currency: Literal["CNY"]
     state: str
     captured_amount: int
     refunded_amount: int
@@ -42,7 +43,7 @@ class CreatePaymentOrderInput(BaseModel):
     offer_version: str
     description: str = Field(max_length=500)
     amount: int = Field(gt=0)
-    currency: str = Field(min_length=3, max_length=8)
+    currency: Literal["CNY"] = "CNY"
     idempotency_key: str = Field(min_length=1, max_length=200)
     return_url: str | None = None
     cancel_url: str | None = None
@@ -52,7 +53,10 @@ class StartAttemptResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     order: OrderDTO
-    checkout_url: str
+    checkout_url: str | None = None
+    redirect_url: str | None = None
+    qr_code_payload: str | None = None
+    app_url: str | None = None
     requires_action: bool = False
 
 
@@ -71,7 +75,7 @@ class RefundDTO(BaseModel):
     order_id: str
     refund_ref: str
     amount: int
-    currency: str
+    currency: Literal["CNY"]
     state: str
     reason: str
 
@@ -117,7 +121,7 @@ class _EventBase(BaseModel):
     subject_type: str
     subject_id: str
     amount: int
-    currency: str
+    currency: Literal["CNY"]
 
 
 class OrderCreatedPayload(_EventBase):

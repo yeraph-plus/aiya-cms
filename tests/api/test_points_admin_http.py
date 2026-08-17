@@ -3,7 +3,7 @@
 Contract source: context/spec/http-openapi.md §2,
 context/spec/capabilities/points.md §5/§9.
 
-The cms manifest exposes the admin adjust endpoint behind the
+The release manifest exposes the admin adjust endpoint behind the
 ``points.adjust`` grant; adjustments are idempotent per ``idempotency_key``.
 """
 
@@ -122,21 +122,6 @@ async def test_adjust_credit_and_debit_balance(
     )
     assert after_debit.balance == 30
 
-    from tests.api.conftest import _mint_token_for
-
-    user_token = await _mint_token_for(services, created.subject.id)
-    me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {user_token}"})
-    assert me.status_code == 200, me.text
-    assert me.json()["points"]["balance"] == 30
-
-    self_ledger = await client.get(
-        "/api/v1/me/points/ledger",
-        headers={"Authorization": f"Bearer {user_token}"},
-    )
-    assert self_ledger.status_code == 200, self_ledger.text
-    assert self_ledger.json()["total"] == 2
-    assert [item["amount"] for item in self_ledger.json()["items"]] == [-20, 50]
-
     admin_ledger = await client.get(
         "/api/v1/admin/points/ledger",
         params={
@@ -177,40 +162,6 @@ async def test_adjust_is_idempotent_per_key(
         program_key="credit", subject_type="identity", subject_id=created.subject.id
     )
     assert balance.balance == 100
-
-
-async def test_self_points_reads_are_empty_without_opening_an_account(
-    client: Any, uow_factory: Any, clock: Any, program: None
-) -> None:
-    from sqlalchemy import func, select
-
-    from inc.capabilities.points.models import PointsAccount
-
-    services = client.app.state.services
-    created = await _register(uow_factory, clock, services, "ledger-reader")
-    from tests.api.conftest import _mint_token_for
-
-    token = await _mint_token_for(services, created.subject.id)
-    headers = {"Authorization": f"Bearer {token}"}
-
-    async with uow_factory() as uow:
-        before = (
-            await uow.session.execute(select(func.count()).select_from(PointsAccount))
-        ).scalar_one()
-
-    me = await client.get("/api/v1/me", headers=headers)
-    ledger = await client.get("/api/v1/me/points/ledger", headers=headers)
-
-    assert me.status_code == 200
-    assert me.json()["points"] == {"opened": False, "program_key": "credit", "balance": 0}
-    assert ledger.status_code == 200
-    assert ledger.json() == {"items": [], "total": 0, "page": 1, "size": 20}
-
-    async with uow_factory() as uow:
-        after = (
-            await uow.session.execute(select(func.count()).select_from(PointsAccount))
-        ).scalar_one()
-    assert after == before
 
 
 async def test_adjust_auto_opens_account_and_rejects_zero_amount(

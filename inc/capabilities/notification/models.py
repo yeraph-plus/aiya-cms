@@ -55,6 +55,7 @@ class RecipientSnapshot(BaseModel):
 class NotificationTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "notification_templates"
 
+    trigger_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     template_key: Mapped[str] = mapped_column(String(100), nullable=False)
     version: Mapped[str] = mapped_column(String(32), nullable=False)
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -66,11 +67,12 @@ class NotificationTemplate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "trigger_name",
             "template_key",
             "version",
             "channel",
             "locale",
-            name="uq_notification_templates_key_version_channel_locale",
+            name="uq_notification_templates_trigger_key_version_channel_locale",
         ),
     )
 

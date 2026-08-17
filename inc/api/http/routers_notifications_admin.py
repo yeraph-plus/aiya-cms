@@ -13,11 +13,14 @@ from inc.capabilities.notification.commands import (
     CancelPendingNotification,
     CommandContext,
     RetryDelivery,
+    UpdateNotificationTemplate,
 )
 from inc.capabilities.notification.schemas import (
     NotificationDeliveryDetailDTO,
     NotificationDeliveryDTO,
     NotificationDeliveryPageDTO,
+    NotificationTemplateDTO,
+    UpdateNotificationTemplateInput,
 )
 from inc.kernel.errors import ErrorCategory, KernelError
 
@@ -25,6 +28,7 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "notification.read",
     "notification.cancel",
     "notification.retry",
+    "notification.templates.manage",
 )
 
 
@@ -73,7 +77,7 @@ def build_router(
         status: str | None = Query(default=None),
         channel: str | None = Query(default=None),
         provider_key: str | None = Query(default=None),
-        spec_key: str | None = Query(default=None),
+        trigger_name: str | None = Query(default=None),
         recipient_id: str | None = Query(default=None),
         ctx: AppContext = Depends(require_capability("notification.read")),
     ) -> NotificationDeliveryPageDTO:
@@ -83,7 +87,7 @@ def build_router(
             status=status,
             channel=channel,
             provider_key=provider_key,
-            spec_key=spec_key,
+            trigger_name=trigger_name,
             recipient_id=recipient_id,
         )
 
@@ -110,5 +114,43 @@ def build_router(
         ctx: AppContext = Depends(require_capability("notification.retry")),
     ) -> NotificationDeliveryDTO:
         return await RetryDelivery(_ctx(ctx, services))(delivery_id)
+
+    @router.get("/templates/{trigger_name}/{locale}", response_model=NotificationTemplateDTO)
+    async def get_template(
+        trigger_name: str,
+        locale: str,
+        ctx: AppContext = Depends(require_capability("notification.read")),
+    ) -> NotificationTemplateDTO:
+        if services.notification_specs is None:
+            raise RuntimeError("notification router requires notification specs")
+        try:
+            services.notification_specs.require_trigger(trigger_name)
+        except KernelError as exc:
+            raise KernelError(
+                code="notification.unknown_trigger",
+                category=ErrorCategory.VALIDATION,
+                message="notification trigger is not registered",
+            ) from exc
+        template = await queries.get_template(trigger_name=trigger_name, locale=locale)
+        if template is None:
+            raise KernelError(
+                code="notification.template_not_found",
+                category=ErrorCategory.NOT_FOUND,
+                message="notification template not found",
+            )
+        return template
+
+    @router.put("/templates/{trigger_name}/{locale}", response_model=NotificationTemplateDTO)
+    async def update_template(
+        body: UpdateNotificationTemplateInput,
+        trigger_name: str,
+        locale: str,
+        ctx: AppContext = Depends(require_capability("notification.templates.manage")),
+    ) -> NotificationTemplateDTO:
+        return await UpdateNotificationTemplate(_ctx(ctx, services))(
+            trigger_name=trigger_name,
+            locale=locale,
+            input_=body,
+        )
 
     return router

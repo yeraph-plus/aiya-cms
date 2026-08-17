@@ -19,5 +19,6 @@ spec = CapabilitySpec(
         "notification.cancel",
         "notification.retry",
         "notification.read",
+        "notification.templates.manage",
     ),
 )

@@ -1,7 +1,6 @@
 """Payment provider adapters.
 
 Each implementation owns its SDK, credentials, timeout, webhook verification
-and provider-error normalization. The manifest chooses exactly one provider
-for the payments Port; ``cms_dev`` is the only profile that uses the fake
-provider.
+and provider-error normalization.  The composition root registers every
+audited provider; Settings chooses the active provider at call time.
 """

@@ -120,6 +120,17 @@ class Smtp2GoEmailAdapter:
             read_timeout_seconds=self._read_timeout_seconds,
         )
 
+    async def check_availability(self) -> tuple[bool, str | None]:
+        """Expose a safe, explicit configuration health result."""
+
+        try:
+            settings = await self._current_settings()
+        except Exception:
+            return False, "notification.provider_unavailable"
+        if not settings.enabled or not settings.api_key or not settings.endpoint:
+            return False, "notification.provider_unavailable"
+        return True, None
+
     async def send(
         self,
         *,

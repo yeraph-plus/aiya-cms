@@ -2,10 +2,7 @@
 
 Contract source: context/spec/http-openapi.md §10, quality-release.md.
 
-``python -m inc.main`` runs the explicitly selected application profile. The
-default is the deployable administrator ``management_plane``; ``cms`` is the
-full profile with production adapters and ``cms_dev`` is the explicit local
-fake-provider profile.
+``python -m inc.main`` runs the single deployable ``release`` composition.
 """
 
 from __future__ import annotations
@@ -18,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from inc.api.config import DEFAULT_ISSUER, ApiSettings, load_api_settings
-from inc.api.manifest import cms, cms_dev, management_plane
+from inc.api.manifest import release
 from inc.kernel.config import load_settings
 from inc.kernel.db import create_engine, create_session_factory
 
@@ -90,29 +87,16 @@ def _api_settings_from_env(environ: Mapping[str, str] | None = None) -> ApiSetti
             "admin_session_absolute_seconds": int(
                 values.get("AIYA_ADMIN_SESSION_ABSOLUTE_SECONDS") or 14 * 86400
             ),
-            "paypal_environment": values.get("AIYA_PAYPAL_ENVIRONMENT") or "sandbox",
-            "paypal_client_id": values.get("AIYA_PAYPAL_CLIENT_ID"),
-            "paypal_client_secret": values.get("AIYA_PAYPAL_CLIENT_SECRET"),
-            "paypal_webhook_id": values.get("AIYA_PAYPAL_WEBHOOK_ID"),
-            "paypal_return_url": values.get("AIYA_PAYPAL_RETURN_URL"),
-            "paypal_cancel_url": values.get("AIYA_PAYPAL_CANCEL_URL"),
         }
     )
 
 
 def _manifest_from_env(environ: Mapping[str, str] | None = None) -> Any:
     values = os.environ if environ is None else environ
-    profile = (values.get("AIYA_APP_PROFILE") or "management").strip().lower()
-    environment = (
-        (values.get("AIYA_ENVIRONMENT") or values.get("AIYA_ENV") or "dev").strip().lower()
-    )
-    if environment == "production" and profile != "management":
-        raise ValueError("production only supports AIYA_APP_PROFILE=management")
-    manifests = {"management": management_plane, "cms": cms, "cms_dev": cms_dev}
-    try:
-        return manifests[profile]
-    except KeyError as exc:
-        raise ValueError("AIYA_APP_PROFILE must be one of: management, cms, cms_dev") from exc
+    profile = (values.get("AIYA_APP_PROFILE") or "release").strip().lower()
+    if profile != "release":
+        raise ValueError("AIYA_APP_PROFILE must be release when specified")
+    return release
 
 
 def _build_app() -> Any:

@@ -123,12 +123,11 @@ HTTP 自助面由组合根提供 `GET /api/v1/me/points/ledger`，只允许当�
 
 事件包含 program/account/entry、amount、behavior/source ref 和 resulting balance，不包含跨能力业务快照。
 
-## 8. 签到与购买接入
+## 8. Feature 接入边界
 
-- `user_center` 的 check-in 流程使用 `subject + program + business_date` 形成幂等键并调用 `CreditPoints`。
-- `user_center` 的 point purchase workflow 只在受信 `payment.captured.v1` 事实后调用 `CreditPoints`。
-- 支付退款调用 `ReverseLedgerEntry`，重复退款事件返回原 reversal。
-- points 不订阅所有 content/payment 事件后自动猜测奖励。
+- Feature 可用 `subject + program + business_date` 形成幂等键后调用 `CreditPoints`；积分 capability 不拥有用户中心或购买业务流。
+- release 不装配签到、积分购买、会员购买或支付退款 feature，也不订阅 payment 事件自动推断奖励。
+- `ReverseLedgerEntry` 是 capability 的受权原子操作；调用者必须传入自身稳定幂等键。
 
 ## 9. Diagnostics、审计与验收
 

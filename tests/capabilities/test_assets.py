@@ -23,6 +23,8 @@ from inc.capabilities.assets.commands import (
     CreateUploadIntent,
     DeleteAsset,
     FinalizeAsset,
+    FinalizeContentImage,
+    NormalizeContentImage,
     RegisterExternalAsset,
     UpdateAssetMetadata,
     register_asset_workflows,
@@ -55,6 +57,7 @@ class FakeObjectStore:
     """In-memory provider; failures can be injected."""
 
     objects: dict[str, ObjectStat] = field(default_factory=dict)
+    blobs: dict[str, bytes] = field(default_factory=dict)
     deleted: list[str] = field(default_factory=list)
     fail_stat: bool = False
     fail_delete: bool = False
@@ -62,6 +65,9 @@ class FakeObjectStore:
 
     async def create_upload_intent(self, **_: Any) -> UploadIntentCredentials:
         return UploadIntentCredentials(upload_url="https://storage.example/upload")
+
+    async def check_availability(self) -> tuple[bool, str | None]:
+        return True, None
 
     async def stat(self, *, bucket: str | None = None, object_key: str) -> ObjectStat:
         if self.fail_stat:
@@ -80,11 +86,40 @@ class FakeObjectStore:
     ) -> str:
         return f"https://storage.example/{object_key}?x-expires={expires_in_seconds}"
 
+    async def read_bytes(self, *, bucket: str | None = None, object_key: str) -> bytes:
+        del bucket
+        if object_key not in self.blobs:
+            raise StorageError(
+                code="assets.object_missing",
+                category=ErrorCategory.NOT_FOUND,
+                message="object missing",
+            )
+        return self.blobs[object_key]
+
+    async def put_bytes(
+        self,
+        *,
+        bucket: str | None = None,
+        object_key: str,
+        body: bytes,
+        mime_type: str,
+    ) -> ObjectStat:
+        del bucket
+        self.blobs[object_key] = body
+        stat = ObjectStat(byte_size=len(body), mime_type=mime_type, bucket="content")
+        self.objects[object_key] = stat
+        return stat
+
+    async def public_url(self, *, bucket: str | None = None, object_key: str) -> str:
+        assert bucket == "content"
+        return f"https://cdn.example.test/content/{object_key}"
+
     async def delete(self, *, bucket: str | None = None, object_key: str) -> None:
         if self.fail_delete:
             raise _storage_error("delete failed")
         self.deleted.append(object_key)
         self.objects.pop(object_key, None)
+        self.blobs.pop(object_key, None)
 
 
 ALL_PERMISSIONS = frozenset({"assets.read", "assets.upload", "assets.manage", "assets.delete"})
@@ -441,6 +476,141 @@ async def test_permanent_provider_error_fails_fast_without_retries(
     with pytest.raises(KernelError) as excinfo:
         await FinalizeAsset(ctx)(uuid.UUID(intent.intent_id))
     assert excinfo.value.code == "assets.finalize_failed"
+
+
+async def test_content_image_is_normalized_to_public_webp_and_source_is_cleaned(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    from io import BytesIO
+
+    from PIL import Image
+
+    source_bytes = BytesIO()
+    Image.new("RGB", (400, 200), color="red").save(source_bytes, format="PNG")
+    provider = ctx.providers["fake"]
+    source_key = "uploads/content/source.png"
+    provider.blobs[source_key] = source_bytes.getvalue()
+    provider.objects[source_key] = ObjectStat(
+        byte_size=len(provider.blobs[source_key]), mime_type="image/png", bucket="system"
+    )
+    source = await RegisterExternalAsset(ctx)(
+        RegisterExternalAssetInput(
+            provider_key="fake",
+            bucket="system",
+            object_key=source_key,
+            mime_type="image/png",
+            byte_size=len(provider.blobs[source_key]),
+        )
+    )
+
+    result = await NormalizeContentImage(ctx)(uuid.UUID(source.id), max_edge=100, quality=72)
+
+    assert result.asset.bucket == "content"
+    assert result.asset.mime_type == "image/webp"
+    assert result.public_url.startswith("https://cdn.example.test/content/")
+    assert "?" not in result.public_url
+    with Image.open(BytesIO(provider.blobs[result.asset.object_key])) as final:
+        assert final.format == "WEBP"
+        assert max(final.size) == 100
+    assert source_key in provider.deleted
+    derivative = await AssetQueries(ctx=ctx, clock=ctx.clock).get_content_derivative(
+        source.id,
+        permissions=frozenset({"assets.read"}),
+    )
+    assert derivative is not None
+    assert derivative.metadata["source_asset_id"] == source.id
+    async with uow_factory() as uow:
+        source_row = await uow.session.get(AssetObject, uuid.UUID(source.id))
+    assert source_row is not None and source_row.state == "deleted"
+
+
+async def test_content_image_finalize_workflow_normalizes_after_private_upload(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    from io import BytesIO
+
+    from PIL import Image
+
+    source_bytes = BytesIO()
+    Image.new("RGB", (500, 200), color="blue").save(source_bytes, format="PNG")
+    intent = await CreateUploadIntent(ctx)(
+        CreateUploadIntentInput(
+            provider_key="fake",
+            bucket="system",
+            mime_types=("image/png",),
+            content_length_max=20 * 1024 * 1024,
+        )
+    )
+    provider = ctx.providers["fake"]
+    provider.blobs[intent.object_key] = source_bytes.getvalue()
+    provider.objects[intent.object_key] = ObjectStat(
+        byte_size=len(source_bytes.getvalue()), mime_type="image/png", bucket="system"
+    )
+
+    await FinalizeContentImage(ctx)(uuid.UUID(intent.intent_id), max_edge=100, quality=75)
+    await _run_due(ctx)
+
+    async with uow_factory() as uow:
+        rows = (await uow.session.execute(select(AssetObject))).scalars().all()
+    public = [row for row in rows if row.bucket == "content" and row.state == "ready"]
+    assert len(public) == 1
+    assert public[0].mime_type == "image/webp"
+    assert intent.object_key in provider.deleted
+
+
+async def test_content_image_rejects_invalid_source_and_cleans_it(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    provider = ctx.providers["fake"]
+    source_key = "uploads/content/not-an-image.png"
+    provider.blobs[source_key] = b"not an image"
+    provider.objects[source_key] = ObjectStat(
+        byte_size=len(provider.blobs[source_key]), mime_type="image/png", bucket="system"
+    )
+    source = await RegisterExternalAsset(ctx)(
+        RegisterExternalAssetInput(
+            provider_key="fake",
+            bucket="system",
+            object_key=source_key,
+            mime_type="image/png",
+            byte_size=len(provider.blobs[source_key]),
+        )
+    )
+
+    with pytest.raises(KernelError) as excinfo:
+        await NormalizeContentImage(ctx)(uuid.UUID(source.id), max_edge=2560, quality=85)
+    assert excinfo.value.code == "assets.invalid_image"
+    assert source_key in provider.deleted
+    async with uow_factory() as uow:
+        source_row = await uow.session.get(AssetObject, uuid.UUID(source.id))
+    assert source_row is not None and source_row.state == "deleted"
+
+
+async def test_content_image_enforces_limit_on_actual_read_bytes(
+    ctx: CommandContext, uow_factory: UoWFactory
+) -> None:
+    provider = ctx.providers["fake"]
+    source_key = "uploads/content/oversized.png"
+    provider.blobs[source_key] = b"x" * (20 * 1024 * 1024 + 1)
+    # A provider stat can be stale or wrong; normalization must check the body too.
+    provider.objects[source_key] = ObjectStat(byte_size=1, mime_type="image/png", bucket="system")
+    source = await RegisterExternalAsset(ctx)(
+        RegisterExternalAssetInput(
+            provider_key="fake",
+            bucket="system",
+            object_key=source_key,
+            mime_type="image/png",
+            byte_size=1,
+        )
+    )
+
+    with pytest.raises(KernelError) as excinfo:
+        await NormalizeContentImage(ctx)(uuid.UUID(source.id), max_edge=2560, quality=85)
+    assert excinfo.value.code == "assets.image_too_large"
+    assert source_key in provider.deleted
+    async with uow_factory() as uow:
+        source_row = await uow.session.get(AssetObject, uuid.UUID(source.id))
+    assert source_row is not None and source_row.state == "deleted"
 
 
 async def test_reconciler_restarts_orphaned_delete(

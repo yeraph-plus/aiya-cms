@@ -19,7 +19,7 @@ async def _seed_delivery(client: Any, clock: Any) -> uuid.UUID:
     now = clock.utc_now()
     async with services.uow_factory() as uow:
         intent = NotificationIntent(
-            spec_key="identity.verify_email",
+            spec_key="identity.email_verification",
             idempotency_key="notification-admin-test",
             recipient_type="identity",
             recipient_id="subject-1",
@@ -97,12 +97,15 @@ async def test_admin_lists_reads_cancels_and_retries_deliveries(
     assert retried.json()["status"] == "pending"
 
 
-async def test_notification_admin_boundary_and_template_reservation(
+async def test_notification_admin_boundary_and_template_validation(
     client: Any,
     admin_token: str,
 ) -> None:
     assert (await client.get("/api/v1/admin/notifications/deliveries")).status_code == 401
     headers = {"Authorization": f"Bearer {admin_token}"}
-    assert (
-        await client.get("/api/v1/admin/notifications/templates", headers=headers)
-    ).status_code == 404
+    invalid = await client.put(
+        "/api/v1/admin/notifications/templates/identity.email_verification/zh-CN",
+        headers=headers,
+        json={"subject": "Code {token}", "body": "Only {token}"},
+    )
+    assert invalid.status_code == 422

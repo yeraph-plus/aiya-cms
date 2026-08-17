@@ -25,6 +25,7 @@ SENSITIVITIES = ("normal", "sensitive")
 # on an environment-specific default.  Identity challenge notifications use
 # this same budget explicitly in ``notification.auth``.
 NOTIFICATION_DELIVERY_MAX_ATTEMPTS = 5
+REGISTERED_TRIGGER_NAMES = frozenset({"identity.email_verification", "identity.password_reset"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +44,7 @@ class DeliveryPolicy:
 
 @dataclass(frozen=True, slots=True)
 class NotificationSpec:
-    """Immutable declaration of a notification contract."""
+    """Immutable trigger declaration owned by the notification capability."""
 
     key: str
     version: str
@@ -88,13 +89,22 @@ class NotificationSpec:
         ):
             raise ValueError(f"notification {self.key} requires a Pydantic variables schema")
 
+    @property
+    def trigger_name(self) -> str:
+        """Public vocabulary used by callers; ``key`` is storage compatibility."""
+
+        return self.key
+
 
 class NotificationSpecRegistry:
     """notification key -> NotificationSpec; frozen after boot."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, allowed_triggers: frozenset[str] | None = None) -> None:
         self._specs: dict[str, NotificationSpec] = {}
         self._frozen = False
+        self._allowed_triggers = (
+            REGISTERED_TRIGGER_NAMES if allowed_triggers is None else allowed_triggers
+        )
 
     def register(self, spec: NotificationSpec) -> None:
         if self._frozen:
@@ -102,6 +112,12 @@ class NotificationSpecRegistry:
                 code="kernel.registry_frozen",
                 category=ErrorCategory.INTERNAL,
                 message=f"notification registry is frozen; cannot register {spec.key}",
+            )
+        if spec.trigger_name not in self._allowed_triggers:
+            raise KernelError(
+                code="notification.unknown_trigger",
+                category=ErrorCategory.VALIDATION,
+                message=f"notification trigger {spec.trigger_name!r} is not registered",
             )
         if spec.key in self._specs:
             raise KernelError(
@@ -127,6 +143,18 @@ class NotificationSpecRegistry:
                 message=f"notification spec {key!r} is not registered",
             )
         return spec
+
+    def require_trigger(self, trigger_name: str) -> NotificationSpec:
+        try:
+            return self.require(trigger_name)
+        except KernelError as exc:
+            if exc.code == "notification.unknown_spec":
+                raise KernelError(
+                    code="notification.unknown_trigger",
+                    category=ErrorCategory.VALIDATION,
+                    message=f"notification trigger {trigger_name!r} is not registered",
+                ) from exc
+            raise
 
     def specs(self) -> tuple[NotificationSpec, ...]:
         return tuple(self._specs.values())

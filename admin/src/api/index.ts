@@ -16,8 +16,8 @@ export function getApi(): ApiClient {
 export { apiPath, createApiClient } from './client';
 export type { ApiClient, ApiClientOptions, ApiPath, PathKeys } from './client';
 export { ApiError, errorMessage, requestIdOf } from './errors';
-export { confirmPasswordReset, fetchAdminSession, fetchGrants, logoutAdminSession, register, requestPasswordReset, revokeGrant, verifyEmail } from './auth';
-export type { AdminSessionDTO, GrantConsentDTO, PasswordResetConfirmInput, PasswordResetRequestInput, RegisterInput, VerifyEmailInput } from './auth';
+export { fetchAdminSession, logoutAdminSession } from './auth';
+export type { AdminSessionDTO } from './auth';
 export { fetchSettingGroup, fetchSettingGroups, resetSettingGroup, updateSettingGroup } from './settings';
 export type { SettingFieldDTO, SettingGroupDTO, UpdateSettingGroupInput } from './settings';
 export { fetchAuditEntries } from './audit';

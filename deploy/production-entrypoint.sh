@@ -6,7 +6,7 @@ set -eu
 # it resolves the existing user and never prints a replacement password.
 if [ "${AIYA_AUTO_INSTALL:-false}" = "true" ] && [ "${1:-}" = "supervisord" ]; then
     echo "[aiya] running idempotent first-start installation"
-    /opt/venv/bin/python -m inc.cli install --profile "${AIYA_INSTALL_PROFILE:-admin}"
+    /opt/venv/bin/python -m inc.cli install
 fi
 
 exec "$@"

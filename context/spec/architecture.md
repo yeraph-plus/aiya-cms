@@ -60,7 +60,7 @@ flowchart TD
 - feature 只能持有 Command/Query gateway、Activity 或 Port；不得接收 Session。
 - API handler 只能做协议解析、鉴权依赖、调用公开入口和响应映射，不实现领域规则。
 - 不承诺旧 Demo 的 Python import path、表结构、端点或事件 key 兼容。
-- 新 `0001_initial` 发布后，公开 DTO、事件 schema、迁移和 OpenAPI 按版本策略演进。
+- `release_0001` 基线发布后，公开 DTO、事件 schema、迁移和 OpenAPI 按版本策略演进。
 
 ## 5. 数据所有权
 
@@ -113,7 +113,7 @@ flowchart TD
 
 ## 10. 初始能力范围
 
-首个重建闭环包含 identity、access、oidc_provider、audit、content、comments、taxonomy、settings、assets、points、payments、membership、engagement、community capabilities，以及 `auth`、`user_center`、`post`、`page` 产品 features 和 `site_settings`、`site_cleanup` 站点/运维 features。签到、积分购买和会员购买归 `user_center` 组装；engagement 投影与用户评论归 `post` 组装；注册、验证和密码找回归 `auth` 组装；page 独立；community 直接拥有 discussion/post/tag/search 产品面，不借用 content/taxonomy/comments 表。notification 的契约已建立；是否进入某个运行时 manifest 由组合根显式选择，未装配时不得产生路由、worker、cron 或外部连接。
+release 基线包含 identity、access、oidc_provider、audit、settings、assets、content、comments、taxonomy、community、notification、payments、points、membership、engagement capabilities，以及 `auth`、`site_settings`、`site_cleanup`、`post`、`page`、`content_engagement`、`content_bucket` features。注册、验证和密码找回归 `auth`；图床上传/处理归 `content_bucket`；community 直接拥有 discussion/post/tag/search 产品面，不借用 content/taxonomy/comments 表。payments、points 和 membership 保留各自原子模型与合同，但本 release 不装配用户中心、签到、购买或支付 HTTP 面。只有 `release` 为可部署 manifest；未装配声明不得产生路由、worker、Cron 或外部连接。
 
 跨领域/全站搜索、commerce 商品、下载、webhook 平台和 WordPress 兼容不在首个闭环。community capability 自有的 discussion 搜索是其领域读模型，不构成 kernel 或全站搜索平台。未来扩展时必须遵守同一 capability/feature 边界，不得回填到 kernel。
 

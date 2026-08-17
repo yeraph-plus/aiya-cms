@@ -1,4 +1,4 @@
-"""API test fixtures: full cms app over SQLite with minted bearer tokens."""
+"""API test fixtures: release app over SQLite with minted bearer tokens."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from inc.api.app import create_app
 from inc.api.config import ApiSettings
-from inc.api.manifest import cms_dev
+from inc.api.manifest import release
 from inc.capabilities.access.commands import (
     BootstrapAdministrator,
     EnsureBaseRoles,
@@ -35,12 +35,13 @@ ADMIN_PASSWORD = "correct horse battery staple"
 
 
 @pytest.fixture
-def api_settings() -> ApiSettings:
+def api_settings(tmp_path: Any) -> ApiSettings:
     return ApiSettings(
         issuer=TEST_ISSUER,
         api_audience=TEST_AUDIENCE,
         cors_origins=("http://admin.test",),
         worker_sleep_seconds=0.01,
+        oidc_signing_key_dir=str(tmp_path / "oidc-keys"),
     )
 
 
@@ -53,7 +54,7 @@ async def client(
     api_settings: ApiSettings,
 ) -> Any:
     app = create_app(
-        manifest=cms_dev,
+        manifest=release,
         uow_factory=uow_factory,
         clock=clock,
         settings=api_settings,
@@ -119,7 +120,9 @@ def _always_exists() -> Any:
 
 
 async def _mint_token(services: Any, subject_id: str) -> str:
-    key = await services.keys.ensure_active_key()
+    # API tests use a temporary filesystem-backed key directory, matching the
+    # explicit installation step required by the release composition.
+    key = await services.keys.initialize_active_key()
     now = datetime.now(UTC)
     claims = {
         "iss": TEST_ISSUER,

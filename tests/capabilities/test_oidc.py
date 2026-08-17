@@ -19,6 +19,7 @@ import jwt as pyjwt
 import pytest
 from sqlalchemy import select
 
+from inc.adapters.oidc import FileSigningKeyStore
 from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
 from inc.capabilities.oidc_provider.clients import (
     ADMIN_OIDC_CLIENT_ID,
@@ -29,7 +30,6 @@ from inc.capabilities.oidc_provider.clients import (
 )
 from inc.capabilities.oidc_provider.handlers import OidcDiagnostics
 from inc.capabilities.oidc_provider.keys import (
-    InMemorySigningKeyStore,
     KeyService,
     load_public_key,
     verify_jwt,
@@ -115,8 +115,14 @@ def schema_registry() -> EventSchemaRegistry:
 
 
 @pytest.fixture
-def keys(uow_factory: UoWFactory, clock: Any) -> KeyService:
-    return KeyService(uow_factory=uow_factory, store=InMemorySigningKeyStore(), clock=clock)
+async def keys(uow_factory: UoWFactory, clock: Any, tmp_path: Any) -> KeyService:
+    """Install key material into the temporary filesystem used by this suite."""
+
+    service = KeyService(
+        uow_factory=uow_factory, store=FileSigningKeyStore(tmp_path / "keys"), clock=clock
+    )
+    await service.initialize_active_key()
+    return service
 
 
 @pytest.fixture
@@ -263,7 +269,7 @@ async def test_full_code_flow_with_pkce_and_nonce(
     assert tokens["id_token"] is not None
     assert tokens["refresh_token"] is not None
 
-    key = await ctx.keys.ensure_active_key()
+    key = await ctx.keys.require_active_key()
     public_keys = {key.kid: load_public_key(_jwk_for_test(key))}
     id_claims = verify_jwt(
         tokens["id_token"], public_keys=public_keys, audience="spa", issuer=ISSUER
@@ -651,7 +657,7 @@ async def test_algorithm_confusion_is_rejected(
     client_ctx: ClientCommandContext,
 ) -> None:
     await register_clients(client_ctx)
-    key = await ctx.keys.ensure_active_key()
+    key = await ctx.keys.require_active_key()
     public_keys = {key.kid: load_public_key(_jwk_for_test(key))}
 
     # alg=none
@@ -889,7 +895,6 @@ async def test_key_rotation_keeps_old_key_verifying(
 
 
 async def test_diagnostics_report_no_active_key_as_failed(
-    ctx: ServiceContext,
     uow_factory: UoWFactory,
     clock: Any,
 ) -> None:

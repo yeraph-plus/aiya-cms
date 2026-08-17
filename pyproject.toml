@@ -21,6 +21,7 @@ dependencies = [
   "PyJWT==2.13.0",
   "pwdlib[argon2]==0.3.0",
   "paypal-server-sdk==2.3.0",
+  "Pillow==12.1.1",
   "python-multipart==0.0.22",
   "python-slugify==8.0.4",
   "redis==8.1.0",

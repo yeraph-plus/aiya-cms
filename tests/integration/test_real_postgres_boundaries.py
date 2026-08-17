@@ -10,11 +10,13 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from inc.adapters.oidc import FileSigningKeyStore
 from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
 from inc.capabilities.oidc_provider.api import (
     SESSION_LIFETIME_SECONDS,
@@ -26,7 +28,7 @@ from inc.capabilities.oidc_provider.clients import (
     EnableClient,
     RegisterClient,
 )
-from inc.capabilities.oidc_provider.keys import InMemorySigningKeyStore, KeyService
+from inc.capabilities.oidc_provider.keys import KeyService
 from inc.capabilities.oidc_provider.models import OidcClient, OidcSession
 from inc.kernel.db import Base, SqlAlchemyUnitOfWork
 from inc.kernel.events import EventSchemaRegistry, OutboxWriter
@@ -47,7 +49,7 @@ class _Authenticator:
         return None
 
 
-async def test_postgres_enable_client_and_expire_oidc_session() -> None:
+async def test_postgres_enable_client_and_expire_oidc_session(tmp_path: Any) -> None:
     database_url = _required_database_url()
     engine = create_async_engine(database_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
@@ -84,7 +86,7 @@ async def test_postgres_enable_client_and_expire_oidc_session() -> None:
 
         keys = KeyService(
             uow_factory=uow_factory,
-            store=InMemorySigningKeyStore(),
+            store=FileSigningKeyStore(tmp_path / "keys"),
             clock=clock,
         )
         service = OidcHttpServices(

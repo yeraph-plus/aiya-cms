@@ -8,7 +8,16 @@ registration, queries and diagnostics.
 
 from __future__ import annotations
 
-from inc.capabilities.assets.commands import CommandContext, register_asset_workflows
+from inc.capabilities.assets.commands import (
+    CommandContext,
+    CreateUploadIntent,
+    DeleteAsset,
+    FinalizeAsset,
+    FinalizeContentImage,
+    NormalizeContentImage,
+    NormalizedImageResult,
+    register_asset_workflows,
+)
 from inc.capabilities.assets.diagnostics import AssetDiagnostics
 from inc.capabilities.assets.queries import AssetQueries
 
@@ -16,5 +25,11 @@ __all__ = [
     "AssetDiagnostics",
     "AssetQueries",
     "CommandContext",
+    "CreateUploadIntent",
+    "DeleteAsset",
+    "FinalizeAsset",
+    "FinalizeContentImage",
+    "NormalizeContentImage",
+    "NormalizedImageResult",
     "register_asset_workflows",
 ]

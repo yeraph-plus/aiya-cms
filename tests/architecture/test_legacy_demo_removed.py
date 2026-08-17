@@ -88,9 +88,9 @@ def test_rebuild_release_has_one_initial_migration() -> None:
     versions = REPO_ROOT / "alembic" / "versions"
     revisions = sorted(path for path in versions.glob("*.py") if path.name != "__init__.py")
 
-    assert [path.name for path in revisions] == ["0001_initial.py", "0002_admin_catalog.py"]
+    assert [path.name for path in revisions] == ["0001_initial.py"]
     source = revisions[0].read_text(encoding="utf-8")
-    assert 'revision: str = "0001_initial"' in source
+    assert 'revision: str = "release_0001"' in source
     assert "down_revision: str | None = None" in source
     for table in (
         "comments",

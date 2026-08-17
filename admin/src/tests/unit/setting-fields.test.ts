@@ -7,15 +7,13 @@ type SettingField = components['schemas']['SettingFieldDTO'];
 function field(type: SettingField['type'], metadata: SettingField['metadata'] = {}): SettingField {
     return {
         slug: 'field',
-        title: 'Field',
-        desc: '',
         type,
         type_sub: null,
         default: null,
         metadata,
         public: false,
         sensitive: false
-    };
+    } as SettingField;
 }
 
 describe('setting field registry', () => {
@@ -23,22 +21,14 @@ describe('setting field registry', () => {
         expect((['bool', 'text', 'textarea', 'select', 'radio', 'mult', 'upload'] as const).map(settingFieldComponentName)).toEqual(['ToggleSwitch', 'InputText', 'Textarea', 'Select', 'RadioButton', 'MultiSelect', 'FileUpload']);
     });
 
-    it('reads stable option metadata without changing option values', () => {
+    it('preserves stable option values without backend display labels', () => {
         const options = settingOptions(
             field('select', {
-                options: [
-                    { label: 'Enabled', value: true },
-                    { label: 'Count', value: 2 },
-                    { label: 'Name', value: 'name' }
-                ]
+                options: [{ value: true }, { value: 2 }, { value: 'name' }]
             })
         );
 
-        expect(options).toEqual([
-            { label: 'Enabled', value: true },
-            { label: 'Count', value: 2 },
-            { label: 'Name', value: 'name' }
-        ]);
+        expect(options).toEqual([{ value: true }, { value: 2 }, { value: 'name' }]);
     });
 
     it('copies backend values for editing without inventing missing values', () => {

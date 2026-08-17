@@ -5,11 +5,11 @@ quality-release.md.
 
 ``python -m inc.cli migrate`` applies database migrations only (the single
 Compose entry for running ``alembic upgrade head``). ``python -m inc.cli
-install --profile admin`` is the deployable management-plane installation and
-the only path that creates the super administrator. It applies migrations,
-seeds the credit points program, registers the admin OIDC client, and bootstraps
-the single administrator user. The opt-in ``full`` profile also registers the
-unfinished user-site client. The password is generated
+install`` is the deployable release installation and the only path that
+creates the super administrator. It applies migrations, creates the initial
+filesystem-backed OIDC signing key, seeds the credit points program, registers
+the admin and Astro client OIDC clients, and bootstraps the single administrator
+user. The password is generated
 when not provided and printed exactly once. Re-running is safe for the same
 administrator but refuses to create a second one (``access.administrator_exists``).
 
@@ -35,7 +35,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from inc.api.manifest import cms, management_plane
+from inc.api.manifest import release
 from inc.capabilities.access import (
     BootstrapAdministrator,
     EnsureBaseRoles,
@@ -315,7 +315,7 @@ async def _seed_oidc_clients(
     if not include_site:
         return
     if site_base_url is None or site_client_secret is None:
-        raise ValueError("full install requires the user-site URL and client secret")
+        raise ValueError("release install requires the client URL and OIDC client secret")
 
     site_base = site_base_url.rstrip("/")
     async with factory() as uow:
@@ -356,9 +356,28 @@ async def _seed_oidc_clients(
     print(f"  OIDC confidential client 'aiya-site' registered (aud={api_audience})")
 
 
+async def _initialize_oidc_signing_key(factory: Any) -> None:
+    """Create exactly one persistent active key during fresh installation."""
+
+    from inc.adapters.oidc import FileSigningKeyStore
+    from inc.capabilities.oidc_provider import KeyService
+    from inc.main import _api_settings_from_env
+
+    settings = _api_settings_from_env()
+    directory = settings.oidc_signing_key_dir
+    if not directory or not directory.strip():
+        raise ValueError("AIYA_OIDC_SIGNING_KEY_DIR is required for release installation")
+    keys = KeyService(
+        uow_factory=factory,
+        store=FileSigningKeyStore(directory),
+        clock=SYSTEM_CLOCK,
+    )
+    await keys.initialize_active_key()
+    print("  persistent OIDC signing key initialized")
+
+
 async def _install_async(
     *,
-    profile: str,
     admin_username: str,
     admin_email: str,
     admin_password: str | None,
@@ -367,7 +386,7 @@ async def _install_async(
     site_client_secret: str | None,
     api_audience: str,
 ) -> int:
-    """Seed steps (points program, OIDC clients, admin) after migrations."""
+    """Seed the single release composition after migrations."""
     kernel_settings = load_settings()
     database_url = kernel_settings.database_url.get_secret_value()
     engine = create_engine(database_url)
@@ -377,28 +396,30 @@ async def _install_async(
         return SqlAlchemyUnitOfWork(session_factory)
 
     try:
-        print("[2/4] seeding credit points program ...")
+        print("[2/5] initializing OIDC signing key ...")
+        await _initialize_oidc_signing_key(factory)
+
+        print("[3/5] seeding credit points program ...")
         await _seed_points_program(factory)
-        if profile == "admin":
-            await _seed_membership_levels(factory)
+        await _seed_membership_levels(factory)
         await _seed_auth_notification_templates(factory)
 
-        print("[3/4] registering OIDC clients ...")
+        print("[4/5] registering OIDC clients ...")
         await _seed_oidc_clients(
             factory,
             public_base_url=public_base_url,
-            include_site=profile == "full",
+            include_site=True,
             site_base_url=site_base_url,
             site_client_secret=site_client_secret,
             api_audience=api_audience,
         )
 
-        print("[4/4] bootstrapping administrator ...")
+        print("[5/5] bootstrapping administrator ...")
         subject_id, generated_password = await _create_admin(
             username=admin_username,
             email=admin_email,
             password=admin_password,
-            manifest=management_plane if profile == "admin" else cms,
+            manifest=release,
         )
     finally:
         await engine.dispose()
@@ -414,7 +435,6 @@ async def _install_async(
 
 def _install_sync(
     *,
-    profile: str,
     admin_username: str,
     admin_email: str,
     admin_password: str | None,
@@ -429,16 +449,15 @@ def _install_sync(
     asyncio.run inside so it cannot be called from a running event loop),
     then async seed steps follow.
     """
-    print(f"=== aiya-cms {profile} install ===")
+    print("=== aiya-cms release install ===")
     print()
 
-    print("[1/4] running database migrations ...")
+    print("[1/5] running database migrations ...")
     _run_migrations()
     print("  migrations applied")
 
     return asyncio.run(
         _install_async(
-            profile=profile,
             admin_username=admin_username,
             admin_email=admin_email,
             admin_password=admin_password,
@@ -514,12 +533,6 @@ def main() -> None:
         help="one-shot empty-database installation (migrations + seed + single admin)",
     )
     install_parser.add_argument(
-        "--profile",
-        choices=("admin", "full"),
-        default=_env_str("AIYA_INSTALL_PROFILE", "admin"),
-        help="installation scope (default: admin; full also registers the unfinished user site)",
-    )
-    install_parser.add_argument(
         "--admin-username",
         default=_env_str("AIYA_ADMIN_USERNAME", "admin"),
         help="admin username (env: AIYA_ADMIN_USERNAME, default: admin)",
@@ -547,7 +560,7 @@ def main() -> None:
     install_parser.add_argument(
         "--site-base-url",
         default=_env_str("AIYA_SITE_BASE_URL", "http://127.0.0.1:4321"),
-        help="Astro user-site base URL for OIDC redirects (env: AIYA_SITE_BASE_URL)",
+        help="Astro client base URL for OIDC redirects (env: AIYA_SITE_BASE_URL)",
     )
 
     subparsers.add_parser(
@@ -588,13 +601,12 @@ def main() -> None:
         sys.exit(0)
     if args.command == "install":
         site_client_secret = _env_str("AIYA_SITE_OIDC_CLIENT_SECRET") or None
-        if args.profile == "full" and (site_client_secret is None or len(site_client_secret) < 32):
+        if site_client_secret is None or len(site_client_secret) < 32:
             parser.error(
                 "AIYA_SITE_OIDC_CLIENT_SECRET must be supplied through the environment "
                 "and contain at least 32 characters"
             )
         exit_code = _install_sync(
-            profile=args.profile,
             admin_username=args.admin_username,
             admin_email=args.admin_email,
             admin_password=args.admin_password,

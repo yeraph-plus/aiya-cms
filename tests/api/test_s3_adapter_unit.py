@@ -68,5 +68,5 @@ async def test_invalid_settings_are_mapped_without_leaking_values() -> None:
     with pytest.raises(StorageError) as excinfo:
         await adapter.read_url(object_key="missing", expires_in_seconds=1)
 
-    assert excinfo.value.code == "assets.s3_invalid_config"
+    assert excinfo.value.code == "assets.provider_unavailable"
     assert "do-not-leak" not in str(excinfo.value)

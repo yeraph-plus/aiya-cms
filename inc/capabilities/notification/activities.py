@@ -116,9 +116,9 @@ class DeliverActivity:
                 message=f"delivery {delivery_id} has no intent",
             )
         try:
-            spec = self._specs.require(intent.spec_key)
+            spec = self._specs.require_trigger(intent.spec_key)
         except KernelError as exc:
-            if exc.code == "notification.unknown_spec":
+            if exc.code in {"notification.unknown_spec", "notification.unknown_trigger"}:
                 await self._fail_permanently(
                     uow,
                     ctx,
@@ -137,7 +137,13 @@ class DeliverActivity:
         delivery.lease_owner = f"workflow:{ctx.trace_id or 'runner'}"
         delivery.lease_expires_at = now
 
-        template = await _find_template(uow, spec.template_keys[0], delivery.channel, spec.locale)
+        template = await _find_template(
+            uow,
+            trigger_name=spec.trigger_name,
+            template_key=spec.template_keys[0],
+            channel=delivery.channel,
+            locale=spec.locale,
+        )
         if template is None:
             await self._fail_permanently(
                 uow,
@@ -163,7 +169,7 @@ class DeliverActivity:
 
         providers = self._providers.get(delivery.channel, ())
         if hasattr(providers, "resolve_many"):
-            providers = await providers.resolve_many()  # type: ignore[union-attr]
+            providers = await providers.resolve_many()
         if not providers:
             await self._fail_permanently(
                 uow,
@@ -444,13 +450,19 @@ class DeliverActivity:
 
 
 async def _find_template(
-    uow: UnitOfWork, template_key: str, channel: str, locale: str
+    uow: UnitOfWork,
+    *,
+    trigger_name: str,
+    template_key: str,
+    channel: str,
+    locale: str,
 ) -> NotificationTemplate | None:
     for candidate_locale in (locale, "en"):
         row: NotificationTemplate | None = (
             (
                 await uow.session.execute(
                     select(NotificationTemplate).where(
+                        NotificationTemplate.trigger_name == trigger_name,
                         NotificationTemplate.template_key == template_key,
                         NotificationTemplate.channel == channel,
                         NotificationTemplate.locale == candidate_locale,

@@ -1,75 +1,21 @@
 # Assets Capability 规格
 
-## 1. 职责
+## 职责
 
-assets 只管理外部图床、S3 或兼容对象存储上的稳定对象引用和 SDK 交互。系统不保存二进制文件，不提供文件夹、图库、在线编辑、图片处理、修订或 WordPress 媒体库兼容。
+assets 管理对象存储的稳定引用、私有 upload intent、finalize、删除和图片规范化；不做媒体库 UI、文件夹或在线编辑。业务跨能力只保存 opaque asset ID，不建立外键或持久化 signed URL。
 
-## 2. AssetRef
+ObjectStorageProvider 提供 upload intent、stat/read、写入、删除、短期私有 URL 和稳定公开 URL。provider 从 settings 当前 storage key 解析；调用时缺配置或错误映射为 `assets.provider_unavailable`，不泄露 credentials/SDK 内容。
 
-稳定 DTO 至少包含：
+## 图床成品
 
-- asset ID。
-- provider key。
-- bucket/container 和 object key。
-- mime type、byte size、checksum。
-- alt text 和受 Pydantic 约束的 metadata。
-- state、created/updated/deleted time。
+`content_bucket` feature 仅对管理员开放，按如下流程调用 assets 的公开命令/query/activity：创建私有上传 intent → finalize 源 asset → 轮询处理状态 → 删除成品。feature 不读 assets ORM/Repository。
 
-数据库和业务 DTO 禁止保存带有效期的 signed URL。URL 由 Query 通过 provider adapter 按请求生成并携带明确 expiry。
+assets 读取已 finalize 的暂存对象并用 Pillow 解码、缩放、编码为 WebP，之后写入 `s3_content_bucket`，记录 ready 成品，删除源暂存对象。失败时清理生成对象/源文件并记录失败状态；删除成品幂等删除 S3 对象和本地引用。
 
-## 3. 表所有权
+仅接受 JPEG、PNG、WebP。拒绝 SVG、GIF、动画、损坏图像、解压炸弹和超过 20 MiB 的源数据。最大边长来自 `content_image_max_edge`（默认 2560，范围 1–8192），WebP quality 来自 `content_image_webp_quality`（默认 85，范围 40–100）。成品只保留规范化 WebP，并经 `s3_public_base_url` 生成不带签名参数的稳定 URL。
 
-- `assets_objects`：稳定引用、完整性元数据、状态。
-- `assets_upload_intents`：可选，记录短期上传意图 owner、bucket、目标 object key、digest、expires/consumed state。
+## 验收
 
-状态至少为 `pending`、`ready`、`failed`、`deleted`。外部对象是否存在由 provider/diagnostics 确认，不能仅靠本地 row 推断。
-
-## 4. Provider Port
-
-assets 自己声明 `ObjectStorageProvider`：
-
-- 创建受限 upload intent 或执行 server-side upload。
-- head/stat 对象。
-- 生成短期 read URL。
-- 删除对象。
-
-`ObjectStat` may return the provider bucket/container so Finalize can persist the complete stable reference.
-
-adapter 负责 SDK client、endpoint、credential、timeout、重试和 provider error 映射。对象存储 provider 在启动时由组合根注册到 catalog，当前实现由 `site_settings.object_storage.storage_provider` 选择；S3-compatible adapter 的连接配置与凭据由该组保存；凭据字段必须登记为 sensitive，不进入公共 DTO、事件、日志或审计摘要。
-
-## 5. Commands 与 Queries
-
-- `CreateUploadIntent`：分配不可预测 object key 和受限上传条件。
-- `FinalizeAsset`：通过 provider stat 校验 size/mime/checksum 后转 ready。
-- `RegisterExternalAsset`：仅受信服务端流程可登记已存在对象。
-- `UpdateAssetMetadata`。
-- `DeleteAsset`：先标记，再由幂等 activity 删除外部对象。
-- `GetAsset`、`ResolveAssetUrl`。
-- 管理端 `ListAssets`：按 state、provider、bucket 或 object key 查询稳定引用并分页；它不返回 signed URL，也不构成媒体库。
-
-provider 调用不得与长数据库事务绑定。Finalize/Delete 使用 workflow/activity 处理跨系统部分失败。
-
-## 6. 跨能力使用
-
-- content/settings/identity 只保存 asset opaque ID 或 AssetRef JSON，不建 assets 外键。
-- post/page Markdown 中的内部图片使用 `asset:<uuid>` 稳定语法；正文不保存 provider URL、signed URL 或远程图片 URL。content 只验证 reference 形状，消费 feature 的发布策略通过 assets 公开 Query/`AssetExists` Port 验证 ready 状态。
-- 系统站点资源使用 `object_storage.s3_bucket`；用户头像使用 `object_storage.s3_avatar_bucket`。bucket 由组合根选择并通过 assets Command 传入，assets 不理解业务类型。
-- 写入引用前可通过消费方 `AssetExists` Port 验证 ready 状态。
-- assets 不维护“被哪些业务对象使用”的跨能力反向索引；物理删除前由 feature/运维流程检查引用。
-
-## 7. 安全
-
-- upload intent 限制 object key/prefix、content length、mime、checksum、expiry 和一次性使用。
-- object key 不使用原始文件名作为唯一安全边界。
-- provider credential、signed URL 和原始 SDK 错误不得记录。
-- 对公开/私有资源生成 URL 的授权由调用 feature/access 决定，assets adapter 只执行明确策略。
-- Astro 用户站可把已授权的公开 `asset:<uuid>` 映射为自身 origin 下的稳定 `/media/assets/{asset_id}`；短期 signed URL 只可在服务端解析链路中使用，不得进入持久化 Markdown、SSR HTML、SEO head 或公共缓存键。
-
-## 8. Diagnostics 与验收
-
-- diagnostics 报告长期 pending、删除失败、本地 ready 但远端缺失、checksum/size 异常；深度远端扫描需显式运行。
-- signed URL 不持久化且过期时间正确。
-- 重复 finalize/delete 幂等。
-- provider 超时/失败可恢复，不产生错误 ready 状态。
-- capability 不演变为媒体库 UI 或二进制代理服务。
-- Markdown 发布策略拒绝不存在、非 ready、已 deleted 或不可公开的 asset；assets 不因此维护正文反向索引，物理删除前仍由 feature/运维流程检查引用。
+- intent/finalize/get/delete 各有管理员权限；未授权、非内容 bucket 或未 ready 源被拒绝。
+- 尺寸、质量、格式、动画/炸弹、20 MiB 限制、S3 暂存/失败清理、stable URL 和删除都由测试覆盖。
+- 私有 signed URL 不持久化；公开图床 URL 无 query signature。

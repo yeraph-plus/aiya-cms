@@ -1,14 +1,14 @@
 name: aiya-cms
 
-# Default application compose: management-plane FastAPI and administrator SPA.
-# The unfinished Astro user site is available only through the explicit site profile.
+# Default application compose: the release FastAPI, administrator SPA and Astro
+# public client. PostgreSQL and Redis are deliberately external.
 # PostgreSQL and Redis live in compose.infra.yaml (or an external panel);
 # application services only connect through explicit environment settings.
 #
 # One-shot maintenance and quality gates are internalized in inc.cli and run
 # through this same image, e.g.:
 #   docker compose run --rm backend python -m inc.cli migrate
-#   docker compose run --rm backend python -m inc.cli install --profile admin
+#   docker compose run --rm backend python -m inc.cli install
 #   docker compose run --rm backend python -m inc.cli quality
 #   docker compose run --rm backend python -m inc.cli test
 #   docker compose run --rm backend python -m inc.cli openapi-check
@@ -22,7 +22,7 @@ services:
       target: runtime
     env_file: [.env]
     environment:
-      AIYA_APP_PROFILE: ${AIYA_APP_PROFILE:-management}
+      AIYA_APP_PROFILE: release
       AIYA_DATABASE_URL: ${AIYA_DATABASE_URL:?AIYA_DATABASE_URL is required}
       AIYA_REDIS_URL: ${AIYA_REDIS_URL:?AIYA_REDIS_URL is required}
       AIYA_PG_DATABASE: ${AIYA_PG_DATABASE:-aiya}
@@ -40,24 +40,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-
-  backend-dev:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    profiles: [dev]
-    env_file: [.env]
-    environment:
-      AIYA_APP_PROFILE: cms_dev
-      AIYA_PG_DATABASE: ${AIYA_PG_DATABASE:-aiya}
-    command: ["uvicorn", "inc.main:get_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./inc:/app/inc:ro
-      - ./alembic:/app/alembic:ro
-    restart: unless-stopped
 
   admin:
     build:
@@ -87,7 +69,6 @@ services:
         SITE_BUILD_ENVIRONMENT: ${SITE_ENVIRONMENT:-production}
         SITE_BUILD_ORIGIN: ${SITE_ORIGIN:-https://www.example.com}
     env_file: [.env]
-    profiles: [site]
     environment:
       SITE_API_ORIGIN: ${SITE_API_ORIGIN:-http://backend:8000}
       SITE_OIDC_CLIENT_SECRET: ${AIYA_SITE_OIDC_CLIENT_SECRET:-dev-aiya-site-secret-change-before-use-1234567890}

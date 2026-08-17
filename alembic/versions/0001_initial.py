@@ -1,6 +1,6 @@
 """Initial rebuilt schema for every shipped kernel and capability table.
 
-Revision ID: 0001_initial
+Revision ID: release_0001
 Revises:
 Create Date: 2026-08-13 15:33:35.789616
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "0001_initial"
+revision: str = "release_0001"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -562,6 +562,7 @@ def upgrade() -> None:
         "membership_levels",
         sa.Column("level_key", sa.String(length=100), nullable=False),
         sa.Column("display_name", sa.String(length=200), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("tier_rank", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("cycle_days", sa.Integer(), nullable=False),
@@ -630,6 +631,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "notification_templates",
+        sa.Column("trigger_name", sa.String(length=100), nullable=False),
         sa.Column("template_key", sa.String(length=100), nullable=False),
         sa.Column("version", sa.String(length=32), nullable=False),
         sa.Column("channel", sa.String(length=32), nullable=False),
@@ -643,12 +645,19 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
+            "trigger_name",
             "template_key",
             "version",
             "channel",
             "locale",
-            name="uq_notification_templates_key_version_channel_locale",
+            name="uq_notification_templates_trigger_key_version_channel_locale",
         ),
+    )
+    op.create_index(
+        op.f("ix_notification_templates_trigger_name"),
+        "notification_templates",
+        ["trigger_name"],
+        unique=False,
     )
     op.create_table(
         "oidc_authorization_codes",
@@ -829,6 +838,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.CheckConstraint("currency = 'CNY'", name="ck_payment_orders_currency_cny"),
         sa.UniqueConstraint("order_reference"),
         sa.UniqueConstraint(
             "provider_key", "idempotency_key", name="uq_payment_orders_provider_idempotency"
@@ -856,6 +866,7 @@ def upgrade() -> None:
         "points_programs",
         sa.Column("program_key", sa.String(length=100), nullable=False),
         sa.Column("display_name", sa.String(length=200), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("unit", sa.String(length=32), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("allow_admin_reversal", sa.Boolean(), nullable=False),
@@ -1299,6 +1310,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["order_id"], ["payment_orders.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.CheckConstraint("currency = 'CNY'", name="ck_payment_refunds_currency_cny"),
         sa.UniqueConstraint(
             "order_id", "idempotency_key", name="uq_payment_refunds_order_idempotency"
         ),
@@ -1768,6 +1780,9 @@ def downgrade() -> None:
         op.f("ix_oidc_authorization_codes_client_id"), table_name="oidc_authorization_codes"
     )
     op.drop_table("oidc_authorization_codes")
+    op.drop_index(
+        op.f("ix_notification_templates_trigger_name"), table_name="notification_templates"
+    )
     op.drop_table("notification_templates")
     op.drop_index(op.f("ix_notification_intents_spec_key"), table_name="notification_intents")
     op.drop_index(op.f("ix_notification_intents_recipient_id"), table_name="notification_intents")

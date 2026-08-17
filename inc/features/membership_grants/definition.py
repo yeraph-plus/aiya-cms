@@ -2,7 +2,7 @@
 
 This feature intentionally contains no payment workflow.  It only declares
 the stable behavior used by the membership capability's PointsLedger port,
-which lets the management plane grant a subscription quota safely.
+which lets the release administration surface grant a subscription quota safely.
 """
 
 from __future__ import annotations

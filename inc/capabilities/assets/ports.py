@@ -24,7 +24,7 @@ def storage_error(message: str) -> StorageError:
     """Transient provider failure (dependency unavailable)."""
 
     return StorageError(
-        code="assets.provider_error",
+        code="assets.provider_unavailable",
         category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
         message=message,
     )
@@ -58,6 +58,8 @@ class ObjectStorageProvider(Protocol):
 
     key: str
 
+    async def check_availability(self) -> tuple[bool, str | None]: ...
+
     async def create_upload_intent(
         self,
         *,
@@ -74,6 +76,14 @@ class ObjectStorageProvider(Protocol):
     async def read_url(
         self, *, bucket: str | None, object_key: str, expires_in_seconds: int
     ) -> str: ...
+
+    async def read_bytes(self, *, bucket: str | None, object_key: str) -> bytes: ...
+
+    async def put_bytes(
+        self, *, bucket: str | None, object_key: str, body: bytes, mime_type: str
+    ) -> ObjectStat: ...
+
+    async def public_url(self, *, bucket: str | None, object_key: str) -> str: ...
 
     async def delete(self, *, bucket: str | None, object_key: str) -> None:
         """Idempotent delete: deleting a missing object must succeed.

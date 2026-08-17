@@ -13,7 +13,7 @@ export type SettingFieldType = SettingFieldDTO['type'];
 export type SettingScalar = string | number | boolean | null;
 export type SettingValue = SettingScalar | SettingValue[];
 export type SettingValues = Record<string, SettingValue>;
-export type SettingOption = { label: string; value: SettingScalar };
+export type SettingOption = { value: SettingScalar };
 
 const fieldComponentNames: Record<SettingFieldType, string> = {
     bool: 'ToggleSwitch',
@@ -69,18 +69,12 @@ export function settingOptions(field: SettingFieldDTO): SettingOption[] {
         if (!isRecord(option)) {
             throw new Error(`Invalid option ${index} for setting field ${field.slug}`);
         }
-        const label = option.label;
         const value = option.value;
-        if (typeof label !== 'string' || !isSettingScalar(value)) {
+        if (!isSettingScalar(value)) {
             throw new Error(`Invalid option ${index} for setting field ${field.slug}`);
         }
-        return { label, value };
+        return { value };
     });
-}
-
-export function settingPlaceholder(field: SettingFieldDTO): string | undefined {
-    const value = field.metadata.placeholder;
-    return typeof value === 'string' ? value : undefined;
 }
 
 export function settingRows(field: SettingFieldDTO): number | undefined {

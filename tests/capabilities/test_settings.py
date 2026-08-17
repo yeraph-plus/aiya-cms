@@ -105,7 +105,7 @@ def test_group_spec_validation() -> None:
             group_key="g",
             version="1",
             value_schema=Bad,
-            fields=(SettingFieldSpec(slug="nope", title="Nope", type="text", default="x"),),
+            fields=(SettingFieldSpec(slug="nope", type="text", default="x"),),
             update_permission="settings.g.update",
         )
 
@@ -449,10 +449,8 @@ def test_sensitive_fields_excluded_from_changed_summary() -> None:
         version="1",
         value_schema=G,
         fields=(
-            SettingFieldSpec(slug="name", title="Name", type="text", default="x", public=True),
-            SettingFieldSpec(
-                slug="secret", title="Secret", type="text", default="s", sensitive=True
-            ),
+            SettingFieldSpec(slug="name", type="text", default="x", public=True),
+            SettingFieldSpec(slug="secret", type="text", default="s", sensitive=True),
         ),
         update_permission="settings.g.update",
     )
@@ -639,12 +637,20 @@ def test_site_settings_expose_registered_field_metadata() -> None:
         field for field in seo.fields if field.slug == "default_share_image_asset_id"
     )
 
-    assert share_image.title
-    assert share_image.desc
     assert share_image.type == "upload"
     assert share_image.type_sub == "single"
     assert share_image.default is None
     assert share_image.metadata.accept == ("image/*",)
+
+
+def test_settings_descriptors_contain_no_display_text() -> None:
+    for group in build_site_setting_group_specs():
+        for field in group.fields:
+            descriptor = field.model_dump(mode="json")
+            assert "title" not in descriptor
+            assert "desc" not in descriptor
+            assert "placeholder" not in descriptor["metadata"]
+            assert all(set(option) == {"value"} for option in descriptor["metadata"]["options"])
 
 
 async def test_group_update_persists_one_row_per_field_and_starts_at_zero(

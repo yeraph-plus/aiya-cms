@@ -164,3 +164,65 @@ class AssetQueries:
             )
             return _to_ref(row) if row is not None else None
         raise AssertionError("asset upload intent query exited without returning")
+
+    async def get_upload_intent_asset(
+        self, intent_id: Any, *, permissions: frozenset[str]
+    ) -> AssetRefDTO | None:
+        """Return an intent's source asset in any state for a read-only status view."""
+
+        if PERMISSION_READ not in permissions:
+            raise KernelError(
+                code="assets.forbidden",
+                category=ErrorCategory.FORBIDDEN,
+                message=f"requires permission {PERMISSION_READ}",
+            )
+        async with self._ctx.uow_factory() as uow:
+            intent: AssetUploadIntent | None = await uow.session.get(AssetUploadIntent, intent_id)
+            if intent is None:
+                return None
+            row = (
+                (
+                    await uow.session.execute(
+                        select(AssetObject).where(
+                            AssetObject.provider_key == intent.provider_key,
+                            AssetObject.bucket == intent.bucket,
+                            AssetObject.object_key == intent.object_key,
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            return _to_ref(row) if row is not None else None
+        raise AssertionError("asset upload intent state query exited without returning")
+
+    async def get_content_derivative(
+        self, source_asset_id: str, *, permissions: frozenset[str]
+    ) -> AssetRefDTO | None:
+        """Find a ready content-bucket result without exposing storage internals."""
+
+        if PERMISSION_READ not in permissions:
+            raise KernelError(
+                code="assets.forbidden",
+                category=ErrorCategory.FORBIDDEN,
+                message=f"requires permission {PERMISSION_READ}",
+            )
+        async with self._ctx.uow_factory() as uow:
+            rows = (
+                (
+                    await uow.session.execute(
+                        select(AssetObject)
+                        .where(
+                            AssetObject.bucket == "content",
+                            AssetObject.state == "ready",
+                        )
+                        .order_by(AssetObject.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                if row.asset_metadata.values.get("source_asset_id") == source_asset_id:
+                    return _to_ref(row)
+        return None

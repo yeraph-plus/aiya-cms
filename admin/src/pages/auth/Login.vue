@@ -51,17 +51,10 @@ async function submitLogin() {
                 <InputText id="username" v-model="username" type="text" class="w-full" autocomplete="username" required />
             </div>
             <div>
-                <div class="mb-2 flex items-center justify-between gap-4">
-                    <label for="password" class="font-medium">{{ t('auth.password') }}</label>
-                    <RouterLink class="text-primary text-sm font-medium" :to="{ name: 'password-reset' }">{{ t('auth.forgotPassword') }}</RouterLink>
-                </div>
+                <label for="password" class="mb-2 block font-medium">{{ t('auth.password') }}</label>
                 <Password id="password" v-model="password" fluid :feedback="false" toggle-mask autocomplete="current-password" required />
             </div>
             <Button type="submit" :label="t('auth.signIn')" :loading="submitting" :disabled="!loginForm || !username || !password" />
         </form>
-        <template #footer>
-            <span>{{ t('auth.needAccount') }}</span>
-            <RouterLink class="text-primary ml-1 font-medium" :to="{ name: 'register' }">{{ t('auth.register') }}</RouterLink>
-        </template>
     </AuthShell>
 </template>

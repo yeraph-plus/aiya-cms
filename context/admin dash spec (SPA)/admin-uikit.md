@@ -100,7 +100,7 @@ primevue 5.0.0 全部 214 个导出均经自动导入解析器可用，常见未
 
 ## 5. 页面清单（路由）
 
-生产路由和菜单以 `admin.md` §4.1 为事实清单。`src/router/meta.ts` 使用 `titleKey/requiresAuth/requiredCapability/shell`；`src/navigation/menu.ts` 使用 `labelKey`，显示文本统一由 Vue I18n 解析。公共认证路由包含 login、register、verify-email、password-reset request/confirm、callback、logged-out、access-denied、error 和 404。
+生产路由和菜单以 `admin.md` 为事实清单。`src/router/meta.ts` 使用 `titleKey/requiresAuth/requiredCapability/shell`；`src/navigation/menu.ts` 使用 `labelKey`，显示文本统一由 Vue I18n 解析。公共认证路由包含 login、register、verify-email、password-reset request/confirm、callback、logged-out、access-denied、error 和 404。
 
 业务主路由固定为 `/dashboard`、`/content/write|articles|taxonomies|comments`、`/community/discussions|tags`、`/users`、`/system/audit|operations|assets`、`/settings`，其余目标在对应后端合同和真实页面完成后显式注册。community discussions 使用 Drawer 承载详情/审核/lock/archive，community tags 使用独立 DataTable/Dialog；两者不得复用 content/taxonomy adapter。详情/编辑按 `admin.md` §4.2 使用 Drawer/Dialog，不创建 record detail 子路由，不用 Placeholder 假装完成。
 
@@ -113,7 +113,7 @@ demo 画廊页面位于 `src/demo/pages/`（仅开发路由 `/demo/**`，生产�
 - 管理员端显示名称固定为大写 `AIYA-CMS`（`src/env.ts` 的 `APP_NAME`），用于顶栏、页脚、页面标题和认证页文案；不使用动态站点名或品牌资源。
 
 - 保留 `admin/LICENSE.md`（MIT）与 `admin/UPSTREAM.md`（来源说明）；重构业务页面不得移除归属信息。
-- 侧边导航清单在 `src/navigation/menu.ts` 显式配置（`admin.md` §4），`visibility.ts` 按 `/me` capability 与已注册路由过滤并递归隐藏空分组；`src/layout/AppMenu.vue` 只渲染过滤结果。demo 分组仅开发构建可见。
+- 侧边导航清单在 `src/navigation/menu.ts` 显式配置（`admin.md` 为事实清单），`visibility.ts` 按管理员 session capability 与已注册路由过滤并递归隐藏空分组；`src/layout/AppMenu.vue` 只渲染过滤结果。demo 分组仅开发构建可见。
 - 新增业务页面使用 kit 已演示的组件组合（列表 CRUD 参照 `src/demo/pages/Crud.vue`），表单参照 `src/demo/pages/uikit/InputDoc.vue` 的组件用法；禁止引入平行 UI 框架。
 - Settings 表单只消费生成 OpenAPI 的 `SettingGroupDTO.fields`、`values` 和已校验 metadata；`src/components/forms/setting-fields.ts` 按 `Field.type` 将 `bool`、`text`、`textarea`、`select`、`radio`、`mult`、`upload` 分别映射到 `ToggleSwitch`、`InputText`、`Textarea`、`Select`、`RadioButton`、`MultiSelect`、`FileUpload`，不得为具体设置 slug 编写独立表单分支。上传流程只能通过资产 opaque ID adapter 注入，不能把二进制或 signed URL 写入 settings。
 - Users 列表的“积分管理”操作使用右侧 `Drawer` 读取 `GET /api/v1/admin/points/ledger` 的余额、桶和分页流水，并调用 `POST /api/v1/admin/points/adjust`；表单提交 signed amount、reason、幂等键和可选 program，省略 program 时使用 `credit`，不提交 bucket ID。桶路由遵循 points 后端规则：正数进入 perpetual，负数 FIFO 扣除 expiring/perpetual 桶。

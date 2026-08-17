@@ -7,7 +7,7 @@ async def test_assets_exposes_configured_bucket_names(client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert response.status_code == 200
-    assert response.json()["buckets"] == ["aiya-assets", "aiya-avatars"]
+    assert response.json()["buckets"] == ["aiya-assets", "aiya-avatars", "aiya-content"]
 
 
 async def test_admin_users_profile_patch_is_semantic(client, admin_token):

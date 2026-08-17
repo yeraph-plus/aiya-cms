@@ -18,10 +18,11 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from inc.adapters.oidc import FileSigningKeyStore
 from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
 from inc.capabilities.oidc_provider.api import OidcHttpServices, build_router
 from inc.capabilities.oidc_provider.clients import ClientCommandContext, RegisterClient
-from inc.capabilities.oidc_provider.keys import InMemorySigningKeyStore, KeyService
+from inc.capabilities.oidc_provider.keys import KeyService
 from inc.capabilities.oidc_provider.services import (
     AuthorizationService,
     LogoutService,
@@ -79,8 +80,13 @@ async def client(
     uow_factory: UoWFactory,
     clock: FakeClock,
     schema_registry: EventSchemaRegistry,
+    tmp_path: Any,
 ) -> httpx.AsyncClient:
-    keys = KeyService(uow_factory=uow_factory, store=InMemorySigningKeyStore(), clock=clock)
+    keys = KeyService(
+        uow_factory=uow_factory,
+        store=FileSigningKeyStore(tmp_path / "keys"),
+        clock=clock,
+    )
     ctx = ServiceContext(
         uow_factory=uow_factory,
         clock=clock,
@@ -123,7 +129,7 @@ async def client(
         logout=LogoutService(ctx),
         secure_cookies=False,
     )
-    await keys.ensure_active_key()  # boot establishes the active signing key
+    await keys.initialize_active_key()  # test installation writes persistent key material
     app = FastAPI()
     app.include_router(build_router(services))
     transport = httpx.ASGITransport(app=app)

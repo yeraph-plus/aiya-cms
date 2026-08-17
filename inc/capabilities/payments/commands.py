@@ -29,9 +29,11 @@ from inc.capabilities.payments.models import (
     RequestDigestData,
 )
 from inc.capabilities.payments.ports import (
+    CNY,
     PaymentProvider,
     ProviderError,
     WebhookEvent,
+    WebhookRequest,
     WebhookVerificationError,
 )
 from inc.capabilities.payments.schemas import (
@@ -146,6 +148,12 @@ async def _emit(
 
 
 def _to_order(row: PaymentOrder) -> OrderDTO:
+    if row.currency != CNY:
+        raise KernelError(
+            code="payments.invalid_currency",
+            category=ErrorCategory.INTERNAL,
+            message="stored payment order currency is not CNY",
+        )
     return OrderDTO(
         id=str(row.id),
         subject_type=row.subject_type,
@@ -157,7 +165,7 @@ def _to_order(row: PaymentOrder) -> OrderDTO:
         offer_version=row.offer.offer_version,
         description=row.offer.description,
         amount=row.amount,
-        currency=row.currency,
+        currency=CNY,
         state=row.state,
         captured_amount=row.captured_amount,
         refunded_amount=row.refunded_amount,
@@ -166,12 +174,18 @@ def _to_order(row: PaymentOrder) -> OrderDTO:
 
 
 def _to_refund(row: PaymentRefund) -> RefundDTO:
+    if row.currency != CNY:
+        raise KernelError(
+            code="payments.invalid_currency",
+            category=ErrorCategory.INTERNAL,
+            message="stored payment refund currency is not CNY",
+        )
     return RefundDTO(
         id=str(row.id),
         order_id=str(row.order_id),
         refund_ref=row.refund_ref,
         amount=row.amount,
-        currency=row.currency,
+        currency=CNY,
         state=row.state,
         reason=row.reason,
     )
@@ -285,7 +299,7 @@ class StartPaymentAttempt:
         if order.state == "pending" and order.provider_ref:
             return StartAttemptResult(
                 order=_to_order(order),
-                checkout_url="",
+                checkout_url=None,
                 requires_action=False,
             )
         try:
@@ -296,6 +310,7 @@ class StartPaymentAttempt:
                 idempotency_key=f"order:{order.id}",
                 return_url="",
                 cancel_url="",
+                description=order.offer.description,
             )
         except ProviderError:
             raise
@@ -328,6 +343,9 @@ class StartPaymentAttempt:
         return StartAttemptResult(
             order=_to_order(order),
             checkout_url=session.url,
+            redirect_url=session.redirect_url,
+            qr_code_payload=session.qr_code_payload,
+            app_url=session.app_url,
             requires_action=session.requires_action,
         )
 
@@ -376,13 +394,24 @@ class ProcessVerifiedWebhook:
         self._ctx = ctx
 
     async def __call__(  # type: ignore[return]
-        self, *, provider_key: str, raw_body: bytes, headers: dict[str, str], secret: str
+        self,
+        *,
+        provider_key: str,
+        raw_body: bytes,
+        headers: dict[str, str],
+        query_params: dict[str, str] | None = None,
+        method: str = "POST",
     ) -> dict[str, Any]:
         ctx = self._ctx
         provider = _provider(ctx, provider_key)
         try:
             event: WebhookEvent = await provider.verify_webhook(
-                raw_body=raw_body, headers=headers, secret=secret
+                request=WebhookRequest(
+                    method=method,
+                    raw_body=raw_body,
+                    headers=headers,
+                    query_params=query_params or {},
+                )
             )
         except WebhookVerificationError:
             raise
@@ -469,7 +498,11 @@ class ProcessVerifiedWebhook:
                     "payments.unknown_order",
                     f"no order for reference {event.order_reference!r}",
                 )
-            if order.amount != event.amount or order.currency != event.currency:
+            if (
+                event.currency != CNY
+                or order.amount != event.amount
+                or order.currency != event.currency
+            ):
                 receipt.processing_state = "rejected"
                 receipt.failure_reason = "amount/currency mismatch"
                 await uow.commit()
@@ -595,9 +628,18 @@ class ReconcilePaymentOrder:
             if order is None:
                 raise _not_found("payments.order_not_found", f"order {order_id}")
             if status.state == "captured":
+                if (
+                    status.currency != CNY
+                    or status.captured_amount is None
+                    or status.captured_amount != order.amount
+                ):
+                    raise _conflict(
+                        "payments.amount_mismatch",
+                        "provider status amount/currency does not match the order",
+                    )
                 _transition(order, "captured")
                 order.state = "captured"
-                order.captured_amount = status.captured_amount or order.amount
+                order.captured_amount = status.captured_amount
                 order.captured_at = ctx.clock.utc_now()
                 await _emit(
                     ctx,

@@ -1,4 +1,4 @@
-"""Composition-root retention activity for the deployable management plane."""
+"""Composition-root retention activity for the deployable release."""
 
 from __future__ import annotations
 

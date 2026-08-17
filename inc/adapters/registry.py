@@ -56,13 +56,12 @@ ADAPTER_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "identity.profile": ("identity",),
     "access.authorize": ("access",),
     "oidc.session_revoker": ("oidc_provider",),
-    "oidc.in_memory_keys": (),
     "oidc.filesystem_keys": (),
     "content.exists": ("content",),
     "content.batch_exists": ("content",),
     "assets.s3": (),
-    "payments.dev_fake": (),
     "payments.paypal": (),
+    "payments.epay": (),
     "email.smtp": ("settings",),
     "email.smtp2go": ("settings",),
     "identity.notification_recipient": ("identity",),
@@ -81,7 +80,7 @@ MULTI_PROVIDER_PORTS = frozenset({"notification.email"})
 # adapter module or rebuilding the container.
 PROVIDER_ADAPTERS: dict[str, tuple[str, ...]] = {
     "notification.email": ("email.smtp", "email.smtp2go"),
-    "payments.provider": ("payments.dev_fake", "payments.paypal"),
+    "payments.provider": ("payments.paypal", "payments.epay"),
     "assets.object_storage": ("assets.s3",),
 }
 
@@ -427,15 +426,17 @@ def resolve_adapters(
                     message="adapter 'oidc.session_revoker' requires the oidc_provider capability",
                 )
             resolved[port] = session_revoker
-        elif adapter == "oidc.in_memory_keys":
-            from inc.capabilities.oidc_provider import InMemorySigningKeyStore
-
-            resolved[port] = InMemorySigningKeyStore()
         elif adapter == "oidc.filesystem_keys":
             from inc.adapters.oidc import FileSigningKeyStore
 
             directory = getattr(container._settings, "oidc_signing_key_dir", None)
-            resolved[port] = FileSigningKeyStore(directory or ".tmp/oidc-keys")
+            if not directory or not directory.strip():
+                raise KernelError(
+                    code="oidc.signing_keys_unavailable",
+                    category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                    message="OIDC signing-key directory is required",
+                )
+            resolved[port] = FileSigningKeyStore(directory)
         elif adapter == "identity.notification_recipient":
             resolved[port] = IdentityNotificationRecipient(queries=identity_queries)
         elif adapter == "content.exists":
@@ -460,14 +461,14 @@ def resolve_adapters(
             resolved[port] = S3ObjectStorage(
                 settings_queries=settings_queries, clock=container._clock
             )
-        elif adapter == "payments.dev_fake":
-            from inc.adapters.payments.dev_fake import DevFakePaymentProvider
-
-            resolved[port] = DevFakePaymentProvider()
         elif adapter == "payments.paypal":
             from inc.adapters.payments.paypal import PaypalPaymentProvider
 
-            resolved[port] = PaypalPaymentProvider.from_settings(container._settings)
+            resolved[port] = PaypalPaymentProvider(settings_queries=settings_queries)
+        elif adapter == "payments.epay":
+            from inc.adapters.payments.epay import EpayPaymentProvider
+
+            resolved[port] = EpayPaymentProvider(settings_queries=settings_queries)
         elif adapter == "email.smtp":
             from inc.adapters.notification import SmtpEmailAdapter
 
@@ -549,9 +550,8 @@ def resolve_provider_catalogs(
             if bound is None:
                 continue
             # Provider keys are the provider Port's stable public key, not a
-            # Python class name.  This preserves the keys already persisted
-            # in payment/asset rows while allowing manifest adapter aliases
-            # (for example ``payments.dev_fake``) during boot.
+            # Python class name.  This preserves the stable keys persisted in
+            # payment and asset rows while the manifest names adapter modules.
             catalog.register(str(getattr(bound, "key", adapter_key)), bound)
         catalog.freeze()
         catalogs[port] = catalog

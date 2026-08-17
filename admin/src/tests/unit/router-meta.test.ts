@@ -29,8 +29,9 @@ describe('production route meta contract', () => {
         }
     });
 
-    it('registers the complete public authentication form chain', () => {
-        expect(publicRoutes.map((route) => route.path)).toEqual(expect.arrayContaining(['/auth/login', '/auth/register', '/auth/verify-email', '/auth/password-reset', '/auth/password-reset/confirm', '/callback', '/logged-out']));
+    it('registers only the OIDC public authentication flow', () => {
+        expect(publicRoutes.map((route) => route.path)).toEqual(expect.arrayContaining(['/auth/login', '/callback', '/logged-out']));
+        expect(publicRoutes.map((route) => route.path)).not.toEqual(expect.arrayContaining(['/auth/register', '/auth/verify-email', '/auth/password-reset', '/auth/password-reset/confirm']));
     });
 
     it('registers the first contract-backed workbench routes', () => {

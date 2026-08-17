@@ -672,6 +672,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/content-bucket/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Content Image */
+        get: operations["get_content_image_api_v1_admin_content_bucket_assets__asset_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Content Image */
+        delete: operations["delete_content_image_api_v1_admin_content_bucket_assets__asset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/content-bucket/upload-intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Upload Intent */
+        post: operations["create_upload_intent_api_v1_admin_content_bucket_upload_intents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/content-bucket/upload-intents/{intent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Content Upload Status */
+        get: operations["content_upload_status_api_v1_admin_content_bucket_upload_intents__intent_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/content-bucket/upload-intents/{intent_id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finalize Upload */
+        post: operations["finalize_upload_api_v1_admin_content_bucket_upload_intents__intent_id__finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/content/{content_id}": {
         parameters: {
             query?: never;
@@ -1129,6 +1198,24 @@ export interface paths {
         put?: never;
         /** Retry Delivery */
         post: operations["retry_delivery_api_v1_admin_notifications_deliveries__delivery_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/notifications/templates/{trigger_name}/{locale}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Template */
+        get: operations["get_template_api_v1_admin_notifications_templates__trigger_name___locale__get"];
+        /** Update Template */
+        put: operations["update_template_api_v1_admin_notifications_templates__trigger_name___locale__put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1776,15 +1863,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/grants": {
+    "/api/v1/community/discussions": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Grants */
-        get: operations["list_grants_api_v1_auth_grants_get"];
+        /** List Discussions */
+        get: operations["list_discussions_api_v1_community_discussions_get"];
+        put?: never;
+        /** Create Discussion */
+        post: operations["create_discussion_api_v1_community_discussions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/community/discussions/by-slug/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Discussion By Slug */
+        get: operations["get_discussion_by_slug_api_v1_community_discussions_by_slug__slug__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1793,7 +1898,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/grants/{client_id}": {
+    "/api/v1/community/discussions/{discussion_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1803,31 +1908,31 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Revoke Grant */
-        delete: operations["revoke_grant_api_v1_auth_grants__client_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Discussion */
+        patch: operations["update_discussion_api_v1_community_discussions__discussion_id__patch"];
         trace?: never;
     };
-    "/api/v1/auth/password-reset/confirm": {
+    "/api/v1/community/discussions/{discussion_id}/posts": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Posts */
+        get: operations["list_posts_api_v1_community_discussions__discussion_id__posts_get"];
         put?: never;
-        /** Confirm Password Reset */
-        post: operations["confirm_password_reset_api_v1_auth_password_reset_confirm_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/password-reset/request": {
+    "/api/v1/community/discussions/{discussion_id}/replies": {
         parameters: {
             query?: never;
             header?: never;
@@ -1836,15 +1941,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Request Password Reset */
-        post: operations["request_password_reset_api_v1_auth_password_reset_request_post"];
+        /** Create Reply */
+        post: operations["create_reply_api_v1_community_discussions__discussion_id__replies_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/register": {
+    "/api/v1/community/posts/{post_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1853,15 +1958,154 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register */
-        post: operations["register_api_v1_auth_register_post"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Post */
+        patch: operations["update_post_api_v1_community_posts__post_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/community/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tags */
+        get: operations["list_tags_api_v1_community_tags_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/verify-email": {
+    "/api/v1/community/tags/by-slug/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tag */
+        get: operations["get_tag_api_v1_community_tags_by_slug__slug__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{target_type}/{target_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Published */
+        get: operations["list_published_api_v1_content__target_type___target_id__comments_get"];
+        put?: never;
+        /** Submit */
+        post: operations["submit_api_v1_content__target_type___target_id__comments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{type_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Published Content */
+        get: operations["list_published_content_api_v1_content__type_name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{type_name}/{content_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Published Content */
+        get: operations["get_published_content_api_v1_content__type_name___content_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{type_name}/{content_id}/engagement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Engagement */
+        get: operations["get_engagement_api_v1_content__type_name___content_id__engagement_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{type_name}/{content_id}/like": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Like Content */
+        put: operations["like_content_api_v1_content__type_name___content_id__like_put"];
+        post?: never;
+        /** Unlike Content */
+        delete: operations["unlike_content_api_v1_content__type_name___content_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{type_name}/{content_id}/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rate Content */
+        put: operations["rate_content_api_v1_content__type_name___content_id__rating_put"];
+        post?: never;
+        /** Withdraw Rating */
+        delete: operations["withdraw_rating_api_v1_content__type_name___content_id__rating_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{type_name}/{content_id}/views": {
         parameters: {
             query?: never;
             header?: never;
@@ -1870,8 +2114,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Verify Email */
-        post: operations["verify_email_api_v1_auth_verify_email_post"];
+        /** Record View */
+        post: operations["record_view_api_v1_content__type_name___content_id__views_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2035,17 +2279,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * AcceptedDTO
-         * @description Equivalent response for every password-reset request.
-         */
-        AcceptedDTO: {
-            /**
-             * Accepted
-             * @default true
-             */
-            accepted: boolean;
-        };
         /** AdminAuthTransactionDTO */
         AdminAuthTransactionDTO: {
             /** Code Verifier */
@@ -2447,6 +2680,40 @@ export interface components {
             /** Client Secret */
             client_secret?: string | null;
         };
+        /** CommentDTO */
+        CommentDTO: {
+            /** Author Id */
+            author_id: string;
+            /** Author Type */
+            author_type: string;
+            /** Body */
+            body: string | null;
+            /** Deleted At */
+            deleted_at?: string | null;
+            /** Id */
+            id: string;
+            /** Moderation Reason */
+            moderation_reason?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Published At */
+            published_at?: string | null;
+            /** Rejected At */
+            rejected_at?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /** Target Id */
+            target_id: string;
+            /** Target Type */
+            target_type: string;
+            /** Version */
+            version: number;
+        };
         /** CommunityAuthorDTO */
         CommunityAuthorDTO: {
             /** Avatar Asset Id */
@@ -2574,6 +2841,27 @@ export interface components {
              */
             version: number;
         };
+        /** ContentFinalizeDTO */
+        ContentFinalizeDTO: {
+            image?: components["schemas"]["ContentImageDTO"] | null;
+            /** Intent Id */
+            intent_id: string;
+            /** Source Asset Id */
+            source_asset_id?: string | null;
+            /** State */
+            state: string;
+        };
+        /** ContentImageDTO */
+        ContentImageDTO: {
+            /** Asset Id */
+            asset_id: string;
+            /** Byte Size */
+            byte_size: number;
+            /** Mime Type */
+            mime_type: string;
+            /** Public Url */
+            public_url: string;
+        };
         /** ContentPageDTO */
         ContentPageDTO: {
             /** Items */
@@ -2604,6 +2892,35 @@ export interface components {
             /** Type Name */
             type_name: string;
         };
+        /** CreateContentUploadBody */
+        CreateContentUploadBody: {
+            /** Content Length Max */
+            content_length_max: number;
+            /** Mime Type */
+            mime_type: string;
+        };
+        /** CreateDiscussionBody */
+        CreateDiscussionBody: {
+            /** Body */
+            body: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Post Data */
+            post_data?: {
+                [key: string]: unknown;
+            };
+            /** Tag Ids */
+            tag_ids?: string[];
+            /**
+             * Template Key
+             * @default general
+             */
+            template_key: string;
+            /** Title */
+            title: string;
+        };
         /** CreateLevelInput */
         CreateLevelInput: {
             /** Cycle Days */
@@ -2621,6 +2938,15 @@ export interface components {
             renewal_allowed: boolean;
             /** Tier Rank */
             tier_rank: number;
+        };
+        /** CreateReplyBody */
+        CreateReplyBody: {
+            /** Body */
+            body: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
         };
         /** CreateRoleBody */
         CreateRoleBody: {
@@ -2820,6 +3146,39 @@ export interface components {
              */
             version: number;
         };
+        /** EngagementSummaryDTO */
+        EngagementSummaryDTO: {
+            /** Content Id */
+            content_id: string;
+            /** Counted */
+            counted?: boolean | null;
+            /**
+             * Like Count
+             * @default 0
+             */
+            like_count: number;
+            /** Rating Average */
+            rating_average?: string | null;
+            /**
+             * Rating Count
+             * @default 0
+             */
+            rating_count: number;
+            /**
+             * Rating Sum
+             * @default 0
+             */
+            rating_sum: number;
+            /**
+             * View Count
+             * @default 0
+             */
+            view_count: number;
+            /** Viewer Liked */
+            viewer_liked?: boolean | null;
+            /** Viewer Rating */
+            viewer_rating?: number | null;
+        };
         /**
          * ExecutionEntryDTO
          * @description Minimal operational record; payloads and free-form results are omitted.
@@ -2866,25 +3225,6 @@ export interface components {
              * @default pending
              */
             state: string;
-        };
-        /**
-         * GrantConsentDTO
-         * @description User-visible consent for one registered OIDC client.
-         */
-        GrantConsentDTO: {
-            /** Audiences */
-            audiences?: string[];
-            /** Client Id */
-            client_id: string;
-            /** Client Name */
-            client_name?: string | null;
-            /**
-             * Granted At
-             * Format: date-time
-             */
-            granted_at: string;
-            /** Scopes */
-            scopes?: string[];
         };
         /**
          * GrantSummary
@@ -3115,10 +3455,31 @@ export interface components {
              * Format: date-time
              */
             requested_at: string;
-            /** Spec Key */
-            spec_key: string;
             /** Status */
             status: string;
+            /** Trigger Name */
+            trigger_name: string;
+        };
+        /** NotificationTemplateDTO */
+        NotificationTemplateDTO: {
+            /** Body */
+            body: string;
+            /** Channel */
+            channel: string;
+            /** Locale */
+            locale: string;
+            /** Status */
+            status: string;
+            /** Subject */
+            subject: string;
+            /** Template Key */
+            template_key: string;
+            /** Trigger Name */
+            trigger_name: string;
+            /** Variables Schema Version */
+            variables_schema_version: string;
+            /** Version */
+            version: string;
         };
         /** Page */
         Page_AdminCommentDTO_: {
@@ -3146,6 +3507,17 @@ export interface components {
         Page_AuditEntryDTO_: {
             /** Items */
             items: components["schemas"]["AuditEntryDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page */
+        Page_CommentDTO_: {
+            /** Items */
+            items: components["schemas"]["CommentDTO"][];
             /** Page */
             page: number;
             /** Size */
@@ -3207,18 +3579,6 @@ export interface components {
             size: number;
             /** Total */
             total: number;
-        };
-        /** PasswordResetConfirmInput */
-        PasswordResetConfirmInput: {
-            /** New Password */
-            new_password: string;
-            /** Token */
-            token: string;
-        };
-        /** PasswordResetRequestInput */
-        PasswordResetRequestInput: {
-            /** Identifier */
-            identifier: string;
         };
         /** PointsAccountAdminDTO */
         PointsAccountAdminDTO: {
@@ -3416,6 +3776,11 @@ export interface components {
             /** Type Name */
             type_name: string;
         };
+        /** RatingBody */
+        RatingBody: {
+            /** Rating */
+            rating: number;
+        };
         /** ReferenceDTO */
         ReferenceDTO: {
             /** Id */
@@ -3478,17 +3843,6 @@ export interface components {
             object_key: string;
             /** Provider Key */
             provider_key: string;
-        };
-        /** RegisterInput */
-        RegisterInput: {
-            /** Display Name */
-            display_name?: string | null;
-            /** Email */
-            email: string;
-            /** Password */
-            password: string;
-            /** Username */
-            username: string;
         };
         /** RejectBody */
         RejectBody: {
@@ -3607,8 +3961,6 @@ export interface components {
         SettingFieldDTO: {
             /** Default */
             default: unknown;
-            /** Desc */
-            desc: string;
             /** Metadata */
             metadata: {
                 [key: string]: unknown;
@@ -3619,8 +3971,6 @@ export interface components {
             sensitive: boolean;
             /** Slug */
             slug: string;
-            /** Title */
-            title: string;
             /**
              * Type
              * @enum {string}
@@ -3679,6 +4029,13 @@ export interface components {
             status: string;
             /** Username */
             username: string;
+        };
+        /** SubmitCommentBody */
+        SubmitCommentBody: {
+            /** Body */
+            body: string;
+            /** Parent Id */
+            parent_id?: string | null;
         };
         /** SubscribeInput */
         SubscribeInput: {
@@ -3790,6 +4147,17 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** UpdateDiscussionInput */
+        UpdateDiscussionInput: {
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
+            /** Expected Version */
+            expected_version: number;
+            /** Title */
+            title?: string | null;
+        };
         /** UpdateLevelInput */
         UpdateLevelInput: {
             /** Cycle Days */
@@ -3804,6 +4172,32 @@ export interface components {
             renewal_allowed?: boolean | null;
             /** Tier Rank */
             tier_rank?: number | null;
+        };
+        /**
+         * UpdateNotificationTemplateInput
+         * @description Capability-owned template edit input; trigger comes from the route.
+         */
+        UpdateNotificationTemplateInput: {
+            /** Body */
+            body: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Subject */
+            subject: string;
+        };
+        /** UpdatePostInput */
+        UpdatePostInput: {
+            /** Body */
+            body?: string | null;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
+            /** Expected Version */
+            expected_version: number;
         };
         /**
          * UpdateProfileInput
@@ -3875,11 +4269,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-        };
-        /** VerifyEmailInput */
-        VerifyEmailInput: {
-            /** Token */
-            token: string;
         };
     };
     responses: never;
@@ -5276,6 +5665,161 @@ export interface operations {
             };
         };
     };
+    get_content_image_api_v1_admin_content_bucket_assets__asset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentImageDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_content_image_api_v1_admin_content_bucket_assets__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_upload_intent_api_v1_admin_content_bucket_upload_intents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateContentUploadBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateUploadIntentResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    content_upload_status_api_v1_admin_content_bucket_upload_intents__intent_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentFinalizeDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finalize_upload_api_v1_admin_content_bucket_upload_intents__intent_id__finalize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentFinalizeDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_content_api_v1_admin_content__content_id__get: {
         parameters: {
             query?: never;
@@ -6161,7 +6705,7 @@ export interface operations {
                 status?: string | null;
                 channel?: string | null;
                 provider_key?: string | null;
-                spec_key?: string | null;
+                trigger_name?: string | null;
                 recipient_id?: string | null;
             };
             header?: never;
@@ -6270,6 +6814,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationDeliveryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_template_api_v1_admin_notifications_templates__trigger_name___locale__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trigger_name: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTemplateDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_api_v1_admin_notifications_templates__trigger_name___locale__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trigger_name: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateNotificationTemplateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTemplateDTO"];
                 };
             };
             /** @description Validation Error */
@@ -7798,9 +8410,15 @@ export interface operations {
             };
         };
     };
-    list_grants_api_v1_auth_grants_get: {
+    list_discussions_api_v1_community_discussions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string | null;
+                tag?: string | null;
+                sort?: string | null;
+                page?: number;
+                size?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7813,28 +8431,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GrantConsentDTO"][];
+                    "application/json": components["schemas"]["CommunityPageDTO_DiscussionDTO_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
-    revoke_grant_api_v1_auth_grants__client_id__delete: {
+    create_discussion_api_v1_community_discussions_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDiscussionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscussionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_discussion_by_slug_api_v1_community_discussions_by_slug__slug__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                client_id: string;
+                slug: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DiscussionDTO"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -7847,16 +8511,18 @@ export interface operations {
             };
         };
     };
-    confirm_password_reset_api_v1_auth_password_reset_confirm_post: {
+    update_discussion_api_v1_community_discussions__discussion_id__patch: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                discussion_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PasswordResetConfirmInput"];
+                "application/json": components["schemas"]["UpdateDiscussionInput"];
             };
         };
         responses: {
@@ -7866,7 +8532,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubjectDTO"];
+                    "application/json": components["schemas"]["DiscussionDTO"];
                 };
             };
             /** @description Validation Error */
@@ -7880,26 +8546,27 @@ export interface operations {
             };
         };
     };
-    request_password_reset_api_v1_auth_password_reset_request_post: {
+    list_posts_api_v1_community_discussions__discussion_id__posts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                size?: number;
+            };
             header?: never;
-            path?: never;
+            path: {
+                discussion_id: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PasswordResetRequestInput"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AcceptedDTO"];
+                    "application/json": components["schemas"]["CommunityPageDTO_PostDTO_"];
                 };
             };
             /** @description Validation Error */
@@ -7913,16 +8580,20 @@ export interface operations {
             };
         };
     };
-    register_api_v1_auth_register_post: {
+    create_reply_api_v1_community_discussions__discussion_id__replies_post: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                discussion_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RegisterInput"];
+                "application/json": components["schemas"]["CreateReplyBody"];
             };
         };
         responses: {
@@ -7932,7 +8603,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubjectDTO"];
+                    "application/json": components["schemas"]["PostDTO"];
                 };
             };
             /** @description Validation Error */
@@ -7946,16 +8617,18 @@ export interface operations {
             };
         };
     };
-    verify_email_api_v1_auth_verify_email_post: {
+    update_post_api_v1_community_posts__post_id__patch: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                post_id: string;
+            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["VerifyEmailInput"];
+                "application/json": components["schemas"]["UpdatePostInput"];
             };
         };
         responses: {
@@ -7965,7 +8638,394 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubjectDTO"];
+                    "application/json": components["schemas"]["PostDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tags_api_v1_community_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDTO"][];
+                };
+            };
+        };
+    };
+    get_tag_api_v1_community_tags_by_slug__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_published_api_v1_content__target_type___target_id__comments_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                target_type: string;
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CommentDTO_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_v1_content__target_type___target_id__comments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_type: string;
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitCommentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_published_content_api_v1_content__type_name__get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                sort?: string | null;
+            };
+            header?: never;
+            path: {
+                type_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentPageDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_published_content_api_v1_content__type_name___content_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_engagement_api_v1_content__type_name___content_id__engagement_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementSummaryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    like_content_api_v1_content__type_name___content_id__like_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementSummaryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlike_content_api_v1_content__type_name___content_id__like_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementSummaryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_content_api_v1_content__type_name___content_id__rating_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatingBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementSummaryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_rating_api_v1_content__type_name___content_id__rating_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementSummaryDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_view_api_v1_content__type_name___content_id__views_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                type_name: string;
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementSummaryDTO"];
                 };
             };
             /** @description Validation Error */

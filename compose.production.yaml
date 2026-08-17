@@ -7,9 +7,8 @@ services:
     image: ${AIYA_CMS_IMAGE:-aiya-cms:production}
     environment:
       - AIYA_ENVIRONMENT=${AIYA_ENVIRONMENT:-production}
-      - AIYA_APP_PROFILE=${AIYA_APP_PROFILE:-management}
+      - AIYA_APP_PROFILE=release
       - AIYA_AUTO_INSTALL=${AIYA_AUTO_INSTALL:-true}
-      - AIYA_INSTALL_PROFILE=${AIYA_INSTALL_PROFILE:-admin}
       - AIYA_ADMIN_USERNAME=${AIYA_ADMIN_USERNAME:-admin}
       - AIYA_ADMIN_EMAIL=${AIYA_ADMIN_EMAIL:-admin@example.com}
       - AIYA_ADMIN_PASSWORD=${AIYA_ADMIN_PASSWORD:-}
@@ -39,12 +38,8 @@ services:
       - AIYA_CORS_ORIGINS=${AIYA_CORS_ORIGINS:?AIYA_CORS_ORIGINS is required}
       - AIYA_TRUSTED_PROXY_CIDRS=${AIYA_TRUSTED_PROXY_CIDRS:-127.0.0.1/32,::1/128}
       - AIYA_PUBLIC_BASE_URL=${AIYA_PUBLIC_BASE_URL:?AIYA_PUBLIC_BASE_URL is required}
-      - AIYA_PAYPAL_ENVIRONMENT=${AIYA_PAYPAL_ENVIRONMENT:-production}
-      - AIYA_PAYPAL_CLIENT_ID=${AIYA_PAYPAL_CLIENT_ID:-}
-      - AIYA_PAYPAL_CLIENT_SECRET=${AIYA_PAYPAL_CLIENT_SECRET:-}
-      - AIYA_PAYPAL_WEBHOOK_ID=${AIYA_PAYPAL_WEBHOOK_ID:-}
-      - AIYA_PAYPAL_RETURN_URL=${AIYA_PAYPAL_RETURN_URL:-}
-      - AIYA_PAYPAL_CANCEL_URL=${AIYA_PAYPAL_CANCEL_URL:-}
+      - AIYA_SITE_BASE_URL=${AIYA_SITE_BASE_URL:?AIYA_SITE_BASE_URL is required}
+      - AIYA_SITE_OIDC_CLIENT_SECRET=${AIYA_SITE_OIDC_CLIENT_SECRET:?AIYA_SITE_OIDC_CLIENT_SECRET is required}
       - AIYA_OUTBOX_BATCH_SIZE=${AIYA_OUTBOX_BATCH_SIZE:-20}
       - AIYA_OUTBOX_LEASE_SECONDS=${AIYA_OUTBOX_LEASE_SECONDS:-60}
       - AIYA_OUTBOX_RETRY_BASE_SECONDS=${AIYA_OUTBOX_RETRY_BASE_SECONDS:-1.0}
@@ -65,6 +60,32 @@ services:
       interval: 10s
       timeout: 5s
       start_period: 20s
+      retries: 10
+
+  site:
+    build:
+      context: .
+      dockerfile: site/Dockerfile
+      args:
+        SITE_BUILD_ENVIRONMENT: ${SITE_ENVIRONMENT:-production}
+        SITE_BUILD_ORIGIN: ${AIYA_SITE_BASE_URL:?AIYA_SITE_BASE_URL is required}
+    environment:
+      SITE_API_ORIGIN: http://app:8080
+      SITE_OIDC_ISSUER: ${AIYA_ISSUER:?AIYA_ISSUER is required}
+      SITE_OIDC_CLIENT_ID: aiya-site
+      SITE_OIDC_SCOPE: openid profile email offline_access
+      SITE_OIDC_CLIENT_SECRET: ${AIYA_SITE_OIDC_CLIENT_SECRET:?AIYA_SITE_OIDC_CLIENT_SECRET is required}
+      SITE_REDIS_URL: ${AIYA_REDIS_URL:?AIYA_REDIS_URL is required}
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${SITE_BIND_ADDRESS:-127.0.0.1}:${SITE_HOST_PORT:-4321}:4321"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4321/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
       retries: 10
 
 volumes:

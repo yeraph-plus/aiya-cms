@@ -8,46 +8,6 @@ export const publicRoutes: RouteRecordRaw[] = [
         meta: { titleKey: 'routes.auth.login', requiresAuth: false, shell: 'auth' }
     },
     {
-        path: '/auth/register',
-        name: 'register',
-        component: () => import('@/pages/auth/Register.vue'),
-        meta: {
-            titleKey: 'routes.auth.register',
-            requiresAuth: false,
-            shell: 'auth'
-        }
-    },
-    {
-        path: '/auth/verify-email',
-        name: 'verify-email',
-        component: () => import('@/pages/auth/VerifyEmail.vue'),
-        meta: {
-            titleKey: 'routes.auth.verifyEmail',
-            requiresAuth: false,
-            shell: 'auth'
-        }
-    },
-    {
-        path: '/auth/password-reset',
-        name: 'password-reset',
-        component: () => import('@/pages/auth/PasswordResetRequest.vue'),
-        meta: {
-            titleKey: 'routes.auth.passwordReset',
-            requiresAuth: false,
-            shell: 'auth'
-        }
-    },
-    {
-        path: '/auth/password-reset/confirm',
-        name: 'password-reset-confirm',
-        component: () => import('@/pages/auth/PasswordResetConfirm.vue'),
-        meta: {
-            titleKey: 'routes.auth.passwordResetConfirm',
-            requiresAuth: false,
-            shell: 'auth'
-        }
-    },
-    {
         path: '/callback',
         name: 'auth-callback',
         component: () => import('@/pages/auth/Callback.vue'),

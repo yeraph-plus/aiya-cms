@@ -10,7 +10,7 @@ admin-only, carry a reason, and are idempotent per ``idempotency_key``.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -398,7 +398,7 @@ def build_router(
 async def _set_program_status(
     services: Services,
     program_key: str,
-    status: str,
+    status: Literal["active", "inactive"],
     body: PointsProgramStatusInput,
     ctx: AppContext,
 ) -> PointsProgramDTO:

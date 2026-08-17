@@ -1,3 +1,5 @@
+import { zhCN as settingMessages } from './setting-messages';
+
 export default {
     common: {
         refresh: '刷新',
@@ -606,7 +608,7 @@ export default {
             detail: '通知投递详情',
             channel: '渠道',
             provider: 'Provider',
-            specKey: '通知规格 key',
+            triggerName: '触发名',
             recipientId: '收件主体 ID',
             maskedAddress: '脱敏地址',
             attempt: '尝试次数',
@@ -620,5 +622,6 @@ export default {
             cancelMessage: '仅 pending 且尚未交给 provider 的投递可取消。',
             retryMessage: '重试可能触发外部 provider 调用，请先确认原投递没有仍在执行的有效 lease。'
         }
-    }
+    },
+    ...settingMessages
 } as const;

@@ -84,6 +84,9 @@ class FakeEmailProvider:
     key: str = "email"
     sends: list[dict[str, Any]] = field(default_factory=list)
 
+    async def check_availability(self) -> tuple[bool, str | None]:
+        return True, None
+
     async def send(
         self, *, target: RecipientTarget, subject: str, body: str, idempotency_key: str
     ) -> ProviderResult:
@@ -122,7 +125,7 @@ def types() -> ContentTypeRegistry:
 
 @pytest.fixture
 def notification_specs() -> NotificationSpecRegistry:
-    registry = NotificationSpecRegistry()
+    registry = NotificationSpecRegistry(allowed_triggers=frozenset({"moderation.submitted.v1"}))
     registry.register(
         NotificationSpec(
             key="moderation.submitted.v1",
@@ -162,6 +165,7 @@ async def harness(
     async with uow_factory() as uow:
         uow.session.add(
             NotificationTemplate(
+                trigger_name="moderation.submitted.v1",
                 template_key="moderation_submitted",
                 version="1",
                 channel="email",
@@ -261,7 +265,7 @@ def _notify_input(*, content_id: str, title: str) -> Any:
     from inc.capabilities.notification.schemas import RequestNotificationInput
 
     return RequestNotificationInput(
-        spec_key="moderation.submitted.v1",
+        trigger_name="moderation.submitted.v1",
         recipient_type="identity",
         recipient_id="moderator",
         variables={"content_title": title, "content_id": content_id},

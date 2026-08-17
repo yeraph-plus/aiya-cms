@@ -25,7 +25,7 @@ const filters = reactive({
     status: null as string | null,
     channel: '',
     providerKey: '',
-    specKey: '',
+    triggerName: '',
     recipientId: ''
 });
 const result = ref<NotificationDeliveryPageDTO | null>(null);
@@ -54,7 +54,7 @@ async function load(resetPage = false): Promise<void> {
             status: filters.status || undefined,
             channel: filters.channel.trim() || undefined,
             provider_key: filters.providerKey.trim() || undefined,
-            spec_key: filters.specKey.trim() || undefined,
+            trigger_name: filters.triggerName.trim() || undefined,
             recipient_id: filters.recipientId.trim() || undefined
         });
     } catch (caught) {
@@ -131,7 +131,7 @@ onMounted(() => void load());
                 <Select v-model="filters.status" :options="statuses" show-clear :placeholder="t('workbenches.status')" class="min-w-44" />
                 <InputText v-model="filters.channel" :placeholder="t('workbenches.notifications.channel')" />
                 <InputText v-model="filters.providerKey" :placeholder="t('workbenches.notifications.provider')" />
-                <InputText v-model="filters.specKey" :placeholder="t('workbenches.notifications.specKey')" />
+                <InputText v-model="filters.triggerName" :placeholder="t('workbenches.notifications.triggerName')" />
                 <InputText v-model="filters.recipientId" :placeholder="t('workbenches.notifications.recipientId')" />
             </FilterBar>
         </SurfaceCard>
@@ -144,7 +144,7 @@ onMounted(() => void load());
                 <Column field="status" :header="t('workbenches.status')"
                     ><template #body="{ data }"><StatusTag :value="data.status" /></template
                 ></Column>
-                <Column field="spec_key" :header="t('workbenches.notifications.specKey')" />
+                <Column field="trigger_name" :header="t('workbenches.notifications.triggerName')" />
                 <Column field="recipient_id" :header="t('workbenches.notifications.recipientId')" />
                 <Column field="channel" :header="t('workbenches.notifications.channel')" />
                 <Column field="provider_key" :header="t('workbenches.notifications.provider')" />
@@ -167,10 +167,10 @@ onMounted(() => void load());
                         <dt class="text-muted-color">{{ t('workbenches.status') }}</dt>
                         <dd><StatusTag :value="detail.delivery.status" /></dd>
                         <dt class="text-muted-color">
-                            {{ t('workbenches.notifications.specKey') }}
+                            {{ t('workbenches.notifications.triggerName') }}
                         </dt>
                         <dd>
-                            <code>{{ detail.delivery.spec_key }}</code>
+                            <code>{{ detail.delivery.trigger_name }}</code>
                         </dd>
                         <dt class="text-muted-color">
                             {{ t('workbenches.notifications.recipientId') }}

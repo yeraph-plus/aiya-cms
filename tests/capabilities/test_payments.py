@@ -56,14 +56,20 @@ class FakePaymentProvider:
         return hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
 
     def webhook(
-        self, *, event_id: str, event_type: str, order_reference: str, amount: int = 1000
+        self,
+        *,
+        event_id: str,
+        event_type: str,
+        order_reference: str,
+        amount: int = 1000,
+        currency: str = "CNY",
     ) -> bytes:
         payload = {
             "id": event_id,
             "type": event_type,
             "order_reference": order_reference,
             "amount": amount,
-            "currency": "USD",
+            "currency": currency,
         }
         return json.dumps(payload).encode()
 
@@ -72,17 +78,20 @@ class FakePaymentProvider:
 
     async def create_payment(self, **kwargs: Any) -> ProviderSession:
         return ProviderSession(
-            provider_ref=f"pay_{kwargs['order_reference'][-8:]}", url="https://pay.example/checkout"
+            provider_ref=f"pay_{kwargs['order_reference'][-8:]}",
+            redirect_url="https://pay.example/checkout",
         )
+
+    async def check_availability(self) -> tuple[bool, str | None]:
+        return True, None
 
     async def get_payment(self, *, provider_ref: str) -> PaymentStatus:
         return self.statuses.get(provider_ref, PaymentStatus(state="pending"))
 
-    async def verify_webhook(
-        self, *, raw_body: bytes, headers: dict[str, str], secret: str
-    ) -> WebhookEvent:
+    async def verify_webhook(self, *, request: Any) -> WebhookEvent:
+        raw_body, headers = request.raw_body, request.headers
         signature = headers.get("X-Signature", "")
-        expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+        expected = hmac.new(SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected):
             raise WebhookVerificationError("bad signature")
         payload = json.loads(raw_body)
@@ -145,7 +154,7 @@ def order_input(**overrides: Any) -> CreatePaymentOrderInput:
         "offer_version": "1",
         "description": "100 points",
         "amount": 1000,
-        "currency": "USD",
+        "currency": "CNY",
         "idempotency_key": "order-key-1",
     }
     base.update(overrides)
@@ -211,7 +220,7 @@ async def test_capture_via_verified_webhook(
         event_id="evt-1", event_type="capture", order_reference=order.order_reference
     )
     result = await ProcessVerifiedWebhook(ctx)(
-        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body), secret=SECRET
+        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body)
     )
     assert result["duplicate"] is False
     async with uow_factory() as uow:
@@ -236,9 +245,7 @@ async def test_forged_signature_rejected(
     body = provider.webhook(event_id="evt-x", event_type="capture", order_reference="ord_whatever")
     headers = {"X-Signature": "forged"}
     with pytest.raises(WebhookVerificationError):
-        await ProcessVerifiedWebhook(ctx)(
-            provider_key="fake", raw_body=body, headers=headers, secret=SECRET
-        )
+        await ProcessVerifiedWebhook(ctx)(provider_key="fake", raw_body=body, headers=headers)
 
 
 async def test_webhook_replay_is_idempotent(
@@ -250,12 +257,8 @@ async def test_webhook_replay_is_idempotent(
         event_id="evt-2", event_type="capture", order_reference=order.order_reference
     )
     headers = provider.webhook_headers(body)
-    await ProcessVerifiedWebhook(ctx)(
-        provider_key="fake", raw_body=body, headers=headers, secret=SECRET
-    )
-    replay = await ProcessVerifiedWebhook(ctx)(
-        provider_key="fake", raw_body=body, headers=headers, secret=SECRET
-    )
+    await ProcessVerifiedWebhook(ctx)(provider_key="fake", raw_body=body, headers=headers)
+    replay = await ProcessVerifiedWebhook(ctx)(provider_key="fake", raw_body=body, headers=headers)
     assert replay["duplicate"] is True
     async with uow_factory() as uow:
         receipts = (await uow.session.execute(select(PaymentWebhookReceipt))).scalars().all()
@@ -286,7 +289,23 @@ async def test_amount_mismatch_webhook_rejected(
             provider_key="fake",
             raw_body=body,
             headers=provider.webhook_headers(body),
-            secret=SECRET,
+        )
+    assert excinfo.value.code == "payments.amount_mismatch"
+
+
+async def test_non_cny_webhook_is_rejected(
+    ctx: CommandContext, provider: FakePaymentProvider
+) -> None:
+    order = await create_order(ctx)
+    body = provider.webhook(
+        event_id="evt-usd",
+        event_type="capture",
+        order_reference=order.order_reference,
+        currency="USD",
+    )
+    with pytest.raises(KernelError) as excinfo:
+        await ProcessVerifiedWebhook(ctx)(
+            provider_key="fake", raw_body=body, headers=provider.webhook_headers(body)
         )
     assert excinfo.value.code == "payments.amount_mismatch"
 
@@ -300,7 +319,7 @@ async def test_out_of_order_failure_after_capture_rejected(
         event_id="evt-4", event_type="capture", order_reference=order.order_reference
     )
     await ProcessVerifiedWebhook(ctx)(
-        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body), secret=SECRET
+        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body)
     )
     failure = provider.webhook(
         event_id="evt-5", event_type="failure", order_reference=order.order_reference
@@ -310,7 +329,6 @@ async def test_out_of_order_failure_after_capture_rejected(
             provider_key="fake",
             raw_body=failure,
             headers=provider.webhook_headers(failure),
-            secret=SECRET,
         )
     assert excinfo.value.code == "payments.invalid_transition"
 
@@ -326,7 +344,7 @@ async def test_reconcile_unknown_never_guesses_captured(
     reconciled = await ReconcilePaymentOrder(ctx)(uuid.UUID(order.id))
     assert reconciled.state == "pending"  # stays; no guessing
     provider.statuses[f"pay_{order.order_reference[-8:]}"] = PaymentStatus(
-        state="captured", captured_amount=1000, currency="USD"
+        state="captured", captured_amount=1000, currency="CNY"
     )
     reconciled = await ReconcilePaymentOrder(ctx)(uuid.UUID(order.id))
     assert reconciled.state == "captured"
@@ -344,7 +362,7 @@ async def test_refund_flow_and_partial_state(
         event_id="evt-6", event_type="capture", order_reference=order.order_reference
     )
     await ProcessVerifiedWebhook(ctx)(
-        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body), secret=SECRET
+        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body)
     )
     partial = await RequestRefund(ctx)(
         uuid.UUID(order.id),
@@ -369,7 +387,7 @@ async def test_refund_is_idempotent(ctx: CommandContext, provider: FakePaymentPr
         event_id="evt-7", event_type="capture", order_reference=order.order_reference
     )
     await ProcessVerifiedWebhook(ctx)(
-        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body), secret=SECRET
+        provider_key="fake", raw_body=body, headers=provider.webhook_headers(body)
     )
     first = await RequestRefund(ctx)(
         uuid.UUID(order.id), RequestRefundInput(amount=1000, reason="full", idempotency_key="ref-3")

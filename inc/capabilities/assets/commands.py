@@ -11,8 +11,10 @@ commit. Provider credentials and signed URLs never enter the database.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+import warnings
+from dataclasses import dataclass, replace
 from datetime import UTC, timedelta
+from io import BytesIO
 from typing import Any
 
 from sqlalchemy import select
@@ -61,8 +63,11 @@ FINALIZE_WORKFLOW_KEY = "assets.finalize.v1"
 DELETE_WORKFLOW_KEY = "assets.delete.v1"
 FINALIZE_ACTIVITY_KEY = "assets.finalize.step.v1"
 DELETE_ACTIVITY_KEY = "assets.delete.step.v1"
+CONTENT_IMAGE_FINALIZE_WORKFLOW_KEY = "assets.contentimagefinalize.v1"
+CONTENT_IMAGE_NORMALIZE_ACTIVITY_KEY = "assets.contentimagenormalize.step.v1"
 
 INTENT_TTL_SECONDS = 60 * 60
+CONTENT_IMAGE_MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,43 +235,89 @@ class FinalizeAsset:
     async def __call__(self, intent_id: Any) -> FinalizeResultDTO:
         ctx = self._ctx
         _require_permission(ctx, PERMISSION_UPLOAD)
-        async with ctx.uow_factory() as read_uow:
-            intent: AssetUploadIntent | None = await read_uow.session.get(
-                AssetUploadIntent, intent_id
-            )
-        if intent is None:
-            raise KernelError(
-                code="assets.intent_not_found",
-                category=ErrorCategory.NOT_FOUND,
-                message=f"upload intent {intent_id}",
-            )
-        if (
-            intent.owner_subject_id is not None
-            and ctx.actor_id is not None
-            and intent.owner_subject_id != ctx.actor_id
-        ):
-            raise _forbidden("assets.forbidden", "upload intent belongs to another subject")
-        if intent.consumed_at is not None:
-            raise _conflict("assets.intent_consumed", "upload intent already consumed")
-        if _ensure_utc(intent.expires_at) < ctx.clock.utc_now():
-            raise _conflict("assets.intent_expired", "upload intent expired")
-        previous = await _workflow_status(ctx, FINALIZE_WORKFLOW_KEY, f"intent:{intent_id}")
-        if previous == "failed":
-            raise _conflict(
-                "assets.finalize_failed",
-                "finalize previously failed with a permanent error; create a new upload intent",
-            )
-        try:
-            await ctx.runner.start(
-                workflow_key=FINALIZE_WORKFLOW_KEY,
-                idempotency_key=f"intent:{intent_id}",
-                input_data={"intent_id": str(intent_id)},
-                trace_id=ctx.trace_id,
-            )
-        except IntegrityError:
-            # concurrent start: the workflow already exists, treat as started
-            pass
-        return FinalizeResultDTO(intent_id=str(intent_id), object_key=intent.object_key)
+        return await _start_finalize_workflow(
+            ctx,
+            intent_id,
+            workflow_key=FINALIZE_WORKFLOW_KEY,
+            idempotency_key=f"intent:{intent_id}",
+            input_data={"intent_id": str(intent_id)},
+        )
+
+
+class FinalizeContentImage:
+    """Start assets-owned upload verification and image normalization.
+
+    The content-bucket feature calls this public capability command once. A
+    two-step assets workflow then verifies the private upload and produces a
+    public WebP derivative. Polling its result is read-only and never needs
+    to re-run a feature command.
+    """
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, intent_id: Any, *, max_edge: int, quality: int) -> FinalizeResultDTO:
+        ctx = self._ctx
+        _require_permission(ctx, PERMISSION_UPLOAD)
+        _require_permission(ctx, PERMISSION_MANAGE)
+        if not 1 <= max_edge <= 8192 or not 40 <= quality <= 100:
+            raise _validation("assets.invalid_image_profile", "invalid image normalization profile")
+        return await _start_finalize_workflow(
+            ctx,
+            intent_id,
+            workflow_key=CONTENT_IMAGE_FINALIZE_WORKFLOW_KEY,
+            idempotency_key=f"content-intent:{intent_id}",
+            input_data={
+                "intent_id": str(intent_id),
+                "max_edge": max_edge,
+                "quality": quality,
+            },
+        )
+
+
+async def _start_finalize_workflow(
+    ctx: CommandContext,
+    intent_id: Any,
+    *,
+    workflow_key: str,
+    idempotency_key: str,
+    input_data: dict[str, Any],
+) -> FinalizeResultDTO:
+    async with ctx.uow_factory() as read_uow:
+        intent: AssetUploadIntent | None = await read_uow.session.get(AssetUploadIntent, intent_id)
+    if intent is None:
+        raise KernelError(
+            code="assets.intent_not_found",
+            category=ErrorCategory.NOT_FOUND,
+            message=f"upload intent {intent_id}",
+        )
+    if (
+        intent.owner_subject_id is not None
+        and ctx.actor_id is not None
+        and intent.owner_subject_id != ctx.actor_id
+    ):
+        raise _forbidden("assets.forbidden", "upload intent belongs to another subject")
+    if intent.consumed_at is not None:
+        raise _conflict("assets.intent_consumed", "upload intent already consumed")
+    if _ensure_utc(intent.expires_at) < ctx.clock.utc_now():
+        raise _conflict("assets.intent_expired", "upload intent expired")
+    previous = await _workflow_status(ctx, workflow_key, idempotency_key)
+    if previous == "failed":
+        raise _conflict(
+            "assets.finalize_failed",
+            "finalize previously failed with a permanent error; create a new upload intent",
+        )
+    try:
+        await ctx.runner.start(
+            workflow_key=workflow_key,
+            idempotency_key=idempotency_key,
+            input_data=input_data,
+            trace_id=ctx.trace_id,
+        )
+    except IntegrityError:
+        # concurrent start: the workflow already exists, treat as started
+        pass
+    return FinalizeResultDTO(intent_id=str(intent_id), object_key=intent.object_key)
 
 
 class RegisterExternalAsset:
@@ -337,6 +388,178 @@ class RegisterExternalAsset:
                     f"object {input_.object_key!r} is already registered",
                 ) from exc
             return _to_ref(row)
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedImageResult:
+    asset: AssetRefDTO
+    public_url: str
+
+
+class NormalizeContentImage:
+    """Replace a ready private upload with a normalized public WebP asset.
+
+    The feature chooses the content profile; this capability owns every
+    storage read/write/delete and never exposes the S3 client to a feature.
+    """
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(
+        self, source_asset_id: Any, *, max_edge: int, quality: int
+    ) -> NormalizedImageResult:
+        ctx = self._ctx
+        _require_permission(ctx, PERMISSION_MANAGE)
+        if not 1 <= max_edge <= 8192 or not 40 <= quality <= 100:
+            raise _validation("assets.invalid_image_profile", "invalid image normalization profile")
+        async with ctx.uow_factory() as uow:
+            source: AssetObject | None = await uow.session.get(AssetObject, source_asset_id)
+        if source is None:
+            raise KernelError(
+                code="assets.not_found",
+                category=ErrorCategory.NOT_FOUND,
+                message=f"asset {source_asset_id}",
+            )
+        if source.state != "ready" or source.deleted_at is not None or source.bucket == "content":
+            raise _conflict("assets.not_normalizable", "asset is not a private ready upload")
+        if source.byte_size > CONTENT_IMAGE_MAX_SOURCE_BYTES:
+            await self._discard_source(source)
+            raise permanent_storage_error("assets.image_too_large", "source image exceeds 20 MiB")
+        provider = _provider(ctx, source.provider_key)
+        object_key: str | None = None
+        try:
+            raw = await provider.read_bytes(bucket=source.bucket, object_key=source.object_key)
+            if len(raw) > CONTENT_IMAGE_MAX_SOURCE_BYTES:
+                raise permanent_storage_error(
+                    "assets.image_too_large", "source image exceeds 20 MiB"
+                )
+            normalized = _normalize_webp(raw, max_edge=max_edge, quality=quality)
+            object_key = _new_content_object_key()
+            stat = await provider.put_bytes(
+                bucket="content", object_key=object_key, body=normalized, mime_type="image/webp"
+            )
+            public_url = await provider.public_url(bucket="content", object_key=object_key)
+        except Exception:
+            if object_key is not None:
+                try:
+                    await provider.delete(bucket="content", object_key=object_key)
+                except Exception:  # noqa: BLE001 - preserve the original transform failure
+                    pass
+            await self._discard_source(source)
+            raise
+        assert object_key is not None
+        final: AssetObject | None = None
+        try:
+            async with ctx.uow_factory() as uow:
+                current: AssetObject | None = await uow.session.get(AssetObject, source.id)
+                if current is None or current.state != "ready":
+                    raise _conflict(
+                        "assets.source_changed", "source asset changed during normalization"
+                    )
+                final = AssetObject(
+                    provider_key=source.provider_key,
+                    bucket="content",
+                    object_key=object_key,
+                    mime_type="image/webp",
+                    byte_size=stat.byte_size,
+                    checksum_sha256=stat.checksum_sha256,
+                    asset_metadata=AssetMetadata(
+                        values={
+                            "public_url": public_url,
+                            "normalized": True,
+                            "source_asset_id": str(source.id),
+                        }
+                    ),
+                    state="ready",
+                )
+                uow.session.add(final)
+                current.state = "deleted"
+                current.deleted_at = ctx.clock.utc_now()
+                current.external_deleted_at = ctx.clock.utc_now()
+                await _append_audit(
+                    ctx,
+                    uow,
+                    action="assets.content_image.normalized",
+                    target_type="asset",
+                    target_id=str(final.id),
+                    details={"source_asset_id": str(source.id), "object_key": object_key},
+                )
+                await uow.session.flush()
+                await uow.commit()
+        except Exception:
+            try:
+                await provider.delete(bucket="content", object_key=object_key)
+            except Exception:  # noqa: BLE001 - preserve the database failure
+                pass
+            raise
+        try:
+            await provider.delete(bucket=source.bucket, object_key=source.object_key)
+        except StorageError:
+            # The source is already logically deleted and the cleanup worker will reconcile it.
+            pass
+        assert final is not None
+        return NormalizedImageResult(asset=_to_ref(final), public_url=public_url)
+
+    async def _discard_source(self, source: AssetObject) -> None:
+        """Best-effort source cleanup on every failed transform; originals never persist."""
+
+        ctx = self._ctx
+        provider = _provider(ctx, source.provider_key)
+        try:
+            await provider.delete(bucket=source.bucket, object_key=source.object_key)
+        except Exception:  # noqa: BLE001 - source cleanup cannot mask validation failure
+            pass
+        async with ctx.uow_factory() as uow:
+            row: AssetObject | None = await uow.session.get(AssetObject, source.id)
+            if row is not None and row.state == "ready":
+                row.state = "deleted"
+                row.deleted_at = ctx.clock.utc_now()
+                row.external_deleted_at = ctx.clock.utc_now()
+                await uow.commit()
+
+
+def _new_content_object_key() -> str:
+    raw = uuid.uuid4().hex
+    return f"content/{raw[:2]}/{raw}.webp"
+
+
+def _normalize_webp(raw: bytes, *, max_edge: int, quality: int) -> bytes:
+    """Decode only raster images and write a bounded, single-frame WebP."""
+
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - dependency is a release requirement
+        raise storage_error("image processing dependency is unavailable") from exc
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(raw)) as source:
+                source.verify()
+            with Image.open(BytesIO(raw)) as source:
+                if source.format not in {"JPEG", "PNG", "WEBP"} or getattr(
+                    source, "is_animated", False
+                ):
+                    raise permanent_storage_error(
+                        "assets.unsupported_image",
+                        "only non-animated JPEG, PNG and WebP images are allowed",
+                    )
+                source.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+                image = source.convert("RGBA" if "A" in source.getbands() else "RGB")
+                output = BytesIO()
+                image.save(output, format="WEBP", quality=quality, method=6)
+                return output.getvalue()
+    except StorageError:
+        raise
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        OSError,
+        ValueError,
+    ) as exc:
+        raise permanent_storage_error(
+            "assets.invalid_image", "image could not be normalized"
+        ) from exc
 
 
 class UpdateAssetMetadata:
@@ -509,6 +732,48 @@ class FinalizeActivity:
         return {"skipped": False, "asset_state": "ready", "asset_id": str(row.id)}
 
 
+class NormalizeContentImageActivity:
+    """Second step of the assets-owned content image workflow."""
+
+    def __init__(self, *, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(
+        self, uow: UnitOfWork, data: dict[str, Any], activity_ctx: ActivityContext
+    ) -> dict[str, Any]:
+        del uow, activity_ctx
+        workflow = data.get("workflow", {})
+        finalized = data.get("state", {}).get(FINALIZE_ACTIVITY_KEY, {})
+        asset_id = finalized.get("asset_id")
+        if not isinstance(asset_id, str):
+            raise KernelError(
+                code="assets.content_image_invalid_input",
+                category=ErrorCategory.INTERNAL,
+                message="content image workflow is missing its finalized source asset",
+            )
+        try:
+            max_edge = int(workflow["max_edge"])
+            quality = int(workflow["quality"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise KernelError(
+                code="assets.content_image_invalid_input",
+                category=ErrorCategory.INTERNAL,
+                message="content image workflow has an invalid image profile",
+            ) from exc
+        # The initiating command checked caller permissions. This durable
+        # activity runs later without an HTTP principal, so it grants only
+        # the internal capability permission needed for the public command.
+        result = await NormalizeContentImage(
+            replace(self._ctx, permissions=frozenset({PERMISSION_MANAGE}))
+        )(uuid.UUID(asset_id), max_edge=max_edge, quality=quality)
+        return {
+            "asset_id": result.asset.id,
+            "public_url": result.public_url,
+            "mime_type": result.asset.mime_type,
+            "byte_size": result.asset.byte_size,
+        }
+
+
 class DeleteActivity:
     """Provider delete + external_deleted_at in one step commit; idempotent.
 
@@ -632,7 +897,25 @@ def build_asset_workflow_specs(ctx: CommandContext) -> tuple[WorkflowSpec, ...]:
             ),
         ),
     )
-    return finalize, delete
+    content_image_finalize = WorkflowSpec(
+        key=CONTENT_IMAGE_FINALIZE_WORKFLOW_KEY,
+        version="1",
+        activities=(
+            ActivitySpec(
+                key=FINALIZE_ACTIVITY_KEY,
+                timeout_seconds=30.0,
+                retry=RetryPolicy(max_attempts=5, base_delay_seconds=1.0),
+                handler=FinalizeActivity(ctx=ctx),
+            ),
+            ActivitySpec(
+                key=CONTENT_IMAGE_NORMALIZE_ACTIVITY_KEY,
+                timeout_seconds=60.0,
+                retry=RetryPolicy(max_attempts=3, base_delay_seconds=1.0),
+                handler=NormalizeContentImageActivity(ctx=ctx),
+            ),
+        ),
+    )
+    return finalize, delete, content_image_finalize
 
 
 def register_asset_workflows(registry: WorkflowRegistry, *, ctx: CommandContext) -> None:

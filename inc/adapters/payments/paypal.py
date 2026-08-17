@@ -16,25 +16,25 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import requests
 
 from inc.capabilities.payments.ports import (
+    CNY,
     PaymentStatus,
     ProviderError,
     ProviderRefund,
     ProviderSession,
     WebhookEvent,
+    WebhookRequest,
     WebhookVerificationError,
 )
-from inc.kernel.errors import ErrorCategory, KernelError
+from inc.kernel.errors import ErrorCategory
 
 _SANDBOX_API = "https://api-m.sandbox.paypal.com"
 _PRODUCTION_API = "https://api-m.paypal.com"
 _WEBHOOK_MAX_AGE_SECONDS = 10 * 60
-_ZERO_DECIMAL_CURRENCIES = frozenset({"JPY", "KRW"})
-_THREE_DECIMAL_CURRENCIES = frozenset({"BHD", "JOD", "KWD", "OMR", "TND"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,88 +59,64 @@ class PaypalPaymentProvider:
 
     key = "paypal"
 
-    def __init__(self, config: PaypalConfig, *, client: Any | None = None) -> None:
-        self._config = config
+    def __init__(
+        self,
+        config: PaypalConfig | None = None,
+        *,
+        settings_queries: Any | None = None,
+        client: Any | None = None,
+    ) -> None:
+        self._config = config or PaypalConfig(client_id="", client_secret="", webhook_id="")
+        self._settings_queries = settings_queries
         self._client_instance = client
 
-    @classmethod
-    def from_settings(cls, settings: Any) -> PaypalPaymentProvider:
-        """Build from typed API settings and fail closed in production."""
+    async def _configure(self) -> None:
+        """Read the selected provider configuration at call time, never at boot."""
 
-        configured_environment = str(getattr(settings, "paypal_environment", "sandbox"))
-        environment: Literal["sandbox", "production"] = (
-            "production" if configured_environment == "production" else "sandbox"
+        if self._settings_queries is None:
+            return
+        group = await self._settings_queries.get_group("payments")
+        values = group.values
+        secret = values.get("paypal_client_secret")
+        getter = getattr(secret, "get_secret_value", None)
+        config = PaypalConfig(
+            client_id=str(values.get("paypal_client_id") or "").strip(),
+            client_secret=str(getter() if getter is not None else secret or "").strip(),
+            webhook_id=str(values.get("paypal_webhook_id") or "").strip(),
+            environment=(
+                "production"
+                if str(values.get("paypal_environment") or "sandbox") == "production"
+                else "sandbox"
+            ),
         )
-        if getattr(settings, "environment", "dev") == "production":
-            # A production application may not accidentally point at the
-            # sandbox even when the provider-specific setting was omitted.
-            environment = "production"
-        client_id = getattr(settings, "paypal_client_id", None)
-        raw_secret = getattr(settings, "paypal_client_secret", None)
-        if raw_secret is None:
-            client_secret: str | None = None
-        elif hasattr(raw_secret, "get_secret_value"):
-            client_secret = cast(str, raw_secret.get_secret_value())
-        else:
-            client_secret = cast(str, raw_secret)
-        client_id = cast(str | None, client_id)
-        webhook_id = cast(str | None, getattr(settings, "paypal_webhook_id", None))
-        return_url = cast(str | None, getattr(settings, "paypal_return_url", None))
-        cancel_url = cast(str | None, getattr(settings, "paypal_cancel_url", None))
+        if config != self._config:
+            self._config = config
+            self._client_instance = None
         missing = [
             name
             for name, value in (
-                ("AIYA_PAYPAL_CLIENT_ID", client_id),
-                ("AIYA_PAYPAL_CLIENT_SECRET", client_secret),
-                ("AIYA_PAYPAL_WEBHOOK_ID", webhook_id),
+                ("paypal_client_id", config.client_id),
+                ("paypal_client_secret", config.client_secret),
+                ("paypal_webhook_id", config.webhook_id),
             )
-            if not isinstance(value, str) or not value.strip()
+            if not value
         ]
-        if environment == "production":
-            missing.extend(
-                name
-                for name, value in (
-                    ("AIYA_PAYPAL_RETURN_URL", return_url),
-                    ("AIYA_PAYPAL_CANCEL_URL", cancel_url),
-                )
-                if not isinstance(value, str) or not value.strip()
-            )
         if missing:
-            if environment == "production":
-                raise KernelError(
-                    code="payments.paypal_configuration_missing",
-                    category=ErrorCategory.INTERNAL,
-                    message="PayPal production configuration is incomplete",
-                    details={"missing": missing},
-                )
-            # Dev/test boot remains import-safe, but a payment attempt fails
-            # explicitly instead of silently becoming a fake transaction.
-            return cls(
-                PaypalConfig(
-                    client_id=client_id or "",
-                    client_secret=client_secret or "",
-                    webhook_id=webhook_id or "",
-                    environment="sandbox",
-                    return_url=return_url,
-                    cancel_url=cancel_url,
-                )
+            raise ProviderError(
+                code="payments.provider_unavailable",
+                message="PayPal is unavailable because required settings are missing",
+                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                permanent=True,
             )
-        return cls(
-            PaypalConfig(
-                client_id=client_id or "",
-                client_secret=client_secret or "",
-                webhook_id=webhook_id or "",
-                environment=environment,
-                return_url=return_url,
-                cancel_url=cancel_url,
-            )
-        )
 
-    @property
-    def webhook_secret(self) -> str:
-        """The webhook id passed through the existing provider secret Port."""
+    async def check_availability(self) -> tuple[bool, str | None]:
+        """Validate the selected settings without leaking configuration values."""
 
-        return self._config.webhook_id
+        try:
+            await self._configure()
+        except ProviderError as exc:
+            return False, exc.code
+        return True, None
 
     async def create_payment(
         self,
@@ -151,7 +127,13 @@ class PaypalPaymentProvider:
         idempotency_key: str,
         return_url: str,
         cancel_url: str,
+        notify_url: str = "",
+        description: str = "",
+        client_ip: str = "",
     ) -> ProviderSession:
+        del notify_url, description, client_ip
+        await self._configure()
+        _require_cny(currency)
         client = self._require_client()
         from paypalserversdk.models.amount_with_breakdown import (  # type: ignore[import-untyped]
             AmountWithBreakdown,
@@ -211,9 +193,12 @@ class PaypalPaymentProvider:
                 category=ErrorCategory.INTERNAL,
                 permanent=True,
             )
-        return ProviderSession(provider_ref=provider_ref, url=approval_url, requires_action=True)
+        return ProviderSession(
+            provider_ref=provider_ref, redirect_url=approval_url, requires_action=True
+        )
 
     async def get_payment(self, *, provider_ref: str) -> PaymentStatus:
+        await self._configure()
         client = self._require_client()
         response = await self._call(client.orders.get_order, {"id": provider_ref})
         body = _response_body(response)
@@ -221,10 +206,11 @@ class PaypalPaymentProvider:
         captured_amount, currency = _captured_amount(body)
         return PaymentStatus(state=state, captured_amount=captured_amount, currency=currency)
 
-    async def verify_webhook(
-        self, *, raw_body: bytes, headers: dict[str, str], secret: str
-    ) -> WebhookEvent:
+    async def verify_webhook(self, *, request: WebhookRequest) -> WebhookEvent:
         """Verify a PayPal transmission using the official verification endpoint."""
+
+        await self._configure()
+        raw_body, headers, secret = request.raw_body, request.headers, self._config.webhook_id
 
         try:
             payload = json.loads(raw_body)
@@ -293,6 +279,8 @@ class PaypalPaymentProvider:
         idempotency_key: str,
         reason: str,
     ) -> ProviderRefund:
+        await self._configure()
+        _require_cny(currency)
         client = self._require_client()
         capture_ref = await self._resolve_capture_ref(client, payment_ref)
         from paypalserversdk.models.money import Money  # type: ignore[import-untyped]
@@ -318,6 +306,7 @@ class PaypalPaymentProvider:
         return _refund_result(_response_body(response), fallback_state="pending")
 
     async def get_refund(self, *, refund_ref: str) -> ProviderRefund:
+        await self._configure()
         client = self._require_client()
         response = await self._call(client.payments.get_refund, {"refund_id": refund_ref})
         return _refund_result(_response_body(response), fallback_state="pending")
@@ -325,6 +314,7 @@ class PaypalPaymentProvider:
     def _require_client(self) -> Any:
         if not self._config.client_id or not self._config.client_secret:
             raise ProviderError(
+                code="payments.provider_unavailable",
                 message="PayPal credentials are not configured",
                 category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
                 permanent=True,
@@ -389,37 +379,45 @@ class PaypalPaymentProvider:
             raise
         except Exception as exc:  # SDK errors are normalized at this boundary.
             raise ProviderError(
+                code="payments.provider_unavailable",
                 message=f"PayPal request failed: {type(exc).__name__}",
                 category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
             ) from exc
 
 
 def _minor_to_major(amount: int, currency: str) -> str:
-    decimals = _currency_decimals(currency)
-    value = Decimal(amount) / (Decimal(10) ** decimals)
-    return f"{value:.{decimals}f}"
+    _require_cny(currency)
+    if amount <= 0:
+        raise ProviderError(
+            message="payment amount must be positive",
+            category=ErrorCategory.VALIDATION,
+            permanent=True,
+        )
+    value = Decimal(amount) / Decimal(100)
+    return f"{value:.2f}"
 
 
 def _major_to_minor(value: Any, currency: str) -> int:
+    if currency.upper() != CNY:
+        raise WebhookVerificationError("payments only support CNY")
     try:
         numeric = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise WebhookVerificationError("invalid PayPal amount") from exc
-    scaled = (numeric * (Decimal(10) ** _currency_decimals(currency))).quantize(
-        Decimal("1"), rounding=ROUND_HALF_UP
-    )
+    scaled = (numeric * Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     if scaled <= 0:
         raise WebhookVerificationError("PayPal amount must be positive")
     return int(scaled)
 
 
-def _currency_decimals(currency: str) -> int:
-    code = currency.upper()
-    if code in _ZERO_DECIMAL_CURRENCIES:
-        return 0
-    if code in _THREE_DECIMAL_CURRENCIES:
-        return 3
-    return 2
+def _require_cny(currency: str) -> None:
+    if currency.upper() != CNY:
+        raise ProviderError(
+            code="payments.currency_unsupported",
+            message="payments only support CNY",
+            category=ErrorCategory.VALIDATION,
+            permanent=True,
+        )
 
 
 def _ensure_success(response: Any) -> None:

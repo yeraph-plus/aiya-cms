@@ -1,15 +1,8 @@
-"""Site settings feature: declarative settings groups in one place.
+"""Code-owned site settings declarations.
 
-Contract source: context/spec/features.md §4.5, context/spec/capabilities/settings.md §2/§5.
-
-The site_settings feature owns the site-level settings group
-declarations (general, seo, notification, object_storage, entitlements,
-operations and payments). settings itself stays a
-passive host: it persists, validates, gates by permission and serves
-groups that downstream code declares. SMTP connection credentials
-(host/port/username/password/from_address, use_tls/starttls) are filled
-through the ``notification`` group; the password is registered as a
-sensitive field and never leaves the admin/private surface.
+The backend exports only stable field identities, value types and structural
+constraints.  Labels, help text, placeholders and option captions are owned
+by the localized administration client.
 """
 
 from __future__ import annotations
@@ -27,7 +20,7 @@ from inc.capabilities.settings import (
 )
 from inc.kernel.boot import FeatureSpec
 
-spec = FeatureSpec(name="site_settings", version="1", requires=("settings",))
+spec = FeatureSpec(name="site_settings", version="2", requires=("settings",))
 
 GENERAL_GROUP_KEY = "general"
 SEO_GROUP_KEY = "seo"
@@ -64,7 +57,7 @@ class NotificationValueSchema(BaseModel):
 
     default_from_name: str = Field(default="aiya", max_length=100)
     email_enabled: bool = False
-    default_channel: str = Field(default="email", max_length=20)
+    default_channel: Literal["email"] = "email"
     email_provider: Literal["email.smtp", "email.smtp2go"] = "email.smtp"
     smtp_enabled: bool = False
     smtp_host: str = Field(default="", max_length=200)
@@ -86,13 +79,6 @@ class NotificationValueSchema(BaseModel):
 
 
 class EntitlementsValueSchema(BaseModel):
-    """Configurable entitlement amounts awarded by business flows.
-
-    Points grants are never computed here; these values are read by
-    features (registration reward, invite reward, gift quota) and passed
-    as fixed amounts to points behaviors. All values are whole points.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     registration_reward: int = Field(default=0, ge=0, le=1_000_000)
@@ -101,46 +87,50 @@ class EntitlementsValueSchema(BaseModel):
 
 
 class ObjectStorageValueSchema(BaseModel):
-    """S3-compatible endpoint and credentials for the assets adapter."""
-
     model_config = ConfigDict(extra="forbid")
 
-    s3_endpoint_url: str = Field(default="", max_length=500)
     storage_provider: Literal["s3"] = "s3"
+    s3_endpoint_url: str = Field(default="", max_length=500)
     s3_virtual_host_url: str = Field(default="", max_length=500)
+    s3_public_base_url: str = Field(default="", max_length=500)
     s3_bucket: str = Field(default="aiya-assets", max_length=200)
     s3_avatar_bucket: str = Field(default="aiya-avatars", max_length=200)
+    s3_content_bucket: str = Field(default="aiya-content", max_length=200)
     s3_region: str = Field(default="us-east-1", max_length=100)
     s3_addressing_style: Literal["path", "virtual"] = "path"
     s3_access_key_id: SecretStr | None = Field(default=None, max_length=200)
     s3_secret_access_key: SecretStr | None = Field(default=None, max_length=200)
+    content_image_max_edge: int = Field(default=2560, ge=1, le=8192)
+    content_image_webp_quality: int = Field(default=85, ge=40, le=100)
 
 
 class OperationsValueSchema(BaseModel):
-    """Operational retention policy consumed by explicit maintenance tasks."""
-
     model_config = ConfigDict(extra="forbid")
 
     audit_retention_days: int = Field(default=30, ge=1, le=3650)
 
 
 class PaymentsValueSchema(BaseModel):
-    """Runtime payment provider choice; credentials remain provider-owned."""
-
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["dev_fake", "paypal"] | None = None
+    provider: Literal["paypal", "epay"] = "paypal"
+    paypal_environment: Literal["sandbox", "production"] = "sandbox"
+    paypal_client_id: str = Field(default="", max_length=200)
+    paypal_client_secret: SecretStr | None = Field(default=None, max_length=200)
+    paypal_webhook_id: str = Field(default="", max_length=200)
+    epay_gateway_url: str = Field(default="", max_length=500)
+    epay_merchant_id: str = Field(default="", max_length=200)
+    epay_merchant_key: SecretStr | None = Field(default=None, max_length=200)
+    epay_payment_type: str = Field(default="alipay", max_length=50)
 
 
-def _option(label: str, value: str | int | float | bool | None) -> SettingOption:
-    return SettingOption(label=label, value=value)
+def _option(value: str | int | float | bool | None) -> SettingOption:
+    return SettingOption(value=value)
 
 
 GENERAL_FIELDS = (
     SettingFieldSpec(
         slug="site_tagline",
-        title="Site tagline",
-        desc="Short tagline shown with the site identity.",
         type="text",
         default="",
         metadata=SettingFieldMetadata(max_length=200),
@@ -148,8 +138,6 @@ GENERAL_FIELDS = (
     ),
     SettingFieldSpec(
         slug="site_logo_asset_id",
-        title="Site logo",
-        desc="Image asset used as the site logo.",
         type="upload",
         type_sub="single",
         default=None,
@@ -158,41 +146,26 @@ GENERAL_FIELDS = (
     ),
     SettingFieldSpec(
         slug="default_locale",
-        title="Default locale",
-        desc="Locale used when a request does not specify one.",
         type="select",
         type_sub="string",
         default="zh-CN",
-        metadata=SettingFieldMetadata(
-            options=(_option("简体中文", "zh-CN"), _option("English", "en-US")),
-        ),
+        metadata=SettingFieldMetadata(options=(_option("zh-CN"), _option("en-US"))),
         public=True,
     ),
     SettingFieldSpec(
         slug="default_timezone",
-        title="Default timezone",
-        desc="Timezone used for site-level date and time display.",
         type="text",
         type_sub="timezone",
         default="Asia/Shanghai",
         metadata=SettingFieldMetadata(max_length=50),
         public=True,
     ),
-    SettingFieldSpec(
-        slug="maintenance_mode",
-        title="Maintenance mode",
-        desc="Whether the site is in maintenance mode.",
-        type="bool",
-        default=False,
-        public=True,
-    ),
+    SettingFieldSpec(slug="maintenance_mode", type="bool", default=False, public=True),
 )
 
 SEO_FIELDS = (
     SettingFieldSpec(
         slug="site_name",
-        title="Site name",
-        desc="Canonical site name used by the frontend.",
         type="text",
         default="aiya",
         metadata=SettingFieldMetadata(max_length=100),
@@ -200,8 +173,6 @@ SEO_FIELDS = (
     ),
     SettingFieldSpec(
         slug="default_title_template",
-        title="Default title template",
-        desc="Template for pages that do not provide their own title.",
         type="text",
         default="{title} - aiya",
         metadata=SettingFieldMetadata(max_length=200),
@@ -209,8 +180,6 @@ SEO_FIELDS = (
     ),
     SettingFieldSpec(
         slug="default_description",
-        title="Default description",
-        desc="Default description for pages without a custom description.",
         type="textarea",
         default="",
         metadata=SettingFieldMetadata(rows=4, max_length=300),
@@ -218,8 +187,6 @@ SEO_FIELDS = (
     ),
     SettingFieldSpec(
         slug="default_share_image_asset_id",
-        title="Default share image",
-        desc="Asset used when a page does not provide a share image.",
         type="upload",
         type_sub="single",
         default=None,
@@ -228,25 +195,21 @@ SEO_FIELDS = (
     ),
     SettingFieldSpec(
         slug="robots_policy",
-        title="Robots policy",
-        desc="Default robots policy exposed to the frontend.",
         type="select",
         type_sub="string",
         default="index,follow",
         metadata=SettingFieldMetadata(
             options=(
-                _option("Index and follow", "index,follow"),
-                _option("No index and no follow", "noindex,nofollow"),
-                _option("Index and no follow", "index,nofollow"),
-                _option("No index and follow", "noindex,follow"),
+                _option("index,follow"),
+                _option("noindex,nofollow"),
+                _option("index,nofollow"),
+                _option("noindex,follow"),
             )
         ),
         public=True,
     ),
     SettingFieldSpec(
         slug="canonical_host",
-        title="Canonical host",
-        desc="Optional canonical host used by the frontend.",
         type="text",
         type_sub="url",
         default=None,
@@ -258,79 +221,43 @@ SEO_FIELDS = (
 NOTIFICATION_FIELDS = (
     SettingFieldSpec(
         slug="default_from_name",
-        title="Default sender name",
-        desc="Display name used for notification messages.",
         type="text",
         default="aiya",
         metadata=SettingFieldMetadata(max_length=100),
         public=True,
     ),
-    SettingFieldSpec(
-        slug="email_enabled",
-        title="Email enabled",
-        desc="Whether email delivery is enabled.",
-        type="bool",
-        default=False,
-        public=True,
-    ),
+    SettingFieldSpec(slug="email_enabled", type="bool", default=False, public=True),
     SettingFieldSpec(
         slug="default_channel",
-        title="Default channel",
-        desc="Channel selected when a notification does not specify one.",
         type="select",
         type_sub="string",
         default="email",
-        metadata=SettingFieldMetadata(options=(_option("Email", "email"),)),
+        metadata=SettingFieldMetadata(options=(_option("email"),)),
         public=True,
     ),
     SettingFieldSpec(
         slug="email_provider",
-        title="Email provider",
-        desc="Provider selected for the next email delivery.",
         type="select",
         type_sub="string",
         default="email.smtp",
-        metadata=SettingFieldMetadata(
-            options=(_option("SMTP", "email.smtp"), _option("SMTP2GO", "email.smtp2go")),
-        ),
-        public=False,
+        metadata=SettingFieldMetadata(options=(_option("email.smtp"), _option("email.smtp2go"))),
     ),
+    SettingFieldSpec(slug="smtp_enabled", type="bool", default=False),
     SettingFieldSpec(
-        slug="smtp_enabled",
-        title="SMTP enabled",
-        desc="Use the aiosmtplib SMTP provider when email delivery is enabled.",
-        type="bool",
-        default=False,
-    ),
-    SettingFieldSpec(
-        slug="smtp_host",
-        title="SMTP host",
-        desc="SMTP server hostname.",
-        type="text",
-        default="",
-        metadata=SettingFieldMetadata(max_length=200),
+        slug="smtp_host", type="text", default="", metadata=SettingFieldMetadata(max_length=200)
     ),
     SettingFieldSpec(
         slug="smtp_port",
-        title="SMTP port",
-        desc="SMTP server port.",
         type="text",
         type_sub="integer",
         default=25,
         metadata=SettingFieldMetadata(max_length=5),
     ),
     SettingFieldSpec(
-        slug="smtp_username",
-        title="SMTP username",
-        desc="Optional SMTP authentication username.",
-        type="text",
-        default="",
-        metadata=SettingFieldMetadata(max_length=200),
+        slug="smtp_username", type="text", default="", metadata=SettingFieldMetadata(max_length=200)
     ),
     SettingFieldSpec(
         slug="smtp_password",
-        title="SMTP password",
-        desc="Optional SMTP authentication password.",
         type="text",
         type_sub="password",
         default=None,
@@ -339,38 +266,16 @@ NOTIFICATION_FIELDS = (
     ),
     SettingFieldSpec(
         slug="smtp_from_address",
-        title="SMTP from address",
-        desc="Address used in the From header.",
         type="text",
         type_sub="email",
         default="no-reply@aiya.local",
         metadata=SettingFieldMetadata(max_length=200),
     ),
-    SettingFieldSpec(
-        slug="smtp_use_tls",
-        title="SMTP implicit TLS",
-        desc="Use TLS immediately when connecting to SMTP.",
-        type="bool",
-        default=False,
-    ),
-    SettingFieldSpec(
-        slug="smtp_starttls",
-        title="SMTP STARTTLS",
-        desc="Upgrade a plain SMTP connection with STARTTLS.",
-        type="bool",
-        default=False,
-    ),
-    SettingFieldSpec(
-        slug="smtp2go_enabled",
-        title="SMTP2GO enabled",
-        desc="Use the SMTP2GO REST provider when email delivery is enabled.",
-        type="bool",
-        default=False,
-    ),
+    SettingFieldSpec(slug="smtp_use_tls", type="bool", default=False),
+    SettingFieldSpec(slug="smtp_starttls", type="bool", default=False),
+    SettingFieldSpec(slug="smtp2go_enabled", type="bool", default=False),
     SettingFieldSpec(
         slug="smtp2go_api_key",
-        title="SMTP2GO API key",
-        desc="Write-only API key used for SMTP2GO REST requests.",
         type="text",
         type_sub="password",
         default=None,
@@ -379,26 +284,16 @@ NOTIFICATION_FIELDS = (
     ),
     SettingFieldSpec(
         slug="smtp2go_region",
-        title="SMTP2GO region",
-        desc="Fixed SMTP2GO API region endpoint.",
         type="select",
         type_sub="string",
         default="global",
-        metadata=SettingFieldMetadata(
-            options=(
-                _option("Global", "global"),
-                _option("United States", "us"),
-                _option("European Union", "eu"),
-            )
-        ),
+        metadata=SettingFieldMetadata(options=(_option("global"), _option("us"), _option("eu"))),
     ),
 )
 
 ENTITLEMENTS_FIELDS = (
     SettingFieldSpec(
         slug="registration_reward",
-        title="Registration reward",
-        desc="Points granted by the registration feature.",
         type="text",
         type_sub="integer",
         default=0,
@@ -407,8 +302,6 @@ ENTITLEMENTS_FIELDS = (
     ),
     SettingFieldSpec(
         slug="invite_reward",
-        title="Invite reward",
-        desc="Points granted by the invitation feature.",
         type="text",
         type_sub="integer",
         default=0,
@@ -417,8 +310,6 @@ ENTITLEMENTS_FIELDS = (
     ),
     SettingFieldSpec(
         slug="gift_quota",
-        title="Gift quota",
-        desc="Points available to the gift flow.",
         type="text",
         type_sub="integer",
         default=0,
@@ -430,17 +321,13 @@ ENTITLEMENTS_FIELDS = (
 OBJECT_STORAGE_FIELDS = (
     SettingFieldSpec(
         slug="storage_provider",
-        title="Storage provider",
-        desc="Provider selected for the next asset operation.",
         type="select",
         type_sub="string",
         default="s3",
-        metadata=SettingFieldMetadata(options=(_option("S3-compatible", "s3"),)),
+        metadata=SettingFieldMetadata(options=(_option("s3"),)),
     ),
     SettingFieldSpec(
         slug="s3_endpoint_url",
-        title="S3 endpoint URL",
-        desc="S3-compatible API endpoint.",
         type="text",
         type_sub="url",
         default="",
@@ -448,8 +335,13 @@ OBJECT_STORAGE_FIELDS = (
     ),
     SettingFieldSpec(
         slug="s3_virtual_host_url",
-        title="S3 virtual host URL",
-        desc="Optional virtual-host endpoint template.",
+        type="text",
+        type_sub="url",
+        default="",
+        metadata=SettingFieldMetadata(max_length=500),
+    ),
+    SettingFieldSpec(
+        slug="s3_public_base_url",
         type="text",
         type_sub="url",
         default="",
@@ -457,43 +349,37 @@ OBJECT_STORAGE_FIELDS = (
     ),
     SettingFieldSpec(
         slug="s3_bucket",
-        title="S3 bucket",
-        desc="System bucket used for site resources.",
         type="text",
         default="aiya-assets",
         metadata=SettingFieldMetadata(max_length=200),
     ),
     SettingFieldSpec(
         slug="s3_avatar_bucket",
-        title="S3 avatar bucket",
-        desc="Dedicated bucket used for user avatars.",
         type="text",
         default="aiya-avatars",
         metadata=SettingFieldMetadata(max_length=200),
     ),
     SettingFieldSpec(
+        slug="s3_content_bucket",
+        type="text",
+        default="aiya-content",
+        metadata=SettingFieldMetadata(max_length=200),
+    ),
+    SettingFieldSpec(
         slug="s3_region",
-        title="S3 region",
-        desc="S3 signing region.",
         type="text",
         default="us-east-1",
         metadata=SettingFieldMetadata(max_length=100),
     ),
     SettingFieldSpec(
         slug="s3_addressing_style",
-        title="S3 addressing style",
-        desc="Addressing mode used by the S3 client.",
         type="select",
         type_sub="string",
         default="path",
-        metadata=SettingFieldMetadata(
-            options=(_option("Path", "path"), _option("Virtual host", "virtual")),
-        ),
+        metadata=SettingFieldMetadata(options=(_option("path"), _option("virtual"))),
     ),
     SettingFieldSpec(
         slug="s3_access_key_id",
-        title="S3 access key ID",
-        desc="S3-compatible provider access key.",
         type="text",
         type_sub="password",
         default=None,
@@ -502,21 +388,31 @@ OBJECT_STORAGE_FIELDS = (
     ),
     SettingFieldSpec(
         slug="s3_secret_access_key",
-        title="S3 secret access key",
-        desc="S3-compatible provider secret key.",
         type="text",
         type_sub="password",
         default=None,
         metadata=SettingFieldMetadata(max_length=200),
         sensitive=True,
     ),
+    SettingFieldSpec(
+        slug="content_image_max_edge",
+        type="text",
+        type_sub="integer",
+        default=2560,
+        metadata=SettingFieldMetadata(max_length=4),
+    ),
+    SettingFieldSpec(
+        slug="content_image_webp_quality",
+        type="text",
+        type_sub="integer",
+        default=85,
+        metadata=SettingFieldMetadata(max_length=3),
+    ),
 )
 
 OPERATIONS_FIELDS = (
     SettingFieldSpec(
         slug="audit_retention_days",
-        title="Audit and execution log retention (days)",
-        desc="How many days audit and terminal automatic execution records are retained.",
         type="text",
         type_sub="integer",
         default=30,
@@ -527,14 +423,64 @@ OPERATIONS_FIELDS = (
 PAYMENTS_FIELDS = (
     SettingFieldSpec(
         slug="provider",
-        title="Payment provider",
-        desc="Provider selected for the next payment operation.",
         type="select",
         type_sub="string",
+        default="paypal",
+        metadata=SettingFieldMetadata(options=(_option("paypal"), _option("epay"))),
+    ),
+    SettingFieldSpec(
+        slug="paypal_environment",
+        type="select",
+        type_sub="string",
+        default="sandbox",
+        metadata=SettingFieldMetadata(options=(_option("sandbox"), _option("production"))),
+    ),
+    SettingFieldSpec(
+        slug="paypal_client_id",
+        type="text",
+        default="",
+        metadata=SettingFieldMetadata(max_length=200),
+    ),
+    SettingFieldSpec(
+        slug="paypal_client_secret",
+        type="text",
+        type_sub="password",
         default=None,
-        metadata=SettingFieldMetadata(
-            options=(_option("Development fake", "dev_fake"), _option("PayPal", "paypal")),
-        ),
+        metadata=SettingFieldMetadata(max_length=200),
+        sensitive=True,
+    ),
+    SettingFieldSpec(
+        slug="paypal_webhook_id",
+        type="text",
+        default="",
+        metadata=SettingFieldMetadata(max_length=200),
+    ),
+    SettingFieldSpec(
+        slug="epay_gateway_url",
+        type="text",
+        type_sub="url",
+        default="",
+        metadata=SettingFieldMetadata(max_length=500),
+    ),
+    SettingFieldSpec(
+        slug="epay_merchant_id",
+        type="text",
+        default="",
+        metadata=SettingFieldMetadata(max_length=200),
+    ),
+    SettingFieldSpec(
+        slug="epay_merchant_key",
+        type="text",
+        type_sub="password",
+        default=None,
+        metadata=SettingFieldMetadata(max_length=200),
+        sensitive=True,
+    ),
+    SettingFieldSpec(
+        slug="epay_payment_type",
+        type="text",
+        default="alipay",
+        metadata=SettingFieldMetadata(max_length=50),
     ),
 )
 
@@ -543,7 +489,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
     return (
         SettingGroupSpec(
             group_key=GENERAL_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=GeneralValueSchema,
             fields=GENERAL_FIELDS,
             update_permission="settings.general.update",
@@ -551,7 +497,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
         ),
         SettingGroupSpec(
             group_key=SEO_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=SeoValueSchema,
             fields=SEO_FIELDS,
             update_permission="settings.seo.update",
@@ -559,7 +505,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
         ),
         SettingGroupSpec(
             group_key=NOTIFICATION_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=NotificationValueSchema,
             fields=NOTIFICATION_FIELDS,
             update_permission="settings.notification.update",
@@ -567,7 +513,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
         ),
         SettingGroupSpec(
             group_key=ENTITLEMENTS_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=EntitlementsValueSchema,
             fields=ENTITLEMENTS_FIELDS,
             update_permission="settings.entitlements.update",
@@ -575,7 +521,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
         ),
         SettingGroupSpec(
             group_key=OBJECT_STORAGE_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=ObjectStorageValueSchema,
             fields=OBJECT_STORAGE_FIELDS,
             update_permission="settings.object_storage.update",
@@ -583,7 +529,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
         ),
         SettingGroupSpec(
             group_key=OPERATIONS_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=OperationsValueSchema,
             fields=OPERATIONS_FIELDS,
             update_permission="settings.operations.update",
@@ -591,7 +537,7 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
         ),
         SettingGroupSpec(
             group_key=PAYMENTS_GROUP_KEY,
-            version="1",
+            version="2",
             value_schema=PaymentsValueSchema,
             fields=PAYMENTS_FIELDS,
             update_permission="settings.payments.update",

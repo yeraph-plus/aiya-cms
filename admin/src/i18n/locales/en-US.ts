@@ -1,3 +1,5 @@
+import { enUS as settingMessages } from './setting-messages';
+
 export default {
     common: {
         refresh: 'Refresh',
@@ -606,7 +608,7 @@ export default {
             detail: 'Notification delivery detail',
             channel: 'Channel',
             provider: 'Provider',
-            specKey: 'Notification spec key',
+            triggerName: 'Trigger name',
             recipientId: 'Recipient ID',
             maskedAddress: 'Masked address',
             attempt: 'Attempt',
@@ -620,5 +622,6 @@ export default {
             cancelMessage: 'Only pending deliveries not yet handed to a provider can be cancelled.',
             retryMessage: 'Retry may invoke an external provider. Confirm the original delivery has no live lease before continuing.'
         }
-    }
+    },
+    ...settingMessages
 } as const;

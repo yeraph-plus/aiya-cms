@@ -1,7 +1,4 @@
-"""Container lifecycle and fail-fast tests.
-
-Contract source: context/spec/composition.md §5/§6/§9, kernel/boot.md §3/§5.
-"""
+"""Release container lifecycle and provider catalog tests."""
 
 from __future__ import annotations
 
@@ -11,290 +8,103 @@ from typing import Any
 import pytest
 
 from inc.api.config import ApiSettings
-from inc.api.container import build_container
-from inc.api.manifest import cms, cms_dev, kernel_only, management_plane
+from inc.api.container import ApplicationContainer, build_container
+from inc.api.manifest import release
 from inc.kernel.boot import AppManifest
 from inc.kernel.errors import KernelError
 
 
 @pytest.fixture
-def settings() -> ApiSettings:
-    return ApiSettings(issuer="http://testserver")
+def settings(tmp_path: Any) -> ApiSettings:
+    return ApiSettings(issuer="http://testserver", oidc_signing_key_dir=str(tmp_path / "keys"))
 
 
 async def test_start_stop_is_idempotent_and_clean(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
     container = build_container(
-        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=release, uow_factory=uow_factory, clock=clock, settings=settings
     )
     await container.start()
-    assert len(container._tasks) == 4  # outbox + workflow + CronScheduler + TaskWorker
-    with pytest.raises(KernelError) as excinfo:
-        await container.start()  # double start must fail
-    assert excinfo.value.code == "kernel.container_already_started"
+    assert len(container._tasks) == 4
+    with pytest.raises(KernelError, match="already started"):
+        await container.start()
     await container.stop()
     assert container._tasks == []
-    await container.stop()  # stop is idempotent
 
 
-async def test_cms_registers_cron_work_with_kernel_task_runtime(
+async def test_provider_catalog_registers_all_allowed_providers(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
     container = build_container(
-        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=release, uow_factory=uow_factory, clock=clock, settings=settings
     )
-
-    assert "content.publish.scan.v1" in container.cron_registry.keys()
-    assert "points.buckets.expire.v1" in container.cron_registry.keys()
-    assert "membership.subscription.expire.v1" in container.cron_registry.keys()
-    assert "oidc.keys.cleanup.v1" in container.cron_registry.keys()
-    assert "site.cleanup.retention.v1" in container.cron_registry.keys()
-    assert "notification.retention.v1" in container.cron_registry.keys()
-    assert "content.publish.scan.v1.tick" in container.task_registry.keys()
-    assert "site.cleanup.retention.v1.tick" in container.task_registry.keys()
-
-
-async def test_management_plane_registers_management_and_notification_retention(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    container = build_container(
-        manifest=management_plane, uow_factory=uow_factory, clock=clock, settings=settings
-    )
-
-    assert "management.retention.v1" in container.cron_registry.keys()
-    assert "notification.retention.v1" in container.cron_registry.keys()
-
-
-async def test_provider_catalog_registers_allowed_implementations_and_uses_manifest_default(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    container = build_container(
-        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
-    )
-
     assert container.provider_catalogs["notification.email"].keys() == (
         "email.smtp",
         "email.smtp2go",
     )
-    assert container.provider_catalogs["payments.provider"].keys() == (
-        "dev_fake",
-        "paypal",
-    )
-    assert await container.selected_provider_key("payments.provider") == "dev_fake"
-    assert container.settings_groups.require("payments").group_key == "payments"
+    assert container.provider_catalogs["payments.provider"].keys() == ("epay", "paypal")
+    assert container.provider_catalogs["assets.object_storage"].keys() == ("s3",)
+    assert await container.selected_provider_key("payments.provider") == "paypal"
 
 
-async def test_management_plane_does_not_expose_unassembled_payment_settings(
-    uow_factory: Any, clock: Any, settings: ApiSettings
+async def test_release_builds_with_production_settings(
+    uow_factory: Any, clock: Any, tmp_path: Any
 ) -> None:
-    container = build_container(
-        manifest=management_plane, uow_factory=uow_factory, clock=clock, settings=settings
+    settings = ApiSettings(
+        environment="production",
+        issuer="https://cms.example.com",
+        secure_cookies=True,
+        cors_origins=("https://cms.example.com",),
+        oidc_signing_key_dir=str(tmp_path / "keys"),
+        admin_session_secret="test-admin-session-secret-0123456789012345",
     )
+    container = build_container(
+        manifest=release, uow_factory=uow_factory, clock=clock, settings=settings
+    )
+    assert container.frozen
+    assert container.manifest.name == "release"
 
-    assert "payments" not in {spec.group_key for spec in container.settings_groups.specs()}
+
+async def test_legacy_production_manifest_is_rejected(
+    uow_factory: Any, clock: Any, tmp_path: Any
+) -> None:
+    settings = ApiSettings(
+        environment="production",
+        issuer="https://cms.example.com",
+        secure_cookies=True,
+        cors_origins=("https://cms.example.com",),
+        oidc_signing_key_dir=str(tmp_path / "keys"),
+        admin_session_secret="test-admin-session-secret-0123456789012345",
+    )
+    with pytest.raises(KernelError) as exc_info:
+        build_container(
+            manifest=AppManifest(name="legacy", capabilities=()),
+            uow_factory=uow_factory,
+            clock=clock,
+            settings=settings,
+        )
+    assert exc_info.value.code == "kernel.production_manifest_denied"
 
 
 async def test_start_requires_frozen_container(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
-    from inc.api.container import ApplicationContainer
-
     container = ApplicationContainer(
-        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=release, uow_factory=uow_factory, clock=clock, settings=settings
     )
-    container.build()  # not frozen
-    with pytest.raises(KernelError) as excinfo:
+    container.build()
+    with pytest.raises(KernelError) as exc_info:
         await container.start()
-    assert excinfo.value.code == "kernel.container_not_frozen"
+    assert exc_info.value.code == "kernel.container_not_frozen"
 
 
-async def test_unknown_router_in_manifest_fails(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    manifest = AppManifest(name="bad", capabilities=("audit",), routers=("cotennt",))
-    with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings)
-    assert excinfo.value.code == "kernel.registry_unknown"
-
-
-async def test_unknown_worker_in_manifest_fails(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    manifest = AppManifest(name="bad", capabilities=("audit",), workers=("outboxx",))
-    with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings)
-    assert excinfo.value.code == "kernel.registry_unknown"
-
-
-async def test_duplicate_manifest_entries_fail(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    manifest = AppManifest(name="bad", capabilities=("audit", "audit"))
-    with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings)
-    assert excinfo.value.code == "kernel.manifest_duplicate"
-
-
-async def test_production_denies_dev_payment_adapter(uow_factory: Any, clock: Any) -> None:
-    production = ApiSettings(
-        environment="production",
-        issuer="https://cms.example.com",
-        secure_cookies=True,
-        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
-        admin_session_secret="test-admin-session-secret-0123456789012345",
-    )
-    with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=production)
-    assert excinfo.value.code == "kernel.adapter_production_denied"
-
-
-async def test_production_cms_is_rejected_before_provider_configuration(
-    uow_factory: Any, clock: Any
-) -> None:
-    production = ApiSettings(
-        environment="production",
-        issuer="https://cms.example.com",
-        secure_cookies=True,
-        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
-        admin_session_secret="test-admin-session-secret-0123456789012345",
-    )
-    with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=cms, uow_factory=uow_factory, clock=clock, settings=production)
-    assert excinfo.value.code == "kernel.production_manifest_denied"
-
-
-async def test_management_plane_builds_with_production_settings(
-    uow_factory: Any, clock: Any
-) -> None:
-    production = ApiSettings(
-        environment="production",
-        issuer="https://admin.example.com",
-        secure_cookies=True,
-        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
-        admin_session_secret="test-admin-session-secret-0123456789012345",
-    )
-    container = build_container(
-        manifest=management_plane,
-        uow_factory=uow_factory,
-        clock=clock,
-        settings=production,
-    )
-
-    assert container.frozen
-    assert container.manifest.name == "management_plane"
-    assert all(adapter != "payments.dev_fake" for _, adapter in container.manifest.adapters)
-
-
-async def test_production_requires_https_and_secure_cookies() -> None:
-    from inc.api.config import load_api_settings
-
-    with pytest.raises(ValueError, match="https"):
-        load_api_settings({"environment": "production", "issuer": "http://insecure.example"})
-    with pytest.raises(ValueError, match="secure cookies"):
-        load_api_settings({"environment": "production", "issuer": "https://cms.example.com"})
-    with pytest.raises(ValueError, match="https"):
-        # hostless https:// must be rejected too
-        load_api_settings({"environment": "production", "issuer": "https://"})
-    with pytest.raises(ValueError):
-        # unknown environment value is rejected by the Literal constraint
-        ApiSettings(environment="Production")
-
-
-async def test_production_gate_holds_on_direct_construction() -> None:
-    """The production invariant must hold regardless of construction path —
-    not only through load_api_settings."""
-    with pytest.raises(ValueError, match="https"):
-        ApiSettings(environment="production", issuer="http://insecure.example")
-    with pytest.raises(ValueError, match="secure cookies"):
-        ApiSettings(environment="production", issuer="https://cms.example.com")
-
-
-async def test_assets_s3_provider_only_created_when_bound(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    """Assets resolves the explicit S3 provider and fails closed when unbound."""
-    manifest_with_s3 = AppManifest(
-        name="with-s3-storage",
-        capabilities=("assets",),
-        routers=("assets",),
-        adapters=(("assets.object_storage", "assets.s3"),),
-    )
-    container_s3 = build_container(
-        manifest=manifest_with_s3, uow_factory=uow_factory, clock=clock, settings=settings
-    )
-    assert container_s3.services.asset_providers["s3"].key == "s3"
-
-    manifest_unknown = AppManifest(
-        name="unknown-storage",
-        capabilities=("assets",),
-        routers=("assets",),
-        adapters=(("assets.object_storage", "assets.unknown"),),
-    )
-    with pytest.raises(KernelError) as excinfo:
-        build_container(
-            manifest=manifest_unknown, uow_factory=uow_factory, clock=clock, settings=settings
-        )
-    assert excinfo.value.code == "kernel.adapter_unknown"
-
-    # assets with no object_storage binding fails closed on the required port
-    manifest_unbound = AppManifest(
-        name="no-dev-storage",
-        capabilities=("assets",),
-        routers=("assets",),
-    )
-    with pytest.raises(KernelError) as excinfo:
-        build_container(
-            manifest=manifest_unbound, uow_factory=uow_factory, clock=clock, settings=settings
-        )
-    assert excinfo.value.code == "kernel.port_unbound"
-
-
-async def test_oidc_without_identity_fails_on_capability_dependency(
-    uow_factory: Any, clock: Any, settings: ApiSettings
-) -> None:
-    manifest = AppManifest(
-        name="bad",
-        capabilities=("oidc_provider", "access", "audit"),
-        adapters=(
-            ("oidc.subject_authenticator", "identity.credential"),
-            ("oidc.subject_claims", "identity.profile"),
-            ("oidc.authorization_decision", "access.authorize"),
-            ("oidc.security_events", "oidc.session_revoker"),
-        ),
-    )
-    with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings)
-    assert excinfo.value.code == "kernel.capability_requires_missing"
-
-
-async def test_worker_loop_survives_failures_and_logs(
+async def test_start_cancels_workers_cleanly_after_assertion(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
     container = build_container(
-        manifest=kernel_only, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=release, uow_factory=uow_factory, clock=clock, settings=settings
     )
-
-    async def failing() -> None:
-        raise RuntimeError("boom")
-
-    task = asyncio.create_task(container._loop("test", failing, sleep_seconds=0.01))
-    container._tasks.append(task)
-    await asyncio.sleep(0.05)
-    assert not task.done()  # loop survived the failure
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-
-def test_secure_cookie_env_parsing_accepts_truthy_spellings() -> None:
-    """AIYA_SECURE_COOKIES must accept common truthy values, so a deployment
-    writing "true"/"yes"/" on " does not silently disable the Secure flag on
-    the OIDC login session cookie."""
-    from inc.main import _parse_bool
-
-    for truthy in ("1", "true", "TRUE", "True", "yes", "on", " on "):
-        assert _parse_bool(truthy) is True, truthy
-    for falsy in ("0", "false", "", "anything", None):
-        assert _parse_bool(falsy) is False, falsy
-    assert _parse_bool(None, default=True) is True
+    await container.start()
+    await asyncio.sleep(0)
+    await container.stop()

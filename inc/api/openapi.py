@@ -2,11 +2,9 @@
 
 Contract source: context/spec/http-openapi.md §10.
 
-The root ``openapi.json`` and ``openapi.sha256`` are generated
-deterministically from the deployable ``management_plane`` manifest. The
-deferred full-product fixture still produces ``openapi.user.json`` as a closed
-projection for the Astro BFF; that artifact is not part of this release scope.
-``check`` fails when either snapshot drifts.
+The root ``openapi.json`` and its client-safe ``openapi.user.json`` projection
+are generated deterministically from the single deployable ``release``
+manifest. ``check`` fails when either snapshot drifts.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from inc.api.config import ApiSettings
-from inc.api.manifest import cms, management_plane
+from inc.api.manifest import release
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 OPENAPI_PATH = REPO_ROOT / "openapi.json"
@@ -28,11 +26,11 @@ USER_SHA256_PATH = REPO_ROOT / "openapi.user.sha256"
 
 USER_TAGS = frozenset(
     {
-        "site",
         "auth",
-        "user-center",
-        "posts",
-        "pages",
+        "oidc",
+        "content",
+        "comments",
+        "engagement",
         "discussions",
         "community-tags",
     }
@@ -54,7 +52,9 @@ def _generate_manifest_schema(manifest: Any) -> dict[str, Any]:
             raise RuntimeError("openapi generation must not touch the database")
 
     clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
-    settings = ApiSettings()
+    # The adapter validates that composition supplies a persistent-key path.
+    # Schema construction is inert and never reads this test-only path.
+    settings = ApiSettings(oidc_signing_key_dir=".tmp/openapi-oidc-keys")
     app = create_app(
         manifest=manifest,
         uow_factory=_NoopUoWFactory(),
@@ -68,15 +68,15 @@ def _generate_manifest_schema(manifest: Any) -> dict[str, Any]:
 
 
 def generate_schema() -> dict[str, Any]:
-    """Deterministic OpenAPI schema for the deployable management plane."""
+    """Deterministic OpenAPI schema for the deployable release."""
 
-    return _generate_manifest_schema(management_plane)
+    return _generate_manifest_schema(release)
 
 
 def generate_full_schema() -> dict[str, Any]:
-    """Generate the deferred full-product fixture schema for user projection."""
+    """Compatibility name for the single release source schema."""
 
-    return _generate_manifest_schema(cms)
+    return generate_schema()
 
 
 def _component_refs(value: Any) -> set[tuple[str, str]]:
@@ -171,7 +171,7 @@ def project_user_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def generate_user_schema() -> dict[str, Any]:
-    """Generate the Astro user API projection from the full product schema."""
+    """Generate the Astro client projection from the release schema."""
 
     return project_user_schema(generate_full_schema())
 

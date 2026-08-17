@@ -9,7 +9,7 @@ or ``capability:<name>``.
 
 Kernel technical tables (outbox, inbox receipts, workflow instances, step
 attempts, signals, task instances, cron state) and shipped capability models
-are collected here explicitly and released through a single ``0001_initial``
+are collected here explicitly and released through the single ``release_0001``
 revision. Later changes advance by owner-specific revisions.
 """
 

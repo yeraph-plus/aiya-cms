@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from inc.adapters import (
     ContentBatchExists,
@@ -95,6 +95,7 @@ from inc.capabilities.notification import (
 from inc.capabilities.notification import (
     CommandContext as NotificationCommandContext,
 )
+from inc.capabilities.notification.ports import NotificationProvider, ProviderChainResolver
 from inc.capabilities.oidc_provider import (
     AuthorizationService,
     ClientQueries,
@@ -108,9 +109,6 @@ from inc.capabilities.oidc_provider import (
     ServiceContext,
     TokenService,
     UserInfoService,
-)
-from inc.capabilities.payments import (
-    CommandContext as PaymentsCommandContext,
 )
 from inc.capabilities.payments import (
     PaymentsDiagnostics,
@@ -202,11 +200,10 @@ FEATURE_DEFINITIONS: dict[str, tuple[str, str]] = {
     "site_settings": ("inc.features.site_settings.definition", "spec"),
     "check_in": ("inc.features.check_in.definition", "spec"),
     "auth": ("inc.features.auth.definition", "spec"),
-    "point_purchase": ("inc.features.point_purchase.definition", "spec"),
-    "membership_purchase": ("inc.features.membership_purchase.definition", "spec"),
     "membership_grants": ("inc.features.membership_grants.definition", "spec"),
     "site_cleanup": ("inc.features.site_cleanup.definition", "spec"),
     "content_engagement": ("inc.features.content_engagement.definition", "spec"),
+    "content_bucket": ("inc.features.content_bucket.definition", "spec"),
 }
 
 REQUIRED_PORTS: dict[str, tuple[str, ...]] = {
@@ -289,6 +286,11 @@ ROUTER_BINDINGS: dict[str, RouterBinding] = {
     "taxonomy": RouterBinding(module="inc.api.http.routers_taxonomy", capabilities=("taxonomy",)),
     "settings": RouterBinding(module="inc.api.http.routers_settings", capabilities=("settings",)),
     "assets": RouterBinding(module="inc.api.http.routers_assets", capabilities=("assets",)),
+    "content_bucket": RouterBinding(
+        module="inc.api.http.routers_content_bucket",
+        capabilities=("assets", "settings"),
+        features=("content_bucket",),
+    ),
     "audit": RouterBinding(module="inc.api.http.routers_audit", capabilities=("audit",)),
     "execution": RouterBinding(module="inc.api.http.routers_execution", capabilities=("audit",)),
     "oidc": RouterBinding(
@@ -303,17 +305,6 @@ ROUTER_BINDINGS: dict[str, RouterBinding] = {
     "points": RouterBinding(module="inc.api.http.routers_points", capabilities=("points",)),
     "points_admin": RouterBinding(
         module="inc.api.http.routers_points_admin", capabilities=("points",)
-    ),
-    "point_purchase": RouterBinding(
-        module="inc.api.http.routers_point_purchase",
-        capabilities=("payments", "points"),
-        features=("point_purchase",),
-    ),
-    "payments": RouterBinding(module="inc.api.http.routers_payments", capabilities=("payments",)),
-    "membership_purchase": RouterBinding(
-        module="inc.api.http.routers_membership_purchase",
-        capabilities=("payments", "membership", "points"),
-        features=("membership_purchase",),
     ),
     "membership_admin": RouterBinding(
         module="inc.api.http.routers_membership_admin", capabilities=("membership",)
@@ -396,14 +387,15 @@ class Services:
     oidc_grants: GrantConsentService | None = None
     oidc_client_queries: ClientQueries | None = None
     payment_providers: dict[str, Any] = field(default_factory=dict)
-    payment_webhook_secrets: dict[str, str] = field(default_factory=dict)
     engagement_commands: EngagementCommands | None = None
     engagement_queries: EngagementQueries | None = None
     community_diagnostics: CommunityDiagnostics | None = None
     notification_queries: NotificationQueries | None = None
     notification_specs: NotificationSpecRegistry | None = None
     notification_resolver: Any | None = None
-    notification_providers: dict[str, tuple[Any, ...]] = field(default_factory=dict)
+    notification_providers: dict[str, tuple[NotificationProvider, ...] | ProviderChainResolver] = (
+        field(default_factory=dict)
+    )
     provider_catalogs: dict[str, ProviderCatalog[Any]] = field(default_factory=dict)
     provider_resolvers: dict[str, ProviderResolver[Any]] = field(default_factory=dict)
     notification_auth: AuthChallengeNotifier | None = None
@@ -701,11 +693,11 @@ class ApplicationContainer:
         if "notification" in capabilities:
             for notification_spec in AUTH_NOTIFICATION_SPECS:
                 self.notification_specs.register(notification_spec)
-        # The management plane owns a small, production-safe membership
+        # The release composition owns a small, production-safe membership
         # catalog even though it deliberately does not enable the payment
-        # purchase feature.  Keep the declaration explicit and stable so
-        # subscriptions can be granted by administrators without importing
-        # the dev-only payment workflow.
+        # purchase feature. Keep the declaration explicit and stable so
+        # subscriptions can be granted by administrators without a purchase
+        # workflow.
         if "membership" in self._manifest.capabilities and not self.membership_levels.specs():
             self.membership_levels.register(
                 MembershipLevelSpec(
@@ -717,12 +709,12 @@ class ApplicationContainer:
                     renewal_allowed=True,
                 )
             )
-        # The admin management plane does not enable the payment-backed
-        # membership_purchase workflow, but subscriptions still need the
-        # stable grant behavior consumed by the membership PointsLedger port.
-        # Keep this explicit so the behavior is present without importing any
-        # payment code into the production admin profile.
-        if "membership" in self._manifest.capabilities and "payments" not in capabilities:
+        # The release composition does not enable a payment-backed membership
+        # purchase workflow, but subscriptions still need the stable grant
+        # behavior consumed by the membership PointsLedger port. Keep this
+        # explicit whether or not the standalone payments capability is
+        # installed: a provider catalog is not a purchase workflow.
+        if "membership" in self._manifest.capabilities:
             from inc.features.membership_grants.definition import behavior_specs
 
             for behavior in behavior_specs:
@@ -792,13 +784,6 @@ class ApplicationContainer:
         asset_queries: AssetQueries | None = None
         content_publication_policies: dict[str, ContentPublicationPolicy] = {}
         asset_command_ctx: AssetCommandContext | None = None
-
-        if "payments" in capabilities and _binds_dev_payment(self._manifest):
-            if getattr(self._settings, "environment", "dev") == "production":
-                raise _fail(
-                    "kernel.adapter_production_denied",
-                    "payments.dev_fake must not be bound in production",
-                )
 
         scanner: ContentPublishScanner | None = None
         if "content" in capabilities:
@@ -900,7 +885,9 @@ class ApplicationContainer:
 
         notification_queries: NotificationQueries | None = None
         notification_resolver: Any | None = None
-        notification_providers: dict[str, tuple[Any, ...]] = {}
+        notification_providers: dict[
+            str, tuple[NotificationProvider, ...] | ProviderChainResolver
+        ] = {}
         notification_auth: AuthChallengeNotifier | None = None
         if "notification" in capabilities:
             sensitive_value_protector = SensitiveValueProtector.from_secret(
@@ -912,11 +899,16 @@ class ApplicationContainer:
             )
             notification_queries = NotificationQueries(uow_factory=self._uow_factory)
             notification_resolver = adapters["notification.recipient"]
-            notification_providers = {
-                "email": provider_resolvers.get(
-                    "notification.email", adapters["notification.email"]
-                ),
-            }
+            notification_resolver_for_email = provider_resolvers.get("notification.email")
+            if notification_resolver_for_email is not None:
+                notification_providers["email"] = cast(
+                    ProviderChainResolver, notification_resolver_for_email
+                )
+            else:
+                notification_providers["email"] = tuple(
+                    cast(NotificationProvider, provider)
+                    for provider in adapters["notification.email"]
+                )
             notification_auth = AuthChallengeNotifier(
                 NotificationCommandContext(
                     uow_factory=self._uow_factory,
@@ -1006,7 +998,6 @@ class ApplicationContainer:
                     )
 
         payment_providers: dict[str, Any] = {}
-        payment_webhook_secrets: dict[str, str] = {}
         payment_catalog = provider_catalogs.get("payments.provider")
         if payment_catalog is not None:
             payment_providers.update(
@@ -1019,10 +1010,6 @@ class ApplicationContainer:
             bound_provider = adapters.get("payments.provider")
             if bound_provider is not None:
                 payment_providers[bound_provider.key] = bound_provider
-        for provider_key, provider in payment_providers.items():
-            webhook_secret = getattr(provider, "webhook_secret", None)
-            if isinstance(webhook_secret, str) and webhook_secret:
-                payment_webhook_secrets[provider_key] = webhook_secret
 
         points_queries = PointsQueries(uow_factory=self._uow_factory, behaviors=self.behaviors)
         points_admin = (
@@ -1091,42 +1078,6 @@ class ApplicationContainer:
                     ctx=CheckInContext(points_ctx=points_ctx, clock=self._clock)
                 )
             )
-        if "point_purchase" in features:
-            from inc.features.point_purchase.workflows import (
-                PointPurchaseContext,
-                build_purchase_workflow_spec,
-                build_refund_workflow_spec,
-            )
-
-            purchase_ctx = PointPurchaseContext(
-                payments_ctx=PaymentsCommandContext(
-                    uow_factory=self._uow_factory,
-                    clock=self._clock,
-                    outbox=outbox,
-                    providers=payment_providers,
-                    permissions=frozenset(
-                        {
-                            "payments.create",
-                            "payments.cancel",
-                            "payments.refund",
-                            "payments.reconcile",
-                        }
-                    ),
-                    actor_id="feature:point_purchase",
-                ),
-                points_ctx=PointsCommandContext(
-                    uow_factory=self._uow_factory,
-                    clock=self._clock,
-                    outbox=outbox,
-                    behaviors=self.behaviors,
-                    actor_id="feature:point_purchase",
-                ),
-                points_queries=points_queries,
-                payments_queries=payments_queries,
-            )
-            self.workflow_registry.register(build_purchase_workflow_spec(ctx=purchase_ctx))
-            self.workflow_registry.register(build_refund_workflow_spec(ctx=purchase_ctx))
-
         membership_queries: MembershipQueries | None = None
         membership_ctx: MembershipCommandContext | None = None
         membership_admin: MembershipAdminService | None = None
@@ -1163,42 +1114,6 @@ class ApplicationContainer:
                 schedule="* * * * *",
                 handler=_task_handler(ExpireSubscription(membership_ctx)),
             )
-        if "membership_purchase" in features:
-            from inc.features.membership_purchase.workflows import (
-                MembershipPurchaseContext,
-            )
-            from inc.features.membership_purchase.workflows import (
-                build_purchase_workflow_spec as build_membership_purchase_workflow_spec,
-            )
-
-            if membership_ctx is None:
-                raise _fail(
-                    "kernel.feature_requires_missing",
-                    "membership_purchase requires the membership capability",
-                )
-            membership_purchase_ctx = MembershipPurchaseContext(
-                payments_ctx=PaymentsCommandContext(
-                    uow_factory=self._uow_factory,
-                    clock=self._clock,
-                    outbox=outbox,
-                    providers=payment_providers,
-                    permissions=frozenset(
-                        {
-                            "payments.create",
-                            "payments.cancel",
-                            "payments.refund",
-                            "payments.reconcile",
-                        }
-                    ),
-                    actor_id="feature:membership_purchase",
-                ),
-                membership_ctx=membership_ctx,
-                payments_queries=payments_queries,
-            )
-            self.workflow_registry.register(
-                build_membership_purchase_workflow_spec(ctx=membership_purchase_ctx)
-            )
-
         if "site_cleanup" in features:
             from inc.features.site_cleanup import SiteCleanupActivity
             from inc.features.site_cleanup.definition import RETENTION_CRON_KEY
@@ -1440,7 +1355,6 @@ class ApplicationContainer:
             oidc_grants=oidc_grants,
             oidc_client_queries=oidc_client_queries,
             payment_providers=payment_providers,
-            payment_webhook_secrets=payment_webhook_secrets,
             task_worker=task_worker,
             cron_scheduler=cron_scheduler,
         )
@@ -1617,16 +1531,6 @@ class ApplicationContainer:
         self._started = False
 
 
-def _binds_dev_payment(manifest: AppManifest) -> bool:
-    return any(
-        port == "payments.provider" and adapter == "payments.dev_fake"
-        for port, adapter in manifest.adapters
-    )
-
-
-PRODUCTION_DENIED_ADAPTERS = frozenset({"payments.dev_fake", "oidc.in_memory_keys"})
-
-
 def build_container(
     *,
     manifest: AppManifest,
@@ -1634,22 +1538,10 @@ def build_container(
     clock: Clock,
     settings: Any,
 ) -> ApplicationContainer:
-    denied_adapter = next(
-        (adapter for _port, adapter in manifest.adapters if adapter in PRODUCTION_DENIED_ADAPTERS),
-        None,
-    )
-    if getattr(settings, "environment", None) == "production" and denied_adapter is not None:
-        raise _fail(
-            "kernel.adapter_production_denied",
-            f"{denied_adapter} must not be bound in production",
-        )
-    if (
-        getattr(settings, "environment", None) == "production"
-        and manifest.name != "management_plane"
-    ):
+    if getattr(settings, "environment", None) == "production" and manifest.name != "release":
         raise _fail(
             "kernel.production_manifest_denied",
-            "production only supports the management_plane manifest",
+            "production only supports the release manifest",
         )
     container = ApplicationContainer(
         manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings

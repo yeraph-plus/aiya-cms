@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -75,6 +76,7 @@ class PaymentOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
+        CheckConstraint("currency = 'CNY'", name="ck_payment_orders_currency_cny"),
         UniqueConstraint(
             "provider_key", "idempotency_key", name="uq_payment_orders_provider_idempotency"
         ),
@@ -133,6 +135,7 @@ class PaymentRefund(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        CheckConstraint("currency = 'CNY'", name="ck_payment_refunds_currency_cny"),
         UniqueConstraint(
             "order_id", "idempotency_key", name="uq_payment_refunds_order_idempotency"
         ),

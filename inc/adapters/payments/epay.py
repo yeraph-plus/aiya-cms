@@ -1,272 +1,318 @@
-"""Epay (易支付, 彩虹版) gateway SDK client.
+"""LemPay-compatible Epay adapter.
 
-Python port of ``inc/adapters/Epay_Core.php`` (Yeraph Studio, GPLv3).
-Covers form auto-redirect payment, mapi / refund / query API calls and
-callback signature verification. Payload signing uses the legacy MD5
-scheme ``md5(ksorted k=v&... joined + key)`` excluding ``sign``,
-``sign_type`` and empty / ``"0"`` values — the same request shape as the
-PayPal SDK flow minus its HMAC-based signing.
-
-Deviations from the PHP original: the ``$_SERVER`` globals
-(``get_client_ip`` / ``get_client_is_mobile``) become explicit
-``headers`` / ``user_agent`` arguments, and TLS peer verification is
-enabled by default with an explicit ``verify_ssl`` opt-out for gateways
-with broken certs.
-Not yet bound to ``inc.capabilities.payments.ports.PaymentProvider``.
+The adapter follows the documented ``mapi.php`` and ``api.php`` protocol:
+form-encoded order/refund requests, JSON responses, and a lower-case MD5
+signature over sorted non-empty parameters plus the merchant key.
 """
 
 from __future__ import annotations
 
-import html
-import ipaddress
-import json
-import random
-import ssl
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from collections.abc import Mapping
-from datetime import UTC, datetime
-from hashlib import md5
-from typing import Any, cast
+import asyncio
+import hashlib
+from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Any
+from urllib.parse import urljoin, urlparse
 
-__all__ = ["EpayClient"]
+import requests
+
+from inc.capabilities.payments.ports import (
+    CNY,
+    PaymentStatus,
+    ProviderError,
+    ProviderRefund,
+    ProviderSession,
+    WebhookEvent,
+    WebhookRequest,
+    WebhookVerificationError,
+)
+from inc.kernel.errors import ErrorCategory
+
+_SETTINGS_GROUP = "payments"
+_TIMEOUT_SECONDS = 20
 
 
-def html_escape(value: str) -> str:
-    """HTML-escape an attribute value (quotes included)."""
+@dataclass(frozen=True, slots=True)
+class EpayConfig:
+    gateway_url: str
+    merchant_id: str = field(repr=False)
+    merchant_key: str = field(repr=False)
+    payment_type: str
 
-    return html.escape(value, quote=True)
+    @classmethod
+    def from_values(cls, values: dict[str, Any]) -> EpayConfig:
+        gateway_url = str(values.get("epay_gateway_url") or "").strip().rstrip("/")
+        merchant_id = str(values.get("epay_merchant_id") or "").strip()
+        secret = values.get("epay_merchant_key")
+        getter = getattr(secret, "get_secret_value", None)
+        merchant_key = str(getter() if getter is not None else secret or "").strip()
+        payment_type = str(values.get("epay_payment_type") or "").strip()
+        parsed = urlparse(gateway_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or not merchant_id
+            or not merchant_key
+            or not payment_type
+        ):
+            raise ValueError("missing or invalid Epay settings")
+        return cls(
+            gateway_url=gateway_url,
+            merchant_id=merchant_id,
+            merchant_key=merchant_key,
+            payment_type=payment_type,
+        )
 
 
-class EpayClient:
-    """易支付 SDK 客户端（构造时应用配置：pid / key / url / sign_type）."""
+def sign_parameters(values: dict[str, Any], merchant_key: str) -> str:
+    """LemPay's exact MD5 canonicalization, intentionally before URL encoding."""
 
-    _default_headers = (
-        "Accept: */*",
-        "Accept-Language: zh-CN,zh;q=0.8",
-        "Connection: close",
-    )
+    fragments = [
+        f"{key}={values[key]}"
+        for key in sorted(values)
+        if key not in {"sign", "sign_type"} and values[key] not in (None, False, 0, "", "0")
+    ]
+    return hashlib.md5(("&".join(fragments) + merchant_key).encode("utf-8")).hexdigest()
 
-    #: 受信反代地址集合；只有对端 IP 在此集合内时才会采信转发头。
-    _trusted_proxies: frozenset[str] = frozenset()
 
-    def __init__(self, config: Mapping[str, Any]) -> None:
-        self.pid = str(config["pid"])
-        self.key = str(config["key"])
-        url = str(config["url"])
-        # 如果 URL 没有以 "/" 结尾
-        self.plat_from_url = url if url.endswith("/") else url + "/"
-        # 指定签名方法
-        self.sign_type = str(config.get("sign_type") or "MD5")
-        # 默认校验网关证书，避免支付流量被 MITM；确需关闭时显式配置。
-        self.verify_ssl = bool(config.get("verify_ssl", True))
+class EpayPaymentProvider:
+    """Settings-backed payment Port implementation; construction performs no I/O."""
 
-    def _curl_http_response(
+    key = "epay"
+
+    def __init__(self, *, settings_queries: Any, timeout_seconds: int = _TIMEOUT_SECONDS) -> None:
+        self._settings_queries = settings_queries
+        self._timeout_seconds = timeout_seconds
+
+    async def check_availability(self) -> tuple[bool, str | None]:
+        try:
+            await self._config()
+        except ProviderError as exc:
+            return False, exc.code
+        return True, None
+
+    async def _config(self) -> EpayConfig:
+        try:
+            group = await self._settings_queries.get_group(_SETTINGS_GROUP)
+            return EpayConfig.from_values(group.values)
+        except Exception as exc:  # settings must never leak configuration detail to a caller
+            raise ProviderError(
+                code="payments.provider_unavailable",
+                message="Epay is unavailable because required settings are missing",
+                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                permanent=True,
+            ) from exc
+
+    async def _request(
         self,
+        method: str,
         url: str,
-        post: str | None = None,
-        http_header: tuple[str, ...] | None = None,
-        timeout: int = 10,
-    ) -> str:
-        """Curl 方式请求体结构；返回响应文本."""
-
-        headers: dict[str, str] = {}
-        for line in http_header or self._default_headers:
-            key, _, value = line.partition(":")
-            headers[key.strip()] = value.strip()
-        if post is not None:
-            headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
-
-        context: ssl.SSLContext | None = None
-        if not self.verify_ssl:
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        request = urllib.request.Request(
-            url,
-            data=post.encode("utf-8") if post is not None else None,
-            headers=headers,
-            method="POST" if post is not None else "GET",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
-                body = cast(bytes, response.read())
-                return body.decode("utf-8", errors="replace")
-        except urllib.error.URLError:
-            return ""
-
-    def _parse_result(self, response: str) -> dict[str, Any] | str:
-        """解析 JSON 响应：``code == 1`` 返回结果 dict，否则返回 ``msg`` 文本."""
-
-        try:
-            result = json.loads(response)
-        except json.JSONDecodeError:
-            return "[Epay API] invalid response"
-        if not isinstance(result, dict):
-            return "[Epay API] invalid response"
-        if str(result.get("code")) == "1":
-            return result
-        return str(result.get("msg") or "")
-
-    def _md5_sign(self, param: dict[str, Any]) -> str:
-        """计算签名：``md5(k=v&k=v&...+key)``，排除 sign/sign_type 与空值、``"0"``."""
-
-        signstr = ""
-        for key in sorted(param):
-            value = param[key]
-            if key not in ("sign", "sign_type") and value not in (None, False, 0, "", "0"):
-                signstr += f"{key}={value}&"
-        return md5((signstr[:-1] + self.key).encode("utf-8")).hexdigest()
-
-    def _sign_param(self, param: dict[str, Any]) -> dict[str, Any]:
-        """签名请求参数：追加 ``sign`` 与 ``sign_type``."""
-
-        param["sign"] = self._md5_sign(param)
-        param["sign_type"] = self.sign_type
-        return param
-
-    def get_client_ip(self, headers: Mapping[str, str]) -> str:
-        """用户 IP 地址：优先取网关对端 ``REMOTE_ADDR``，仅当其属于受信代理时
-        才采信 ``HTTP_X_FORWARDED_FOR`` / ``HTTP_CLIENT_IP`` 中的首个合法地址。
-
-        反代（nginx 等）转发上游时总会改写 ``REMOTE_ADDR`` 为本机 IP，因此调用方
-        必须把反代地址显式放入 ``trusted_proxies``；未知来源一律回退到对端地址，
-        避免客户端伪造风险风控 IP。
-        """
-
-        def _valid(addr: str) -> str | None:
-            try:
-                return str(ipaddress.ip_address(addr.strip()))
-            except ValueError:
-                return None
-
-        peer = _valid(headers.get("REMOTE_ADDR", ""))
-        if not peer:
-            return ""
-        if peer not in self._trusted_proxies:
-            return peer
-        for name in ("HTTP_X_FORWARDED_FOR", "HTTP_CLIENT_IP"):
-            raw = headers.get(name, "")
-            if not raw or raw.lower() == "unknown":
-                continue
-            for part in raw.split(","):
-                candidate = _valid(part)
-                if candidate:
-                    return candidate
-        return peer
-
-    @staticmethod
-    def get_client_is_mobile(user_agent: str | None) -> bool:
-        """用户设备类型：UA 中是否含常见移动设备标识."""
-
-        if not user_agent:
-            return False
-        agent = user_agent.lower()
-        return any(k in agent for k in ("iphone", "ipad", "android", "mobile", "phone"))
-
-    def pay_auto_redirect(self, param_tmp: Mapping[str, Any], from_id: str = "bill") -> str:
-        """使用 POST 发起支付（表单 HTML+JS 跳转）."""
-
-        param = dict(param_tmp)
-        param["pid"] = self.pid
-        param.setdefault("type", "alipay")
-        param = self._sign_param(param)
-
-        submit_url = self.plat_from_url + "submit.php"
-        html = (
-            f'<form id="{html_escape(from_id)}" action="{html_escape(submit_url)}" method="post">'
-        )
-        for key, value in param.items():
-            html += (
-                f'<input type="hidden" name="{html_escape(str(key))}" '
-                f'value="{html_escape(str(value))}"/>'
-            )
-        html += '<input type="submit" value="LOADING..."/></form>'
-        html += f'<script> document.getElementById("{html_escape(from_id)}").submit(); </script>'
-        return html
-
-    def pay_mapi(
-        self,
-        param_tmp: Mapping[str, Any],
         *,
-        headers: Mapping[str, str] | None = None,
-        user_agent: str | None = None,
-    ) -> dict[str, Any] | str:
-        """API 接口支付：POST ``mapi.php``，成功返回 dict，失败返回错误文本."""
-
-        param = dict(param_tmp)
-        param["pid"] = self.pid
-        param.setdefault("type", "cashier")
-        if "out_trade_no" not in param:
-            # 拼接一个临时订单号
-            param["out_trade_no"] = (
-                datetime.now(UTC).strftime("%Y%m%d")
-                + str(random.randint(10000, 99999))
-                + str(int(time.time()))
+        params: dict[str, str] | None = None,
+        data: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        try:
+            response = await asyncio.to_thread(
+                requests.request,
+                method,
+                url,
+                params=params,
+                data=data,
+                timeout=self._timeout_seconds,
+                headers={"Accept": "application/json"},
             )
-        param["clientip"] = self.get_client_ip(headers or {})
-        if "device" not in param:
-            param["device"] = "mobile" if self.get_client_is_mobile(user_agent) else "pc"
-        param = self._sign_param(param)
-
-        response = self._curl_http_response(
-            self.plat_from_url + "mapi.php", post=urllib.parse.urlencode(param)
-        )
-        return self._parse_result(response)
-
-    def pay_refund(self, trade_no: str, money: str | float) -> dict[str, Any] | str:
-        """API 接口退款：POST ``?act=refund``，成功返回 dict，失败返回错误文本."""
-
-        param = self._sign_param({"pid": self.pid, "trade_no": trade_no, "money": money})
-        response = self._curl_http_response(
-            self.plat_from_url + "?act=refund", post=urllib.parse.urlencode(param)
-        )
-        return self._parse_result(response)
-
-    def verify_callback(self, param: Mapping[str, Any]) -> bool:
-        """回调验证逻辑：重算签名并与 ``param["sign"]`` 比对."""
-
-        if not param:
-            return False
-        return self._md5_sign(dict(param)) == param.get("sign")
+            response.raise_for_status()
+            result = response.json()
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            raise ProviderError(
+                code="payments.provider_unavailable",
+                message="Epay gateway is unavailable",
+                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+            ) from exc
+        if not isinstance(result, dict):
+            raise ProviderError(
+                code="payments.provider_unavailable",
+                message="Epay returned an invalid response",
+                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+            )
+        return result
 
     @staticmethod
-    def get_callback_params(params: Mapping[str, str]) -> dict[str, str] | bool:
-        """回调数据：非空时返回参数字典，否则返回 ``False``（PHP 版读取 ``$_GET``）."""
+    def _signed(values: dict[str, Any], config: EpayConfig) -> dict[str, str]:
+        signed = {key: str(value) for key, value in values.items() if value is not None}
+        signed["sign"] = sign_parameters(signed, config.merchant_key)
+        signed["sign_type"] = "MD5"
+        return signed
 
-        if not params:
-            return False
-        return dict(params)
-
-    def query_order(self, trade_no: str) -> dict[str, Any] | str:
-        """API 查询单个订单：``api.php?act=order``."""
-
-        param = self._sign_param({"act": "order", "pid": self.pid, "trade_no": trade_no})
-        api_url = self.plat_from_url + "api.php?" + urllib.parse.urlencode(param)
-        return self._parse_result(self._curl_http_response(api_url))
-
-    def query_order_list(self, offset: int = 0, limit: int = 20) -> dict[str, Any] | str:
-        """API 查询订单列表：``api.php?act=orders``."""
-
-        param = self._sign_param(
-            {"act": "orders", "pid": self.pid, "offset": offset, "limit": limit}
+    async def create_payment(
+        self,
+        *,
+        order_reference: str,
+        amount: int,
+        currency: str,
+        idempotency_key: str,
+        return_url: str,
+        cancel_url: str,
+        notify_url: str = "",
+        description: str = "",
+        client_ip: str = "",
+    ) -> ProviderSession:
+        del idempotency_key, cancel_url
+        config = await self._config()
+        _require_cny(currency)
+        if not notify_url or not return_url or not description:
+            raise ProviderError(
+                code="payments.provider_unavailable",
+                message="Epay requires notify URL, return URL and order description",
+                category=ErrorCategory.VALIDATION,
+                permanent=True,
+            )
+        values = self._signed(
+            {
+                "pid": config.merchant_id,
+                "type": config.payment_type,
+                "out_trade_no": order_reference,
+                "notify_url": notify_url,
+                "return_url": return_url,
+                "name": description,
+                "money": _fen_to_money(amount),
+                "clientip": client_ip or "127.0.0.1",
+            },
+            config,
         )
-        api_url = self.plat_from_url + "api.php?" + urllib.parse.urlencode(param)
-        return self._parse_result(self._curl_http_response(api_url))
+        result = await self._request(
+            "POST", urljoin(f"{config.gateway_url}/", "mapi.php"), data=values
+        )
+        if str(result.get("code")) != "1":
+            raise ProviderError(
+                message="Epay rejected the payment order",
+                category=ErrorCategory.VALIDATION,
+                permanent=True,
+            )
+        provider_ref = str(result.get("trade_no") or "").strip()
+        redirect_url = _text(result.get("payurl"))
+        qr_code_payload = _text(result.get("qrcode"))
+        app_url = _text(result.get("urlscheme"))
+        if not provider_ref:
+            raise ProviderError(message="Epay response has no trade number", permanent=True)
+        try:
+            return ProviderSession(
+                provider_ref=provider_ref,
+                redirect_url=redirect_url or None,
+                qr_code_payload=qr_code_payload or None,
+                app_url=app_url or None,
+                requires_action=True,
+            )
+        except ValueError as exc:
+            raise ProviderError(
+                message="Epay response has no payment action", permanent=True
+            ) from exc
 
-    def query_merchant(self) -> dict[str, Any] | str:
-        """API 查询当前商户：``api.php?act=query``."""
+    async def get_payment(self, *, provider_ref: str) -> PaymentStatus:
+        config = await self._config()
+        values = self._signed(
+            {"act": "order", "pid": config.merchant_id, "trade_no": provider_ref}, config
+        )
+        result = await self._request(
+            "GET", urljoin(f"{config.gateway_url}/", "api.php"), params=values
+        )
+        if str(result.get("code")) != "1":
+            return PaymentStatus(state="unknown", currency=CNY)
+        status = str(result.get("trade_status") or "").upper()
+        state = "captured" if status == "TRADE_SUCCESS" else "pending"
+        amount = _money_to_fen(result.get("money")) if result.get("money") is not None else None
+        return PaymentStatus(state=state, captured_amount=amount, currency=CNY)
 
-        param = self._sign_param({"act": "query", "pid": self.pid})
-        api_url = self.plat_from_url + "api.php?" + urllib.parse.urlencode(param)
-        return self._parse_result(self._curl_http_response(api_url))
+    async def verify_webhook(self, *, request: WebhookRequest) -> WebhookEvent:
+        config = await self._config()
+        if request.method.upper() != "GET":
+            raise WebhookVerificationError("Epay webhook must use GET")
+        values = request.query_params
+        supplied = values.get("sign")
+        if not supplied or supplied.lower() != sign_parameters(values, config.merchant_key):
+            raise WebhookVerificationError("Epay webhook signature rejected")
+        if values.get("pid") != config.merchant_id or values.get("trade_status") != "TRADE_SUCCESS":
+            raise WebhookVerificationError("Epay webhook is not a successful payment")
+        trade_no = _text(values.get("trade_no"))
+        order_reference = _text(values.get("out_trade_no"))
+        if not trade_no or not order_reference:
+            raise WebhookVerificationError("Epay webhook lacks order references")
+        return WebhookEvent(
+            event_id=f"{trade_no}:TRADE_SUCCESS",
+            event_type="capture",
+            order_reference=order_reference,
+            amount=_money_to_fen(values.get("money")),
+            currency=CNY,
+            acknowledgement="success",
+        )
 
-    def query_settlement(self) -> dict[str, Any] | str:
-        """API 查询当前商户 T1 结算记录：``api.php?act=settle``."""
+    async def create_refund(
+        self,
+        *,
+        payment_ref: str,
+        amount: int,
+        currency: str,
+        idempotency_key: str,
+        reason: str,
+    ) -> ProviderRefund:
+        del idempotency_key, reason
+        config = await self._config()
+        _require_cny(currency)
+        values = self._signed(
+            {"pid": config.merchant_id, "trade_no": payment_ref, "money": _fen_to_money(amount)},
+            config,
+        )
+        result = await self._request(
+            "POST", urljoin(f"{config.gateway_url}/", "api.php?act=refund"), data=values
+        )
+        if str(result.get("code")) != "1":
+            raise ProviderError(
+                message="Epay rejected the refund",
+                category=ErrorCategory.VALIDATION,
+                permanent=True,
+            )
+        return ProviderRefund(
+            refund_ref=str(result.get("refund_no") or payment_ref), state="completed"
+        )
 
-        param = self._sign_param({"act": "settle", "pid": self.pid})
-        api_url = self.plat_from_url + "api.php?" + urllib.parse.urlencode(param)
-        return self._parse_result(self._curl_http_response(api_url))
+    async def get_refund(self, *, refund_ref: str) -> ProviderRefund:
+        # LemPay's documented API has no dedicated refund lookup.  The refund reference is
+        # therefore a terminal local fact once the authenticated refund response succeeded.
+        await self._config()
+        return ProviderRefund(refund_ref=refund_ref, state="completed")
+
+
+def _require_cny(currency: str) -> None:
+    if currency.upper() != CNY:
+        raise ProviderError(
+            message="payments only support CNY",
+            category=ErrorCategory.VALIDATION,
+            permanent=True,
+        )
+
+
+def _fen_to_money(amount: int) -> str:
+    if amount <= 0:
+        raise ProviderError(
+            message="payment amount must be positive",
+            category=ErrorCategory.VALIDATION,
+            permanent=True,
+        )
+    return f"{Decimal(amount) / Decimal(100):.2f}"
+
+
+def _money_to_fen(value: Any) -> int:
+    try:
+        money = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise WebhookVerificationError("invalid Epay amount") from exc
+    if money <= 0:
+        raise WebhookVerificationError("Epay amount must be positive")
+    return int(money * 100)
+
+
+def _text(value: Any) -> str:
+    return str(value).strip() if value is not None else ""
+
+
+__all__ = ["EpayConfig", "EpayPaymentProvider", "sign_parameters"]

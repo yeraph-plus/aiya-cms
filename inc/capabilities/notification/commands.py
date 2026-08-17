@@ -2,7 +2,7 @@
 
 Contract source: context/spec/capabilities/notification.md §5/§6.
 
-RequestNotification is idempotent by (spec_key, idempotency_key): a repeat
+RequestNotification is idempotent by (trigger_name, idempotency_key): a repeat
 returns the existing intent and never creates a second delivery. The
 delivery workflow starts with the delivery id as its business key, so
 duplicate requests cannot double-send.
@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC
+from string import Formatter
 from typing import Any
 
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from inc.capabilities.notification.models import (
     IntentVariables,
     NotificationDelivery,
     NotificationIntent,
+    NotificationTemplate,
     RecipientSnapshot,
 )
 from inc.capabilities.notification.ports import (
@@ -34,8 +36,10 @@ from inc.capabilities.notification.ports import (
 from inc.capabilities.notification.schemas import (
     NotificationDeliveryDTO,
     NotificationIntentDTO,
+    NotificationTemplateDTO,
     RequestNotificationInput,
     RequestNotificationResult,
+    UpdateNotificationTemplateInput,
 )
 from inc.capabilities.notification.specs import NotificationSpec, NotificationSpecRegistry
 from inc.kernel.db import UnitOfWork, UoWFactory
@@ -50,6 +54,7 @@ DELIVER_WORKFLOW_KEY = "notification.deliver.v1"
 PERMISSION_REQUEST = "notification.request"
 PERMISSION_CANCEL = "notification.cancel"
 PERMISSION_RETRY = "notification.retry"
+PERMISSION_TEMPLATE_MANAGE = "notification.templates.manage"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,13 +93,13 @@ def _require_spec(ctx: CommandContext, key: str) -> NotificationSpec:
     """Client-supplied spec keys are validation errors, not internal ones."""
 
     try:
-        return ctx.specs.require(key)
+        return ctx.specs.require_trigger(key)
     except KernelError as exc:
-        if exc.code == "notification.unknown_spec":
+        if exc.code in {"notification.unknown_spec", "notification.unknown_trigger"}:
             raise KernelError(
-                code="notification.unknown_spec",
+                code="notification.unknown_trigger",
                 category=ErrorCategory.VALIDATION,
-                message=exc.message,
+                message="notification trigger is not registered",
             ) from exc
         raise
 
@@ -118,7 +123,7 @@ def _mask_address(address: str) -> str:
 def _to_intent_dto(row: NotificationIntent) -> NotificationIntentDTO:
     return NotificationIntentDTO(
         id=str(row.id),
-        spec_key=row.spec_key,
+        trigger_name=row.spec_key,
         recipient_type=row.recipient_type,
         recipient_id=row.recipient_id,
         state=row.state,
@@ -141,6 +146,54 @@ def _to_delivery_dto(row: NotificationDelivery) -> NotificationDeliveryDTO:
         next_retry_at=_ensure_utc(row.next_retry_at) if row.next_retry_at is not None else None,
         delivered_at=_ensure_utc(row.delivered_at) if row.delivered_at is not None else None,
     )
+
+
+def _to_template_dto(row: NotificationTemplate) -> NotificationTemplateDTO:
+    return NotificationTemplateDTO(
+        trigger_name=row.trigger_name,
+        template_key=row.template_key,
+        version=row.version,
+        channel=row.channel,
+        locale=row.locale,
+        subject=row.subject,
+        body=row.body,
+        variables_schema_version=row.variables_schema_version,
+        status=row.status,
+    )
+
+
+def _template_fields(subject: str, body: str) -> set[str]:
+    names: set[str] = set()
+    try:
+        parsed = (*Formatter().parse(subject), *Formatter().parse(body))
+    except ValueError as exc:
+        raise _validation_template(
+            "notification.template_invalid", "template braces are invalid"
+        ) from exc
+    for _literal, field_name, _format_spec, _conversion in parsed:
+        if field_name is None:
+            continue
+        if not field_name.isidentifier():
+            raise _validation_template(
+                "notification.template_invalid",
+                "template fields must be simple variable names",
+            )
+        names.add(field_name)
+    return names
+
+
+def _validation_template(code: str, message: str) -> KernelError:
+    return KernelError(code=code, category=ErrorCategory.VALIDATION, message=message)
+
+
+def _validate_template_variables(spec: NotificationSpec, subject: str, body: str) -> None:
+    found = _template_fields(subject, body)
+    expected = set(spec.variables_schema.model_fields)
+    if found != expected:
+        raise _validation_template(
+            "notification.template_variables_invalid",
+            "template variables do not match the registered trigger schema",
+        )
 
 
 async def _emit(
@@ -188,7 +241,7 @@ class RequestNotification:
     async def __call__(self, input_: RequestNotificationInput) -> RequestNotificationResult:
         ctx = self._ctx
         _require_permission(ctx, PERMISSION_REQUEST)
-        spec = _require_spec(ctx, input_.spec_key)
+        spec = _require_spec(ctx, input_.trigger_name)
         if input_.recipient_type != spec.recipient_kind:
             raise KernelError(
                 code="notification.recipient_kind_mismatch",
@@ -216,7 +269,7 @@ class RequestNotification:
                 (
                     await uow.session.execute(
                         select(NotificationIntent).where(
-                            NotificationIntent.spec_key == input_.spec_key,
+                            NotificationIntent.spec_key == input_.trigger_name,
                             NotificationIntent.idempotency_key == input_.idempotency_key,
                         )
                     )
@@ -261,7 +314,7 @@ class RequestNotification:
 
             target = await self._resolve_target(ctx, spec, input_)
             intent = NotificationIntent(
-                spec_key=input_.spec_key,
+                spec_key=input_.trigger_name,
                 idempotency_key=input_.idempotency_key,
                 recipient_type=input_.recipient_type,
                 recipient_id=input_.recipient_id,
@@ -335,6 +388,65 @@ class RequestNotification:
         )
 
 
+class UpdateNotificationTemplate:
+    """Update one localized template bound to a registered trigger only."""
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(
+        self,
+        *,
+        trigger_name: str,
+        locale: str,
+        input_: UpdateNotificationTemplateInput,
+    ) -> NotificationTemplateDTO:
+        ctx = self._ctx
+        _require_permission(ctx, PERMISSION_TEMPLATE_MANAGE)
+        spec = _require_spec(ctx, trigger_name)
+        _validate_template_variables(spec, input_.subject, input_.body)
+        template_key = spec.template_keys[0]
+        async with ctx.uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(NotificationTemplate)
+                        .where(
+                            NotificationTemplate.trigger_name == trigger_name,
+                            NotificationTemplate.template_key == template_key,
+                            NotificationTemplate.version == spec.version,
+                            NotificationTemplate.channel == spec.channels[0],
+                            NotificationTemplate.locale == locale,
+                        )
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if row is None:
+                row = NotificationTemplate(
+                    trigger_name=trigger_name,
+                    template_key=template_key,
+                    version=spec.version,
+                    channel=spec.channels[0],
+                    locale=locale,
+                    subject=input_.subject,
+                    body=input_.body,
+                    variables_schema_version=spec.version,
+                    status=input_.status,
+                )
+                uow.session.add(row)
+            else:
+                row.subject = input_.subject
+                row.body = input_.body
+                row.variables_schema_version = spec.version
+                row.status = input_.status
+            await uow.commit()
+            return _to_template_dto(row)
+        raise AssertionError("notification template update exited without returning")
+
+
 def _digest(value: str) -> str:
     import hashlib
 
@@ -346,7 +458,7 @@ async def _provider_for(
 ) -> NotificationProvider:
     providers = ctx.providers.get(channel, ())
     if hasattr(providers, "resolve_many"):
-        providers = await providers.resolve_many()  # type: ignore[union-attr]
+        providers = await providers.resolve_many()
     if not providers:
         raise _conflict(
             "notification.channel_unbound",

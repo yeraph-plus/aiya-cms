@@ -53,7 +53,7 @@ class AuthChallengeInput(BaseModel):
 
 AUTH_NOTIFICATION_SPECS: tuple[NotificationSpec, ...] = (
     NotificationSpec(
-        key="identity.email_verification.v1",
+        key="identity.email_verification",
         version="1",
         channels=("email",),
         template_keys=("identity_email_verification",),
@@ -63,7 +63,7 @@ AUTH_NOTIFICATION_SPECS: tuple[NotificationSpec, ...] = (
         delivery_policy=_AUTH_CHALLENGE_DELIVERY_POLICY,
     ),
     NotificationSpec(
-        key="identity.password_reset.v1",
+        key="identity.password_reset",
         version="1",
         channels=("email",),
         template_keys=("identity_password_reset",),
@@ -77,6 +77,7 @@ AUTH_NOTIFICATION_SPECS: tuple[NotificationSpec, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class NotificationTemplateSeed:
+    trigger_name: str
     template_key: str
     subject: str
     body: str
@@ -88,11 +89,13 @@ class NotificationTemplateSeed:
 
 AUTH_NOTIFICATION_TEMPLATES: tuple[NotificationTemplateSeed, ...] = (
     NotificationTemplateSeed(
+        trigger_name="identity.email_verification",
         template_key="identity_email_verification",
         subject="验证邮箱",
         body="你好 {username}，你的邮箱验证码是：{token}。有效期至 {expires_at}。",
     ),
     NotificationTemplateSeed(
+        trigger_name="identity.password_reset",
         template_key="identity_password_reset",
         subject="重置密码",
         body="你好 {username}，你的密码重置令牌是：{token}。有效期至 {expires_at}。",
@@ -108,10 +111,10 @@ class AuthChallengeNotifier:
 
     async def send(self, challenge: AuthChallengeInput, *, trace_id: str | None = None) -> None:
         context = replace(self._context, trace_id=trace_id)
-        spec_key = f"identity.{challenge.purpose}.v1"
+        trigger_name = f"identity.{challenge.purpose}"
         await RequestNotification(context)(
             RequestNotificationInput(
-                spec_key=spec_key,
+                trigger_name=trigger_name,
                 recipient_type="identity",
                 recipient_id=challenge.subject_id,
                 variables={
@@ -136,6 +139,7 @@ async def ensure_auth_templates(factory: UoWFactory) -> int:
                 (
                     await uow.session.execute(
                         select(NotificationTemplate).where(
+                            NotificationTemplate.trigger_name == seed.trigger_name,
                             NotificationTemplate.template_key == seed.template_key,
                             NotificationTemplate.version == seed.version,
                             NotificationTemplate.channel == seed.channel,
@@ -150,6 +154,7 @@ async def ensure_auth_templates(factory: UoWFactory) -> int:
                 continue
             uow.session.add(
                 NotificationTemplate(
+                    trigger_name=seed.trigger_name,
                     template_key=seed.template_key,
                     version=seed.version,
                     channel=seed.channel,

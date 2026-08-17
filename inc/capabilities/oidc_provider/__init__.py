@@ -19,12 +19,7 @@ from inc.capabilities.oidc_provider.clients import (
     UpdateClient,
 )
 from inc.capabilities.oidc_provider.handlers import OidcDiagnostics, SecurityEventRevoker
-from inc.capabilities.oidc_provider.keys import (
-    InMemorySigningKeyStore,
-    KeyService,
-    load_public_key,
-    verify_jwt,
-)
+from inc.capabilities.oidc_provider.keys import KeyService, load_public_key, verify_jwt
 from inc.capabilities.oidc_provider.services import (
     AuthorizationService,
     GrantConsentService,
@@ -43,7 +38,6 @@ __all__ = [
     "DisableClient",
     "EnableClient",
     "GrantConsentService",
-    "InMemorySigningKeyStore",
     "KeyService",
     "load_public_key",
     "LogoutService",

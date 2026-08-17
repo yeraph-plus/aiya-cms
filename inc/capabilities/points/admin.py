@@ -385,6 +385,7 @@ class PointsAdminService:
                     "points.program_not_found", ErrorCategory.NOT_FOUND, "points program not found"
                 )
             return program.program_key, account.subject_type, account.subject_id
+        raise AssertionError("points account target query exited without returning")
 
     async def _audit(
         self,

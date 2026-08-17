@@ -10,12 +10,14 @@ from inc.capabilities.notification.models import (
     NotificationDelivery,
     NotificationDeliveryAttempt,
     NotificationIntent,
+    NotificationTemplate,
 )
 from inc.capabilities.notification.schemas import (
     NotificationDeliveryAttemptDTO,
     NotificationDeliveryDetailDTO,
     NotificationDeliveryPageDTO,
     NotificationDeliveryRecordDTO,
+    NotificationTemplateDTO,
 )
 from inc.kernel.db import UoWFactory
 
@@ -36,7 +38,7 @@ def _record(
         error_summary=delivery.error_summary,
         next_retry_at=delivery.next_retry_at,
         delivered_at=delivery.delivered_at,
-        spec_key=intent.spec_key,
+        trigger_name=intent.spec_key,
         recipient_type=intent.recipient_type,
         recipient_id=intent.recipient_id,
         requested_at=intent.requested_at,
@@ -72,7 +74,7 @@ class NotificationQueries:
         status: str | None = None,
         channel: str | None = None,
         provider_key: str | None = None,
-        spec_key: str | None = None,
+        trigger_name: str | None = None,
         recipient_id: str | None = None,
     ) -> NotificationDeliveryPageDTO:
         statement = select(NotificationDelivery, NotificationIntent).join(
@@ -84,8 +86,8 @@ class NotificationQueries:
             statement = statement.where(NotificationDelivery.channel == channel)
         if provider_key is not None:
             statement = statement.where(NotificationDelivery.provider_key == provider_key)
-        if spec_key is not None:
-            statement = statement.where(NotificationIntent.spec_key == spec_key)
+        if trigger_name is not None:
+            statement = statement.where(NotificationIntent.spec_key == trigger_name)
         if recipient_id is not None:
             statement = statement.where(NotificationIntent.recipient_id == recipient_id)
         statement = statement.order_by(
@@ -142,3 +144,37 @@ class NotificationQueries:
                 delivery=_record(pair[0], pair[1]),
                 attempts=[_attempt(row) for row in attempts],
             )
+
+    async def get_template(
+        self, *, trigger_name: str, locale: str
+    ) -> NotificationTemplateDTO | None:
+        """Read one locale template; trigger authorization stays in the command path."""
+
+        async with self._uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(NotificationTemplate)
+                        .where(
+                            NotificationTemplate.trigger_name == trigger_name,
+                            NotificationTemplate.locale == locale,
+                        )
+                        .order_by(NotificationTemplate.updated_at.desc())
+                    )
+                )
+                .scalars()
+                .first()
+            )
+        if row is None:
+            return None
+        return NotificationTemplateDTO(
+            trigger_name=row.trigger_name,
+            template_key=row.template_key,
+            version=row.version,
+            channel=row.channel,
+            locale=row.locale,
+            subject=row.subject,
+            body=row.body,
+            variables_schema_version=row.variables_schema_version,
+            status=row.status,
+        )

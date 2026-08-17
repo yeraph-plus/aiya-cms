@@ -41,14 +41,12 @@ def test_default_issuer_matches_compose_backend_port() -> None:
 
 
 def test_runtime_manifest_selection_is_explicit_and_fail_closed() -> None:
-    assert _manifest_from_env({}).name == "management_plane"
-    assert _manifest_from_env({"AIYA_APP_PROFILE": "management"}).name == "management_plane"
-    assert _manifest_from_env({"AIYA_APP_PROFILE": "cms"}).name == "cms"
-    assert _manifest_from_env({"AIYA_APP_PROFILE": "cms_dev"}).name == "cms_dev"
-    with pytest.raises(ValueError, match="production only supports"):
-        _manifest_from_env({"AIYA_ENVIRONMENT": "production", "AIYA_APP_PROFILE": "cms"})
-    with pytest.raises(ValueError, match="production only supports"):
-        _manifest_from_env({"AIYA_ENVIRONMENT": "production", "AIYA_APP_PROFILE": "cms_dev"})
+    assert _manifest_from_env({}).name == "release"
+    assert _manifest_from_env({"AIYA_APP_PROFILE": "release"}).name == "release"
+    with pytest.raises(ValueError, match="must be release"):
+        _manifest_from_env({"AIYA_APP_PROFILE": "management"})
+    with pytest.raises(ValueError, match="must be release"):
+        _manifest_from_env({"AIYA_APP_PROFILE": "legacy"})
     with pytest.raises(ValueError, match="AIYA_APP_PROFILE"):
         _manifest_from_env({"AIYA_APP_PROFILE": "unknown"})
 

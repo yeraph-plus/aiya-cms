@@ -8,7 +8,6 @@ import pytest
 
 from inc.adapters.payments.paypal import PaypalConfig, PaypalPaymentProvider
 from inc.capabilities.payments.ports import ProviderError
-from inc.kernel.errors import KernelError
 
 
 class _Response:
@@ -78,7 +77,17 @@ async def test_unconfigured_provider_fails_explicitly() -> None:
         await provider.get_payment(provider_ref="PAYPAL-ORDER-1")
 
 
-def test_production_settings_require_paypal_secrets_and_urls() -> None:
-    with pytest.raises(KernelError) as exc_info:
-        PaypalPaymentProvider.from_settings(SimpleNamespace(paypal_environment="production"))
-    assert exc_info.value.code == "payments.paypal_configuration_missing"
+async def test_non_cny_payment_is_rejected() -> None:
+    provider = PaypalPaymentProvider(
+        PaypalConfig(client_id="id", client_secret="secret", webhook_id="id")
+    )
+    with pytest.raises(ProviderError) as exc_info:
+        await provider.create_payment(
+            order_reference="ord_1",
+            amount=1,
+            currency="USD",
+            idempotency_key="order:1",
+            return_url="https://app.test/return",
+            cancel_url="https://app.test/cancel",
+        )
+    assert exc_info.value.code == "payments.currency_unsupported"

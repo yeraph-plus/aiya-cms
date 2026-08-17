@@ -3,12 +3,13 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FileUploadUploaderEvent } from 'primevue/fileupload';
 import type { SettingFieldDTO } from '@/api/settings';
-import { isSettingScalar, isSettingScalarArray, settingAccept, settingFieldComponent, settingIsMultiple, settingMaxLength, settingMaxSize, settingOptions, settingPlaceholder, settingRows, type SettingValue } from './setting-fields';
+import { isSettingScalar, isSettingScalarArray, settingAccept, settingFieldComponent, settingIsMultiple, settingMaxLength, settingMaxSize, settingOptions, settingRows, type SettingValue } from './setting-fields';
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const props = withDefaults(
     defineProps<{
         field: SettingFieldDTO;
+        groupKey: string;
         modelValue?: SettingValue;
         sensitiveConfigured?: boolean;
         disabled?: boolean;
@@ -24,7 +25,24 @@ const emit = defineEmits<{
 }>();
 
 const fieldComponent = computed(() => settingFieldComponent(props.field.type));
-const options = computed(() => settingOptions(props.field));
+const textKey = (suffix: string) => `settings.fields.${props.groupKey}.${props.field.slug}.${suffix}`;
+const optionKey = (value: SettingValue) => `settings.fields.${props.groupKey}.${props.field.slug}.options[${JSON.stringify(String(value))}]`;
+const localized = (key: string) => (te(key) ? t(key) : key);
+const fieldLabel = computed(() => localized(textKey('label')));
+const fieldDescription = computed(() => {
+    const key = textKey('description');
+    return te(key) ? t(key) : '';
+});
+const placeholder = computed(() => {
+    const key = textKey('placeholder');
+    return te(key) ? t(key) : undefined;
+});
+const options = computed(() =>
+    settingOptions(props.field).map((option) => ({
+        ...option,
+        label: localized(optionKey(option.value))
+    }))
+);
 const uploading = ref(false);
 
 const componentValue = computed<SettingValue>({
@@ -58,7 +76,7 @@ const componentProps = computed<Record<string, boolean | number | string | undef
             return {
                 id: props.field.slug,
                 type: props.field.type_sub === 'password' ? 'password' : 'text',
-                placeholder: settingPlaceholder(props.field),
+                placeholder: placeholder.value,
                 maxlength: settingMaxLength(props.field),
                 fluid: true
             };
@@ -66,7 +84,7 @@ const componentProps = computed<Record<string, boolean | number | string | undef
             return {
                 id: props.field.slug,
                 rows: settingRows(props.field),
-                placeholder: settingPlaceholder(props.field),
+                placeholder: placeholder.value,
                 maxlength: settingMaxLength(props.field),
                 autoResize: true,
                 fluid: true
@@ -77,7 +95,7 @@ const componentProps = computed<Record<string, boolean | number | string | undef
                 options: options.value,
                 optionLabel: 'label',
                 optionValue: 'value',
-                placeholder: settingPlaceholder(props.field),
+                placeholder: placeholder.value,
                 fluid: true
             };
         case 'mult':
@@ -86,7 +104,7 @@ const componentProps = computed<Record<string, boolean | number | string | undef
                 options: options.value,
                 optionLabel: 'label',
                 optionValue: 'value',
-                placeholder: settingPlaceholder(props.field),
+                placeholder: placeholder.value,
                 fluid: true
             };
         default:
@@ -126,8 +144,8 @@ async function upload(event: FileUploadUploaderEvent): Promise<void> {
 
 <template>
     <div class="flex flex-col gap-2">
-        <label :for="field.slug" class="font-medium text-surface-900 dark:text-surface-0">{{ field.title }}</label>
-        <small v-if="field.desc" class="text-muted-color">{{ field.desc }}</small>
+        <label :for="field.slug" class="font-medium text-surface-900 dark:text-surface-0">{{ fieldLabel }}</label>
+        <small v-if="fieldDescription" class="text-muted-color">{{ fieldDescription }}</small>
         <div v-if="field.sensitive" class="flex items-center gap-2 text-sm text-muted-color">
             <span>{{ sensitiveConfigured ? '已配置；留空保存将保留现值' : '尚未配置' }}</span>
             <Button v-if="sensitiveConfigured" :label="t('common.clear')" severity="danger" text size="small" :disabled="disabled" @click="emit('clear-sensitive')" />

@@ -12,7 +12,7 @@ import ipaddress
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 DEFAULT_ISSUER = "http://127.0.0.1:8000"
 
@@ -31,12 +31,6 @@ class ApiSettings(BaseModel):
     admin_session_secret: str = "dev-admin-session-secret-change-me"
     admin_session_idle_seconds: int = 8 * 3600
     admin_session_absolute_seconds: int = 14 * 86400
-    paypal_environment: Literal["sandbox", "production"] = "sandbox"
-    paypal_client_id: str | None = None
-    paypal_client_secret: SecretStr | None = None
-    paypal_webhook_id: str | None = None
-    paypal_return_url: str | None = None
-    paypal_cancel_url: str | None = None
 
     @field_validator("issuer")
     @classmethod

@@ -41,9 +41,10 @@ INITIAL_FEATURES = (
     "page",
     "site_settings",
     "check_in",
-    "point_purchase",
-    "membership_purchase",
+    "membership_grants",
     "site_cleanup",
+    "content_engagement",
+    "content_bucket",
 )
 
 

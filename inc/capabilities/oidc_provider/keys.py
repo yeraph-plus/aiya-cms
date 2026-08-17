@@ -4,8 +4,8 @@ Contract source: context/spec/capabilities/oidc-provider.md §10.
 
 Only one active signing key exists at a time; retired keys remain in JWKS
 until all signed tokens' maximum lifetime plus clock skew has passed. The
-private key never enters the database — a SigningKeyStore Port (dev
-in-memory store, later file/KMS loaders) holds it.
+private key never enters the database — a persistent SigningKeyStore Port
+holds it.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from sqlalchemy import select
 from inc.capabilities.oidc_provider.models import OidcSigningKey, PublicJwk
 from inc.capabilities.oidc_provider.schemas import OidcError
 from inc.kernel.db import UoWFactory
+from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.time import Clock
 
 ALGORITHM_ALLOWLIST = ("RS256",)
@@ -49,40 +50,6 @@ class SigningKeyStore(Protocol):
     async def drop_private(self, kid: str) -> None: ...
 
 
-class InMemorySigningKeyStore:
-    """Dev/test adapter: ephemeral RSA-2048 keys in process memory."""
-
-    def __init__(self) -> None:
-        self._keys: dict[str, Any] = {}
-
-    async def generate(self, kid: str) -> tuple[Any, dict[str, Any]]:
-        private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        public = private.public_key()
-        numbers = public.public_numbers()
-        public_jwk = {
-            "kty": "RSA",
-            "kid": kid,
-            "alg": "RS256",
-            "use": "sig",
-            "n": _b64u(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")),
-            "e": _b64u(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")),
-        }
-        self._keys[kid] = private
-        return private, public_jwk
-
-    async def load_private(self, kid: str) -> Any | None:
-        return self._keys.get(kid)
-
-    async def drop_private(self, kid: str) -> None:
-        self._keys.pop(kid, None)
-
-
-def _b64u(data: bytes) -> str:
-    import base64
-
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
 class KeyService:
     """Active key selection, rotation and JWKS publication."""
 
@@ -97,7 +64,14 @@ class KeyService:
         self._store = store
         self._clock = clock
 
-    async def ensure_active_key(self) -> ActiveSigningKey:  # type: ignore[return]
+    async def initialize_active_key(self) -> ActiveSigningKey:  # type: ignore[return]
+        """Create the first key during the explicit installation workflow.
+
+        Runtime startup never calls this method.  Keeping initialization here
+        makes a fresh database install deterministic while ensuring a missing
+        or corrupted production key cannot be silently replaced.
+        """
+
         async with self._uow_factory() as uow:
             row = (
                 (
@@ -116,15 +90,45 @@ class KeyService:
                     return ActiveSigningKey(
                         kid=row.kid, private_key=private, algorithm=row.algorithm
                     )
-                # Private material lost: retire and generate a replacement.
-                row.status = "retired"
-                row.retire_at = self._clock.utc_now()
-                # Retention is anchored to retirement, not creation: the
-                # replacement must keep verifying tokens signed by this key
-                # for the full retention window after it stops signing.
-                row.delete_at = row.retire_at + timedelta(seconds=KEY_RETENTION_SECONDS)
-                await uow.commit()
+                raise _keys_unavailable("active private key material is missing")
             return await self._rotate(uow, initial=True)
+
+    async def require_active_key(self) -> ActiveSigningKey:
+        """Load the pre-installed active key or fail closed.
+
+        The signing-key database record and its filesystem material are one
+        deployment unit.  A release process must run ``install`` before the
+        app starts; runtime code never regenerates a lost key.
+        """
+
+        async with self._uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(OidcSigningKey).where(OidcSigningKey.status == "active")
+                    )
+                )
+                .scalars()
+                .first()
+            )
+        if row is None:
+            raise _keys_unavailable("no active signing key is installed")
+        try:
+            private = await self._store.load_private(row.kid)
+        except Exception as exc:
+            raise _keys_unavailable("active private key material is unreadable") from exc
+        if private is None:
+            raise _keys_unavailable("active private key material is missing")
+        return ActiveSigningKey(kid=row.kid, private_key=private, algorithm=row.algorithm)
+
+    async def ensure_active_key(self) -> ActiveSigningKey:
+        """Backward-compatible explicit initializer for isolated tests.
+
+        Production paths use :meth:`require_active_key`; callers that create
+        an ephemeral temporary store may use this installation primitive.
+        """
+
+        return await self.initialize_active_key()
 
     async def rotate(self) -> ActiveSigningKey:  # type: ignore[return]
         async with self._uow_factory() as uow:
@@ -223,6 +227,14 @@ def _new_kid(now: Any) -> str:
     import secrets
 
     return f"sig-{now.strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}"
+
+
+def _keys_unavailable(detail: str) -> KernelError:
+    return KernelError(
+        code="oidc.signing_keys_unavailable",
+        category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+        message=detail,
+    )
 
 
 def sign_jwt(key: ActiveSigningKey, claims: dict[str, Any]) -> str:

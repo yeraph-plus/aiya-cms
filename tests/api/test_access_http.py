@@ -51,7 +51,7 @@ async def test_role_lifecycle_and_grant_effect(
     client: Any, admin_token: str, uow_factory: Any, clock: Any
 ) -> None:
     from inc.capabilities.access.commands import ReplaceRoleCapabilities
-    from tests.api.conftest import _mint_token_for
+    from inc.capabilities.access.schemas import Principal
 
     services = client.app.state.services
     headers = {"Authorization": f"Bearer {admin_token}"}
@@ -94,9 +94,8 @@ async def test_role_lifecycle_and_grant_effect(
     assert assigned.status_code == 200, assigned.text
     assert role["id"] in assigned.json()["roles"]
 
-    token = await _mint_token_for(services, user.subject.id)
-    me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
-    assert "content.write" in me.json()["capabilities"]
+    principal = Principal(subject_id=user.subject.id, status="active", client_id="admin")
+    assert "content.write" in await services.authorize.capabilities_of(principal)
 
     revoked = await client.post(
         f"/api/v1/admin/roles/{role['id']}/revoke",
@@ -105,9 +104,9 @@ async def test_role_lifecycle_and_grant_effect(
     )
     assert revoked.status_code == 204
 
-    # decisions are read live: revocation takes effect with the same token
-    me_after = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
-    assert "content.write" not in me_after.json()["capabilities"]
+    # Authorization decisions are read live, independent of any removed
+    # client-side profile endpoint.
+    assert "content.write" not in await services.authorize.capabilities_of(principal)
 
 
 async def test_roles_routes_require_capability(client: Any, uow_factory: Any, clock: Any) -> None:

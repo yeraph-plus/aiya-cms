@@ -112,6 +112,7 @@ watch(() => props.group, syncValues, { immediate: true });
                     <SettingField
                         :model-value="values[field.slug]"
                         :field="field"
+                        :group-key="group.group_key"
                         :sensitive-configured="group.sensitive_configured?.[field.slug] === true && !clearSensitiveFields.has(field.slug)"
                         :disabled="!canUpdate() || saving"
                         :upload-asset="uploadAsset"

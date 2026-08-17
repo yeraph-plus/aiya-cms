@@ -13,19 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from inc.capabilities.settings.groups import SettingFieldType
 
 
-class SettingOptionDTO(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    label: str
-    value: str | int | float | bool | None
-
-
 class SettingFieldDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     slug: str
-    title: str
-    desc: str
     type: SettingFieldType
     type_sub: str | None = None
     default: Any

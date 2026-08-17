@@ -20,6 +20,7 @@ from inc.capabilities.notification.commands import (
     CommandContext,
     RequestNotification,
     RetryDelivery,
+    UpdateNotificationTemplate,
 )
 from inc.capabilities.notification.diagnostics import NotificationDiagnostics
 from inc.capabilities.notification.events import NOTIFICATION_EVENT_SCHEMAS
@@ -36,7 +37,10 @@ from inc.capabilities.notification.ports import (
     RecipientTarget,
 )
 from inc.capabilities.notification.retention import cleanup_notifications_in_uow
-from inc.capabilities.notification.schemas import RequestNotificationInput
+from inc.capabilities.notification.schemas import (
+    RequestNotificationInput,
+    UpdateNotificationTemplateInput,
+)
 from inc.capabilities.notification.specs import (
     DeliveryPolicy,
     NotificationSpec,
@@ -97,6 +101,9 @@ class FakeProvider:
     raise_error: ProviderError | None = None
     fail_once: bool = False
 
+    async def check_availability(self) -> tuple[bool, str | None]:
+        return True, None
+
     async def send(
         self, *, target: RecipientTarget, subject: str, body: str, idempotency_key: str
     ) -> ProviderResult:
@@ -121,7 +128,7 @@ class FakeProvider:
 
 @pytest.fixture
 def specs() -> NotificationSpecRegistry:
-    registry = NotificationSpecRegistry()
+    registry = NotificationSpecRegistry(allowed_triggers=frozenset({NOTIFY_KEY}))
     registry.register(make_spec())
     return registry
 
@@ -170,7 +177,12 @@ def ctx(
         providers=providers,
         runner=runner,
         permissions=frozenset(
-            {"notification.request", "notification.cancel", "notification.retry"}
+            {
+                "notification.request",
+                "notification.cancel",
+                "notification.retry",
+                "notification.templates.manage",
+            }
         ),
         actor_id="moderator",
         trace_id="trace-1",
@@ -184,6 +196,7 @@ async def seeded_template(uow_factory: UoWFactory) -> None:
     async with uow_factory() as uow:
         uow.session.add(
             NotificationTemplate(
+                trigger_name=NOTIFY_KEY,
                 template_key="moderation_submitted",
                 version="1",
                 channel="email",
@@ -198,7 +211,7 @@ async def seeded_template(uow_factory: UoWFactory) -> None:
 
 def request_input(**overrides: Any) -> RequestNotificationInput:
     base = {
-        "spec_key": NOTIFY_KEY,
+        "trigger_name": NOTIFY_KEY,
         "recipient_type": "identity",
         "recipient_id": "user-1",
         "variables": {"content_title": "Hello", "content_id": "content-1"},
@@ -221,7 +234,7 @@ async def _delivery_count(uow_factory: UoWFactory) -> int:
 
 
 def test_spec_registry_rejects_duplicates_and_bad_declarations() -> None:
-    registry = NotificationSpecRegistry()
+    registry = NotificationSpecRegistry(allowed_triggers=frozenset({NOTIFY_KEY}))
     registry.register(make_spec())
     with pytest.raises(KernelError) as excinfo:
         registry.register(make_spec())
@@ -267,8 +280,8 @@ async def test_request_validates_variables_and_spec(
     with pytest.raises(ValidationError):
         await RequestNotification(ctx)(request_input(variables={"bogus": 1}))
     with pytest.raises(KernelError) as excinfo:
-        await RequestNotification(ctx)(request_input(spec_key="ghost"))
-    assert excinfo.value.code == "notification.unknown_spec"
+        await RequestNotification(ctx)(request_input(trigger_name="ghost"))
+    assert excinfo.value.code == "notification.unknown_trigger"
     assert excinfo.value.category.value == "validation"
     with pytest.raises(KernelError) as excinfo:
         await RequestNotification(ctx)(request_input(recipient_type="page"))
@@ -299,6 +312,39 @@ async def test_request_requires_permission(
     with pytest.raises(KernelError) as excinfo:
         await RequestNotification(restricted)(request_input())
     assert excinfo.value.code == "notification.forbidden"
+
+
+async def test_template_update_requires_exact_registered_trigger_variables(
+    ctx: CommandContext,
+) -> None:
+    updated = await UpdateNotificationTemplate(ctx)(
+        trigger_name=NOTIFY_KEY,
+        locale="en",
+        input_=UpdateNotificationTemplateInput(
+            subject="New submission: {content_title}",
+            body="Review {content_title} ({content_id})",
+        ),
+    )
+    assert updated.trigger_name == NOTIFY_KEY
+    with pytest.raises(KernelError) as missing:
+        await UpdateNotificationTemplate(ctx)(
+            trigger_name=NOTIFY_KEY,
+            locale="en",
+            input_=UpdateNotificationTemplateInput(
+                subject="New submission: {content_title}", body="Review {content_title}"
+            ),
+        )
+    assert missing.value.code == "notification.template_variables_invalid"
+    with pytest.raises(KernelError) as unknown:
+        await UpdateNotificationTemplate(ctx)(
+            trigger_name="unknown.trigger",
+            locale="en",
+            input_=UpdateNotificationTemplateInput(
+                subject="New submission: {content_title}",
+                body="Review {content_title} ({content_id})",
+            ),
+        )
+    assert unknown.value.code == "notification.unknown_trigger"
 
 
 # --- delivery -------------------------------------------------------------

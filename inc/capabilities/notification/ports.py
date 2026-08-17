@@ -73,6 +73,8 @@ class NotificationProvider(Protocol):
 
     key: str
 
+    async def check_availability(self) -> tuple[bool, str | None]: ...
+
     async def send(
         self,
         *,

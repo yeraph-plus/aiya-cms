@@ -26,19 +26,20 @@ def test_management_schema_contains_only_releasable_contract() -> None:
         "/healthz",
         "/api/v1/health",
         "/api/v1/admin/points/ledger",
-        "/api/v1/auth/grants",
-        "/api/v1/auth/grants/{client_id}",
         "/api/v1/admin/content",
+        "/api/v1/admin/content-bucket/upload-intents",
         "/api/v1/admin/users",
         "/api/v1/admin/taxonomy/dimensions",
         "/api/v1/admin/settings/groups/{group_key}",
         "/oidc/token",
         "/oidc/authorize",
+        "/oidc/login",
         "/.well-known/openid-configuration",
     ):
         assert expected in paths, expected
     assert "/api/v1/me" not in paths
     assert "/api/v1/me/points/ledger" not in paths
+    assert not any(path.startswith("/api/v1/auth/") for path in paths)
     assert "/api/v1/admin/notifications/deliveries" in paths
     assert "HTTPBearer" in schema.get("components", {}).get("securitySchemes", {})
 

@@ -12,7 +12,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from inc.capabilities.assets.ports import (
     ObjectStat,
@@ -32,8 +32,10 @@ _MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60
 class S3Settings:
     endpoint_url: str
     virtual_host_url: str
+    public_base_url: str
     bucket: str
     avatar_bucket: str
+    content_bucket: str
     region: str
     addressing_style: str
     access_key_id: str
@@ -43,8 +45,10 @@ class S3Settings:
     def from_values(cls, values: dict[str, Any]) -> S3Settings:
         endpoint_url = _required_url(values.get("s3_endpoint_url"), "s3_endpoint_url")
         virtual_host_url = _optional_url(values.get("s3_virtual_host_url"), "s3_virtual_host_url")
+        public_base_url = _optional_url(values.get("s3_public_base_url"), "s3_public_base_url")
         bucket = str(values.get("s3_bucket") or "").strip()
         avatar_bucket = str(values.get("s3_avatar_bucket") or f"{bucket}-avatars").strip()
+        content_bucket = str(values.get("s3_content_bucket") or f"{bucket}-content").strip()
         region = str(values.get("s3_region") or "").strip()
         addressing_style = str(values.get("s3_addressing_style") or "path").strip()
         access_key_id = _secret_value(values.get("s3_access_key_id"))
@@ -53,6 +57,8 @@ class S3Settings:
             raise _invalid_config("s3_bucket")
         if not avatar_bucket:
             raise _invalid_config("s3_avatar_bucket")
+        if not content_bucket:
+            raise _invalid_config("s3_content_bucket")
         if not region:
             raise _invalid_config("s3_region")
         if addressing_style not in {"path", "virtual"}:
@@ -62,8 +68,10 @@ class S3Settings:
         return cls(
             endpoint_url=endpoint_url,
             virtual_host_url=virtual_host_url,
+            public_base_url=public_base_url,
             bucket=bucket,
             avatar_bucket=avatar_bucket,
+            content_bucket=content_bucket,
             region=region,
             addressing_style=addressing_style,
             access_key_id=access_key_id,
@@ -74,7 +82,7 @@ class S3Settings:
         return (
             f"S3Settings(endpoint_url={self.endpoint_url!r}, "
             f"virtual_host_url={self.virtual_host_url!r}, bucket={self.bucket!r}, "
-            f"avatar_bucket={self.avatar_bucket!r}, "
+            f"avatar_bucket={self.avatar_bucket!r}, content_bucket={self.content_bucket!r}, "
             f"region={self.region!r}, addressing_style={self.addressing_style!r})"
         )
 
@@ -89,13 +97,24 @@ class S3ObjectStorage:
         self._clock = clock
 
     async def _settings(self) -> S3Settings:
-        group = await self._settings_queries.get_group(_SETTINGS_GROUP)
         try:
+            group = await self._settings_queries.get_group(_SETTINGS_GROUP)
             return S3Settings.from_values(group.values)
-        except ValueError as exc:
-            raise permanent_storage_error(
-                "assets.s3_invalid_config", "S3 object storage settings are invalid"
-            ) from exc
+        except Exception as exc:
+            raise storage_error("S3 storage provider is unavailable") from exc
+
+    async def check_availability(self) -> tuple[bool, str | None]:
+        """Explicitly probe the selected bucket; construction remains inert."""
+
+        try:
+            settings = await self._settings()
+            client = self._client(settings, bucket=settings.bucket)
+            await asyncio.to_thread(client.head_bucket, Bucket=settings.bucket)
+        except StorageError as exc:
+            return False, exc.code
+        except Exception:
+            return False, "assets.provider_unavailable"
+        return True, None
 
     @staticmethod
     def _client(
@@ -129,6 +148,8 @@ class S3ObjectStorage:
             return settings.bucket
         if requested in ("avatar", settings.avatar_bucket):
             return settings.avatar_bucket
+        if requested in ("content", settings.content_bucket):
+            return settings.content_bucket
         raise _invalid_config("bucket")
 
     async def create_upload_intent(
@@ -200,6 +221,53 @@ class S3ObjectStorage:
         except Exception as exc:  # noqa: BLE001 - SDK errors map to storage errors
             raise _map_error(exc, "create read URL") from exc
 
+    async def read_bytes(self, *, bucket: str | None = None, object_key: str) -> bytes:
+        settings = await self._settings()
+        target_bucket = self._bucket(settings, bucket)
+        client = self._client(settings, bucket=target_bucket)
+        try:
+            result = await asyncio.to_thread(
+                client.get_object, Bucket=target_bucket, Key=object_key
+            )
+            return await asyncio.to_thread(result["Body"].read)
+        except Exception as exc:  # noqa: BLE001
+            raise _map_error(exc, "read object") from exc
+
+    async def put_bytes(
+        self,
+        *,
+        bucket: str | None = None,
+        object_key: str,
+        body: bytes,
+        mime_type: str,
+    ) -> ObjectStat:
+        settings = await self._settings()
+        target_bucket = self._bucket(settings, bucket)
+        client = self._client(settings, bucket=target_bucket)
+        try:
+            await asyncio.to_thread(
+                client.put_object,
+                Bucket=target_bucket,
+                Key=object_key,
+                Body=body,
+                ContentType=mime_type,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise _map_error(exc, "write object") from exc
+        return ObjectStat(byte_size=len(body), mime_type=mime_type, bucket=target_bucket)
+
+    async def public_url(self, *, bucket: str | None = None, object_key: str) -> str:
+        settings = await self._settings()
+        target_bucket = self._bucket(settings, bucket)
+        if target_bucket != settings.content_bucket or not settings.public_base_url:
+            raise permanent_storage_error(
+                "assets.public_url_unavailable", "content bucket public URL is not configured"
+            )
+        base = settings.public_base_url.replace("{bucket}", target_bucket).rstrip("/")
+        if "{bucket}" not in settings.public_base_url:
+            base = f"{base}/{quote(target_bucket, safe='')}"
+        return f"{base}/{quote(object_key, safe='/')}"
+
     async def delete(self, *, bucket: str | None = None, object_key: str) -> None:
         settings = await self._settings()
         target_bucket = self._bucket(settings, bucket)
@@ -263,7 +331,7 @@ def _map_error(exc: Exception, operation: str) -> StorageError:
     if code == "NoSuchBucket":
         return permanent_storage_error("assets.bucket_missing", "storage bucket is missing")
     if code in {"AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"}:
-        return permanent_storage_error("assets.provider_denied", "storage provider denied request")
+        return storage_error("S3 storage provider is unavailable")
     if code in {"NoCredentialsError", "PartialCredentialsError"}:
-        return permanent_storage_error("assets.s3_invalid_config", "S3 credentials are invalid")
+        return storage_error("S3 storage provider is unavailable")
     return storage_error(f"S3 {operation} failed")

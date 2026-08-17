@@ -22,21 +22,19 @@ _JSON_SCALAR = str | int | float | bool | None
 
 
 class SettingOption(BaseModel):
-    """One stable option exposed to an admin form."""
+    """One stable machine value exposed to an admin form."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    label: str
     value: _JSON_SCALAR
 
 
 class SettingFieldMetadata(BaseModel):
-    """Validated UI metadata; it is not a backend authorization contract."""
+    """Validated structural metadata; display text belongs to the client."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     options: tuple[SettingOption, ...] = ()
-    placeholder: str | None = None
     rows: int | None = Field(default=None, ge=1, le=100)
     accept: tuple[str, ...] = ()
     max_length: int | None = Field(default=None, gt=0)
@@ -50,8 +48,6 @@ class SettingFieldSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     slug: str
-    title: str
-    desc: str = ""
     type: SettingFieldType
     type_sub: str | None = None
     default: Any
@@ -63,8 +59,6 @@ class SettingFieldSpec(BaseModel):
     def _validate_descriptor(self) -> SettingFieldSpec:
         if not _KEY.match(self.slug):
             raise ValueError(f"invalid setting field slug {self.slug!r}")
-        if not self.title.strip():
-            raise ValueError(f"setting field {self.slug} requires a title")
         if self.public and self.sensitive:
             raise ValueError(f"setting field {self.slug} cannot be public and sensitive")
         if self.type in {"select", "radio"} and not self.metadata.options:

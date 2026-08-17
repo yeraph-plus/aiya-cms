@@ -135,6 +135,17 @@ class SmtpEmailAdapter:
         group = await self._settings_queries.get_group("notification")
         return smtp_settings_from_group(group.values, timeout_seconds=self._timeout_seconds)
 
+    async def check_availability(self) -> tuple[bool, str | None]:
+        """Expose a safe, explicit configuration health result."""
+
+        try:
+            settings = await self._current_settings()
+        except Exception:
+            return False, "notification.provider_unavailable"
+        if not settings.enabled or not settings.host:
+            return False, "notification.provider_unavailable"
+        return True, None
+
     async def send(
         self,
         *,

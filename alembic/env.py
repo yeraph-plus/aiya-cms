@@ -15,7 +15,7 @@ import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import pool
+from sqlalchemy import Connection, inspect, pool, text
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
@@ -74,9 +74,50 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection: object) -> None:
+_RELEASE_BASELINE_REVISION = "release_0001"
+_BUSINESS_TABLE_PREFIXES = (
+    "access_",
+    "assets_",
+    "content_",
+    "identity_",
+    "notification_",
+    "oidc_",
+    "payment_",
+    "settings_",
+)
+
+
+def _reject_legacy_database(connection: Connection) -> None:
+    """Release is an empty-database baseline; never reinterpret old state."""
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    if "alembic_version" in tables:
+        revisions = {
+            str(row[0])
+            for row in connection.execute(text("SELECT version_num FROM alembic_version"))
+        }
+        if revisions == {_RELEASE_BASELINE_REVISION}:
+            # A database already installed from this exact release baseline
+            # is the only non-empty state accepted by idempotent install.
+            return
+        if revisions:
+            raise RuntimeError(
+                "release migration baseline refuses existing Alembic revision(s): "
+                f"{sorted(revisions)}; deploy to a new empty database"
+            )
+    existing = sorted(table for table in tables if table.startswith(_BUSINESS_TABLE_PREFIXES))
+    if existing:
+        raise RuntimeError(
+            "release migration baseline refuses existing application tables: "
+            f"{existing}; deploy to a new empty database"
+        )
+
+
+def do_run_migrations(connection: Connection) -> None:
     """Configure and run migrations on an active SQLAlchemy connection."""
 
+    _reject_legacy_database(connection)
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
@@ -94,7 +135,11 @@ async def run_async_migrations() -> None:
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
+    # Alembic's migration transaction is coordinated with this explicit async
+    # transaction.  A bare ``connect()`` rolls the DDL back when the async
+    # connection closes, leaving an apparently successful empty-database
+    # upgrade with no tables.
+    async with connectable.begin() as connection:
         await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()

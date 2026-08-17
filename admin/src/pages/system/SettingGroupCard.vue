@@ -44,7 +44,12 @@ async function save(): Promise<void> {
             clear_sensitive_fields: [...clearSensitiveFields.value]
         });
         emit('updated', updated);
-        toast.add({ severity: 'success', summary: t('workbenches.settings.saved'), detail: t('workbenches.settings.savedDetail'), life: 3000 });
+        toast.add({
+            severity: 'success',
+            summary: t('workbenches.settings.saved'),
+            detail: t('workbenches.settings.savedDetail'),
+            life: 3000
+        });
     } catch (caught) {
         actionError.value = caught;
     } finally {
@@ -69,7 +74,12 @@ async function reset(): Promise<void> {
     try {
         const updated = await resetSettingGroup(props.group.group_key);
         emit('updated', updated);
-        toast.add({ severity: 'success', summary: t('workbenches.settings.resetDone'), detail: t('workbenches.settings.resetDoneDetail'), life: 3000 });
+        toast.add({
+            severity: 'success',
+            summary: t('workbenches.settings.resetDone'),
+            detail: t('workbenches.settings.resetDoneDetail'),
+            life: 3000
+        });
     } catch (caught) {
         actionError.value = caught;
     } finally {
@@ -118,7 +128,14 @@ watch(() => props.group, syncValues, { immediate: true });
         </template>
         <template #footer>
             <div class="flex flex-wrap items-center justify-between gap-3 w-full">
-                <span v-if="group.updated_at" class="text-sm text-muted-color">{{ t('workbenches.settings.lastUpdated', { time: new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(group.updated_at)) }) }}</span>
+                <span v-if="group.updated_at" class="text-sm text-muted-color">{{
+                    t('workbenches.settings.lastUpdated', {
+                        time: new Intl.DateTimeFormat(locale, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short'
+                        }).format(new Date(group.updated_at))
+                    })
+                }}</span>
                 <span v-else class="text-sm text-muted-color">{{ t('workbenches.settings.notPersisted') }}</span>
                 <div class="flex flex-wrap gap-2">
                     <ConfirmAction :label="t('workbenches.settings.reset')" :header="t('workbenches.settings.resetTitle')" :message="t('workbenches.settings.resetConfirm')" :disabled="!canUpdate() || saving" @confirmed="reset" />

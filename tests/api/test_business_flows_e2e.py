@@ -212,7 +212,7 @@ async def test_full_business_flow(
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     role = await client.post(
         "/api/v1/admin/roles",
-        json={"name": "Editor", "slug": "editor"},
+        json={"name": "Flow editor", "slug": "flow-editor"},
         headers=admin_headers,
     )
     assert role.status_code == 200, role.text

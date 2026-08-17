@@ -13,8 +13,9 @@ from typing import Any
 
 from sqlalchemy import select
 
-from inc.capabilities.membership.levels import MembershipLevelRegistry
+from inc.capabilities.membership.levels import MembershipLevelRegistry, MembershipLevelSpec
 from inc.capabilities.membership.models import (
+    MembershipLevel,
     MembershipRenewalRecord,
     MembershipSubscription,
 )
@@ -30,15 +31,41 @@ class MembershipQueries:
         self._levels = levels
 
     async def list_levels(self) -> list[LevelDTO]:
+        async with self._uow_factory() as uow:
+            rows = (
+                (
+                    await uow.session.execute(
+                        select(MembershipLevel).order_by(MembershipLevel.tier_rank)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        known = {spec.key for spec in self._levels.specs()}
+        for row in rows:
+            if row.level_key not in known:
+                self._levels.register_runtime(
+                    MembershipLevelSpec(
+                        key=row.level_key,
+                        display_name=row.display_name,
+                        tier_rank=row.tier_rank,
+                        cycle_days=row.cycle_days,
+                        grant_points=row.grant_points,
+                        renewal_allowed=row.renewal_allowed,
+                        status=row.status,
+                        version=row.version,
+                    )
+                )
         return [
             LevelDTO(
                 level_key=spec.key,
                 display_name=spec.display_name,
                 tier_rank=spec.tier_rank,
-                status="active",
+                status=spec.status,
                 cycle_days=spec.cycle_days,
                 grant_points=spec.grant_points,
                 renewal_allowed=spec.renewal_allowed,
+                version=spec.version,
             )
             for spec in sorted(self._levels.specs(), key=lambda s: s.tier_rank)
         ]

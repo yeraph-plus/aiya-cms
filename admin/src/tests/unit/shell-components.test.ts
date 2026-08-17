@@ -8,8 +8,22 @@ describe('shared administrator shells', () => {
     it('combines the page title, actions and refresh affordance', async () => {
         const wrapper = mount(PageShell, {
             props: { title: 'Users', description: 'Manage users', loading: false },
-            slots: { actions: '<button data-test="custom-action">Create</button>', default: '<div>content</div>' },
-            global: { plugins: [i18n], stubs: { Toolbar: { template: '<div><slot name="start"/><slot name="end"/></div>' }, Button: { emits: ['click'], template: '<button data-test="refresh" @click="$emit(\'click\')">refresh</button>' } } }
+            slots: {
+                actions: '<button data-test="custom-action">Create</button>',
+                default: '<div>content</div>'
+            },
+            global: {
+                plugins: [i18n],
+                stubs: {
+                    Toolbar: {
+                        template: '<div><slot name="start"/><slot name="end"/></div>'
+                    },
+                    Button: {
+                        emits: ['click'],
+                        template: '<button data-test="refresh" @click="$emit(\'click\')">refresh</button>'
+                    }
+                }
+            }
         });
 
         expect(wrapper.text()).toContain('Users');
@@ -20,7 +34,10 @@ describe('shared administrator shells', () => {
     });
 
     it('provides a consistent titled surface without forcing a nested page route', () => {
-        const wrapper = mount(SurfaceCard, { props: { title: 'Account' }, slots: { default: '<p>profile</p>' } });
+        const wrapper = mount(SurfaceCard, {
+            props: { title: 'Account' },
+            slots: { default: '<p>profile</p>' }
+        });
         expect(wrapper.text()).toContain('Account');
         expect(wrapper.text()).toContain('profile');
     });

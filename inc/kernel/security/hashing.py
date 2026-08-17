@@ -35,7 +35,8 @@ class Argon2PasswordHasher:
     def verify(self, password: str, encoded: str) -> bool:
         try:
             return self._hasher.verify(password, encoded)
-        except AttributeError, TypeError, ValueError, pwdlib.exceptions.PwdlibError:
+        except (AttributeError, TypeError, ValueError, pwdlib.exceptions.PwdlibError) as _exc:
+            del _exc
             # Unrecognized, malformed or corrupted stored hash must degrade to
             # a failed login, never crash the auth flow.
             return False
@@ -47,7 +48,8 @@ class Argon2PasswordHasher:
             if not self._hasher.current_hasher.identify(encoded):
                 return True
             return self._hasher.current_hasher.check_needs_rehash(encoded)
-        except AttributeError, TypeError, ValueError, pwdlib.exceptions.PwdlibError:
+        except (AttributeError, TypeError, ValueError, pwdlib.exceptions.PwdlibError) as _exc:
+            del _exc
             # A malformed/corrupted hash cannot be verified; rehashing (or a
             # subsequent failed login) is the safe direction.
             return True

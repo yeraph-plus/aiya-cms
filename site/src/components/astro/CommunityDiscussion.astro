@@ -1,0 +1,65 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { createServerApiClient } from '@/lib/api/server/client';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+
+interface Props {
+    locale: Locale;
+    slug: string;
+}
+
+const { locale, slug } = Astro.props;
+const api = createServerApiClient(Astro.session, Astro.locals.requestId);
+const detailResponse = await api.GET('/api/v1/community/discussions/by-slug/{slug}', {
+    params: { path: { slug } }
+});
+if (!detailResponse.data) Astro.response.status = 404;
+const discussion = detailResponse.data;
+const postsResponse = discussion
+    ? await api.GET('/api/v1/community/discussions/{discussion_id}/posts', {
+          params: { path: { discussion_id: discussion.id }, query: { page: 1, size: 100 } }
+      })
+    : null;
+const posts = postsResponse?.data?.items ?? [];
+---
+
+<BaseLayout
+    locale={locale}
+    title={discussion?.title ?? t(locale, 'error.notFound.title')}
+    description={discussion?.title ?? t(locale, 'error.notFound.description')}
+>
+    <main class="detail-page">
+        {
+            discussion ? (
+                <>
+                    <header class="detail-header">
+                        <p class="eyebrow">{t(locale, 'community.discussion')}</p>
+                        <h1>{discussion.title}</h1>
+                        <p class="lede">
+                            {discussion.reply_count} {t(locale, 'community.replies')}
+                        </p>
+                    </header>
+                    <section class="community-posts" aria-label={t(locale, 'community.posts')}>
+                        {posts.map((post) => (
+                            <article class="community-post">
+                                <header>
+                                    <strong>{post.author?.display_name ?? post.author_id}</strong>
+                                    <span>#{post.number}</span>
+                                </header>
+                                <pre>{post.body}</pre>
+                            </article>
+                        ))}
+                    </section>
+                </>
+            ) : (
+                <section class="placeholder-surface">
+                    <>
+                        <h1>{t(locale, 'error.notFound.title')}</h1>
+                        <p>{t(locale, 'error.notFound.description')}</p>
+                    </>
+                </section>
+            )
+        }
+    </main>
+</BaseLayout>

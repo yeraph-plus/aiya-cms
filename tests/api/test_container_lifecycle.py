@@ -12,7 +12,7 @@ import pytest
 
 from inc.api.config import ApiSettings
 from inc.api.container import build_container
-from inc.api.manifest import cms, kernel_only
+from inc.api.manifest import cms, cms_dev, kernel_only, management_plane
 from inc.kernel.boot import AppManifest
 from inc.kernel.errors import KernelError
 
@@ -26,7 +26,7 @@ async def test_start_stop_is_idempotent_and_clean(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
     container = build_container(
-        manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
     )
     await container.start()
     assert len(container._tasks) == 4  # outbox + workflow + CronScheduler + TaskWorker
@@ -42,7 +42,7 @@ async def test_cms_registers_cron_work_with_kernel_task_runtime(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
     container = build_container(
-        manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
     )
 
     assert "content.publish.scan.v1" in container.cron_registry.keys()
@@ -50,8 +50,49 @@ async def test_cms_registers_cron_work_with_kernel_task_runtime(
     assert "membership.subscription.expire.v1" in container.cron_registry.keys()
     assert "oidc.keys.cleanup.v1" in container.cron_registry.keys()
     assert "site.cleanup.retention.v1" in container.cron_registry.keys()
+    assert "notification.retention.v1" in container.cron_registry.keys()
     assert "content.publish.scan.v1.tick" in container.task_registry.keys()
     assert "site.cleanup.retention.v1.tick" in container.task_registry.keys()
+
+
+async def test_management_plane_registers_management_and_notification_retention(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    container = build_container(
+        manifest=management_plane, uow_factory=uow_factory, clock=clock, settings=settings
+    )
+
+    assert "management.retention.v1" in container.cron_registry.keys()
+    assert "notification.retention.v1" in container.cron_registry.keys()
+
+
+async def test_provider_catalog_registers_allowed_implementations_and_uses_manifest_default(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    container = build_container(
+        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
+    )
+
+    assert container.provider_catalogs["notification.email"].keys() == (
+        "email.smtp",
+        "email.smtp2go",
+    )
+    assert container.provider_catalogs["payments.provider"].keys() == (
+        "dev_fake",
+        "paypal",
+    )
+    assert await container.selected_provider_key("payments.provider") == "dev_fake"
+    assert container.settings_groups.require("payments").group_key == "payments"
+
+
+async def test_management_plane_does_not_expose_unassembled_payment_settings(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    container = build_container(
+        manifest=management_plane, uow_factory=uow_factory, clock=clock, settings=settings
+    )
+
+    assert "payments" not in {spec.group_key for spec in container.settings_groups.specs()}
 
 
 async def test_start_requires_frozen_container(
@@ -60,7 +101,7 @@ async def test_start_requires_frozen_container(
     from inc.api.container import ApplicationContainer
 
     container = ApplicationContainer(
-        manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings
+        manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings
     )
     container.build()  # not frozen
     with pytest.raises(KernelError) as excinfo:
@@ -100,10 +141,49 @@ async def test_production_denies_dev_payment_adapter(uow_factory: Any, clock: An
         environment="production",
         issuer="https://cms.example.com",
         secure_cookies=True,
+        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
+        admin_session_secret="test-admin-session-secret-0123456789012345",
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=production)
+    assert excinfo.value.code == "kernel.adapter_production_denied"
+
+
+async def test_production_cms_is_rejected_before_provider_configuration(
+    uow_factory: Any, clock: Any
+) -> None:
+    production = ApiSettings(
+        environment="production",
+        issuer="https://cms.example.com",
+        secure_cookies=True,
+        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
+        admin_session_secret="test-admin-session-secret-0123456789012345",
     )
     with pytest.raises(KernelError) as excinfo:
         build_container(manifest=cms, uow_factory=uow_factory, clock=clock, settings=production)
-    assert excinfo.value.code == "kernel.adapter_production_denied"
+    assert excinfo.value.code == "kernel.production_manifest_denied"
+
+
+async def test_management_plane_builds_with_production_settings(
+    uow_factory: Any, clock: Any
+) -> None:
+    production = ApiSettings(
+        environment="production",
+        issuer="https://admin.example.com",
+        secure_cookies=True,
+        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
+        admin_session_secret="test-admin-session-secret-0123456789012345",
+    )
+    container = build_container(
+        manifest=management_plane,
+        uow_factory=uow_factory,
+        clock=clock,
+        settings=production,
+    )
+
+    assert container.frozen
+    assert container.manifest.name == "management_plane"
+    assert all(adapter != "payments.dev_fake" for _, adapter in container.manifest.adapters)
 
 
 async def test_production_requires_https_and_secure_cookies() -> None:

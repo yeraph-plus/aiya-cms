@@ -12,7 +12,11 @@ from datetime import timedelta
 
 from sqlalchemy import func, select
 
-from inc.capabilities.notification.models import NotificationDelivery, NotificationIntent
+from inc.capabilities.notification.models import (
+    NotificationDelivery,
+    NotificationIntent,
+    NotificationTemplate,
+)
 from inc.capabilities.notification.specs import NotificationSpecRegistry
 from inc.kernel.db import UoWFactory
 from inc.kernel.observability import DiagnosticResult, DiagnosticStatus
@@ -96,6 +100,42 @@ class NotificationDiagnostics:
                         DiagnosticStatus.OK if not unknown_specs else DiagnosticStatus.DEGRADED
                     ),
                     summary=f"{len(unknown_specs)} intents reference unregistered specs",
+                )
+            )
+
+            template_rows = (
+                await uow.session.execute(
+                    select(
+                        NotificationTemplate.template_key,
+                        NotificationTemplate.channel,
+                        NotificationTemplate.locale,
+                    ).where(NotificationTemplate.status == "active")
+                )
+            ).all()
+            available_templates = {
+                (template_key, channel, locale) for template_key, channel, locale in template_rows
+            }
+            missing_templates: list[str] = []
+            for spec in self._specs.specs():
+                for template_key in spec.template_keys:
+                    for channel in spec.channels:
+                        if not any(
+                            (template_key, channel, locale) in available_templates
+                            for locale in (spec.locale, "en")
+                        ):
+                            missing_templates.append(f"{template_key}:{channel}:{spec.locale}")
+            results.append(
+                DiagnosticResult(
+                    code="notification.template_seed",
+                    status=(
+                        DiagnosticStatus.OK if not missing_templates else DiagnosticStatus.DEGRADED
+                    ),
+                    summary=(
+                        "all registered notification templates are seeded"
+                        if not missing_templates
+                        else f"{len(missing_templates)} registered notification templates "
+                        f"are missing"
+                    ),
                 )
             )
         return results

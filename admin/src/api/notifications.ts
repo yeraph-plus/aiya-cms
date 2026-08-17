@@ -12,13 +12,31 @@ export async function fetchNotificationDeliveries(query?: NotificationDeliveryQu
 }
 
 export async function fetchNotificationDelivery(deliveryId: string, signal?: AbortSignal): Promise<NotificationDeliveryDetailDTO> {
-    return getApi().get(apiPath('/api/v1/admin/notifications/deliveries/{delivery_id}', { delivery_id: deliveryId }), undefined, signal);
+    return getApi().get(
+        apiPath('/api/v1/admin/notifications/deliveries/{delivery_id}', {
+            delivery_id: deliveryId
+        }),
+        undefined,
+        signal
+    );
 }
 
 export async function cancelNotificationDelivery(deliveryId: string, signal?: AbortSignal): Promise<NotificationDeliveryDTO> {
-    return getApi().post(apiPath('/api/v1/admin/notifications/deliveries/{delivery_id}/cancel', { delivery_id: deliveryId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/notifications/deliveries/{delivery_id}/cancel', {
+            delivery_id: deliveryId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function retryNotificationDelivery(deliveryId: string, signal?: AbortSignal): Promise<NotificationDeliveryDTO> {
-    return getApi().post(apiPath('/api/v1/admin/notifications/deliveries/{delivery_id}/retry', { delivery_id: deliveryId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/notifications/deliveries/{delivery_id}/retry', {
+            delivery_id: deliveryId
+        }),
+        undefined,
+        { signal }
+    );
 }

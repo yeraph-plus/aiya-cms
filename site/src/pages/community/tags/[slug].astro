@@ -1,0 +1,8 @@
+---
+import CommunityTag from '@/components/astro/CommunityTag.astro';
+
+const { slug } = Astro.params;
+if (!slug) Astro.response.status = 404;
+---
+
+<CommunityTag locale="zh-CN" slug={slug ?? ''} />

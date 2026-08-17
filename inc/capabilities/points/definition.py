@@ -19,5 +19,7 @@ spec = CapabilitySpec(
         "points.adjust",
         "points.freeze",
         "points.rebuild",
+        "points.programs.read",
+        "points.programs.manage",
     ),
 )

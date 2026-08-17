@@ -45,11 +45,18 @@ FeatureSpec 不声明或拥有业务表；需要持久化的 feature 状态使�
 - routers、workers、Cron runner 是否启用。
 - deployment profile 和安全相关配置引用。
 
-首版至少提供用于测试的 `kernel_only`、`identity_provider` 和完整 `cms` 三种 manifest fixture；生产 manifest 只有一个明确入口。
+首版至少提供用于测试的 `kernel_only`、`identity_provider` 和完整 `cms` 三种 manifest fixture；本轮另提供唯一可部署的管理员管理面入口 `management_plane`。`management_plane` 不是完整产品生产组合，也不得被扩展为用户业务入口。
+
+`management_plane` 只启用可脱离支付/用户站 feature 独立运行的 identity、access、OIDC、audit、settings、assets、points、content、comments、taxonomy、membership、notification 与 community capability，以及 `auth`、`post`、`page`、`site_settings` 声明。它只挂载健康检查、公共身份生命周期、OIDC 协议和 `/api/v1/admin/**` 管理 Router；不得挂载 `/api/v1/me`、用户站公开内容或支付 Router。通知投递及其管理员恢复工作台属于本轮管理面交付，但不提供用户站通知 Router。缺失能力的 permission key 不得出现在当前 Principal 的 capability 集中，管理员 SPA 据此隐藏未交付工作台。
+
+完整 `cms` 继续用于完整 schema、开发和 feature 集成验证。在 `user_center`、`post`、`page` 与站点 feature 收敛、真实 payment/notification provider 绑定和用户站端到端门通过前，`cms` 不是可部署生产入口；生产环境选择它必须 fail-closed。
+
+完整 `cms` 的目标产品 feature 为 `user_center`、`post`、`page`，另加 `site_settings`、`site_cleanup` 站点/运维 feature；enabled capabilities 包含独立 `community`。旧 `check_in`、`point_purchase`、`membership_purchase`、`content_engagement` 不再作为独立 feature 注册；其 workflow/handler 所有权按 [`用户站基础框架规格`](<../user site spec/user-site.md>) 收敛。产品用户 router 收敛为 `site`、`auth`、`user_center`、`post`、`page`，并显式选择 community 的 discussions/tags RouterSpec；管理员、OIDC、webhook 和系统 router 仍由各自边界显式选择。
 
 ### 2.4 部署形态约束
 
 - 生产运行形态为**单 API + 单 worker 实例**；水平扩容只扩无状态层（如只读副本、静态文件）。多写实例（多 API/多 worker 同时写库）不在本规格支持范围。
+- 本轮 `management_plane` 由一个 backend 进程同时承载单 API 和唯一一组进程内 worker loop；不得为 API 启动多 worker，也不得再启动第二个后台执行实例。管理员静态文件服务可以独立水平扩容，但所有副本只反向代理到这一 backend 写实例。
 - 业务能力（如 points）在此前提下采用“时序单步 + 幂等键 + 账本级乐观锁”的执行模型：不依赖数据库行锁、分布式锁或进程内互斥；同账户并发冲突由 version 条件更新拦截，由 workflow 重试。
 - 后台周期性任务（定时发布、积分/会员过期、密钥和日志清理等）由组合根显式注册 `CronSpec`，由 kernel `CronScheduler` 生成持久 `TaskInstance`，再由 `TaskWorker` 顺序执行；生产单 worker 进程内同一时刻仅一个执行者。
 - 依赖此约束的能力规格必须写明。本版本不提供多写实例部署配置；未来若引入，组合根必须在启动时 fail-fast 拒绝多写形态。
@@ -57,8 +64,8 @@ FeatureSpec 不声明或拥有业务表；需要持久化的 feature 状态使�
 ## 3. 稳定 key
 
 - key 使用小写 ASCII、点分命名，不以 Python import path 作为协议。
-- capability：`content`、`oidc_provider`。
-- feature：`post`、`point_purchase`。
+- capability：`content`、`community`、`oidc_provider`。
+- feature：`auth`、`user_center`、`post`、`page`。
 - event：`content.published.v1`。
 - workflow/activity：`post.submit.v1`、`notification.deliver.v1`。
 - capability permission：`content.publish`、`points.adjust`。
@@ -72,7 +79,7 @@ FeatureSpec 不声明或拥有业务表；需要持久化的 feature 状态使�
 - adapter 库位于 `inc/adapters/`，按消费方 capability 分目录组织；可被 api 与 feature 使用，capability 不得反向导入；完整目录合同、已装配/计划实现与占位规则见 [`adapters.md`](adapters.md)。
 - capability 不得为了复用实现而导入 provider capability。
 - adapter 只能通过 provider 的公开 Query/Command 获取数据，不能读取其 Repository/ORM。
-- 普通单实现 Port 在同一 manifest 中绑定必须唯一。notification channel provider Port 可以由组合根显式绑定有序 adapter 元组；每个 slot/key 仍必须唯一，顺序是部署声明而不是数据库设置，capability 只消费 `NotificationProvider` 契约。
+- 普通单实现 Port 在同一 manifest 中绑定必须唯一。provider-valued Port 由组合根显式注册允许的 adapter catalog；每个 key 仍必须唯一，settings capability 只选择当前 key，capability/feature 只消费注入的 `ProviderResolver`/Port 契约。
 - 外部 provider adapter 负责 SDK 初始化、认证、超时、限流、错误归一化和资源关闭。
 - 必需 Port 未绑定、绑定重复或配置不完整必须在启动前失败。
 
@@ -108,6 +115,8 @@ HTTP server 停止不能把尚未提交的 activity 标记为成功；恢复后�
 
 - capability/feature 可以导出 `RouterSpec`，但不得自行调用 `include_router`。
 - manifest 明确允许哪些 router；api 统一施加路径前缀、request ID、异常映射和授权依赖。
+- `inc/api` 的 router 只做 HTTP 适配、授权依赖、输入/输出映射和组合注入。`/admin` 的普通 capability CRUD 直接调用所属 capability 的公开 admin Command/Query；不得为了形式统一额外包成 feature。只有注册、密码找回等跨 capability 多步流程才调用 feature gateway。
+- router 不得导入 SQLAlchemy/ORM、直接使用 `UoW.session` 或拼接跨 capability 查询；跨能力读模型由 feature/capability public Query 提供。
 - OIDC 协议端点使用其标准路径和错误响应，不套普通 `/api/v1` 业务包装。
 - OpenAPI 只包含当前完整产品 manifest 的公开 HTTP 面；测试 manifest 可生成独立临时 schema，不覆盖根 snapshot。
 

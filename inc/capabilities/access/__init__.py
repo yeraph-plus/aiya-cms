@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from inc.capabilities.access.authorize import AuthorizeService
 from inc.capabilities.access.commands import (
+    AssignDefaultUserRole,
     AssignRoleToSubject,
     BootstrapAdministrator,
     CommandContext,
     CreateRole,
     DeleteRole,
+    EnsureBaseRoles,
     ReplaceRoleCapabilities,
     RevokeRoleFromSubject,
+    UpdateRole,
 )
 from inc.capabilities.access.queries import AccessDiagnostics, AccessQueries
 from inc.capabilities.access.registry import PermissionRegistry
@@ -25,10 +28,13 @@ __all__ = [
     "AccessDiagnostics",
     "AccessQueries",
     "AssignRoleToSubject",
+    "AssignDefaultUserRole",
+    "EnsureBaseRoles",
     "AuthorizeService",
     "BootstrapAdministrator",
     "CommandContext",
     "CreateRole",
+    "UpdateRole",
     "DeleteRole",
     "PermissionRegistry",
     "ReplaceRoleCapabilities",

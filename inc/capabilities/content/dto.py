@@ -23,6 +23,8 @@ def to_dto(row: Content) -> ContentDTO:
         title=row.title,
         slug=row.slug,
         body=row.body,
+        body_format="markdown",
+        body_profile="gfm-v1",
         excerpt=row.excerpt,
         status=row.status,
         owner_type=row.owner_type,

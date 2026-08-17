@@ -35,7 +35,7 @@ assets 自己声明 `ObjectStorageProvider`：
 
 `ObjectStat` may return the provider bucket/container so Finalize can persist the complete stable reference.
 
-adapter 负责 SDK client、endpoint、credential、timeout、重试和 provider error 映射。S3-compatible adapter 的连接配置与凭据由 `site_settings.object_storage` 组保存；凭据字段必须登记为 sensitive，不进入公共 DTO、事件、日志或审计摘要。
+adapter 负责 SDK client、endpoint、credential、timeout、重试和 provider error 映射。对象存储 provider 在启动时由组合根注册到 catalog，当前实现由 `site_settings.object_storage.storage_provider` 选择；S3-compatible adapter 的连接配置与凭据由该组保存；凭据字段必须登记为 sensitive，不进入公共 DTO、事件、日志或审计摘要。
 
 ## 5. Commands 与 Queries
 
@@ -52,6 +52,7 @@ provider 调用不得与长数据库事务绑定。Finalize/Delete 使用 workfl
 ## 6. 跨能力使用
 
 - content/settings/identity 只保存 asset opaque ID 或 AssetRef JSON，不建 assets 外键。
+- post/page Markdown 中的内部图片使用 `asset:<uuid>` 稳定语法；正文不保存 provider URL、signed URL 或远程图片 URL。content 只验证 reference 形状，消费 feature 的发布策略通过 assets 公开 Query/`AssetExists` Port 验证 ready 状态。
 - 系统站点资源使用 `object_storage.s3_bucket`；用户头像使用 `object_storage.s3_avatar_bucket`。bucket 由组合根选择并通过 assets Command 传入，assets 不理解业务类型。
 - 写入引用前可通过消费方 `AssetExists` Port 验证 ready 状态。
 - assets 不维护“被哪些业务对象使用”的跨能力反向索引；物理删除前由 feature/运维流程检查引用。
@@ -62,6 +63,7 @@ provider 调用不得与长数据库事务绑定。Finalize/Delete 使用 workfl
 - object key 不使用原始文件名作为唯一安全边界。
 - provider credential、signed URL 和原始 SDK 错误不得记录。
 - 对公开/私有资源生成 URL 的授权由调用 feature/access 决定，assets adapter 只执行明确策略。
+- Astro 用户站可把已授权的公开 `asset:<uuid>` 映射为自身 origin 下的稳定 `/media/assets/{asset_id}`；短期 signed URL 只可在服务端解析链路中使用，不得进入持久化 Markdown、SSR HTML、SEO head 或公共缓存键。
 
 ## 8. Diagnostics 与验收
 
@@ -70,3 +72,4 @@ provider 调用不得与长数据库事务绑定。Finalize/Delete 使用 workfl
 - 重复 finalize/delete 幂等。
 - provider 超时/失败可恢复，不产生错误 ready 状态。
 - capability 不演变为媒体库 UI 或二进制代理服务。
+- Markdown 发布策略拒绝不存在、非 ready、已 deleted 或不可公开的 asset；assets 不因此维护正文反向索引，物理删除前仍由 feature/运维流程检查引用。

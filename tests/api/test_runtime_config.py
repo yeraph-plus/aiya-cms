@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from inc.api.config import DEFAULT_ISSUER
-from inc.main import _api_settings_from_env, _parse_cors_origins
+from inc.main import _api_settings_from_env, _manifest_from_env, _parse_cors_origins
 
 
 def test_cors_origins_accept_csv_and_json_array() -> None:
@@ -38,6 +38,19 @@ def test_api_settings_reads_issuer_and_cors_from_environment() -> None:
 
 def test_default_issuer_matches_compose_backend_port() -> None:
     assert _api_settings_from_env({}).issuer == DEFAULT_ISSUER == "http://127.0.0.1:8000"
+
+
+def test_runtime_manifest_selection_is_explicit_and_fail_closed() -> None:
+    assert _manifest_from_env({}).name == "management_plane"
+    assert _manifest_from_env({"AIYA_APP_PROFILE": "management"}).name == "management_plane"
+    assert _manifest_from_env({"AIYA_APP_PROFILE": "cms"}).name == "cms"
+    assert _manifest_from_env({"AIYA_APP_PROFILE": "cms_dev"}).name == "cms_dev"
+    with pytest.raises(ValueError, match="production only supports"):
+        _manifest_from_env({"AIYA_ENVIRONMENT": "production", "AIYA_APP_PROFILE": "cms"})
+    with pytest.raises(ValueError, match="production only supports"):
+        _manifest_from_env({"AIYA_ENVIRONMENT": "production", "AIYA_APP_PROFILE": "cms_dev"})
+    with pytest.raises(ValueError, match="AIYA_APP_PROFILE"):
+        _manifest_from_env({"AIYA_APP_PROFILE": "unknown"})
 
 
 def test_production_cors_must_be_an_exact_allowlist() -> None:

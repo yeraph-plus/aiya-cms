@@ -59,6 +59,7 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
         clock=ctx.clock,
         outbox=services.outbox,
         types=services.content_types,
+        publication_policies=services.content_publication_policies,
         permissions=frozenset(ctx.principal.capabilities),
         actor_id=ctx.principal.subject_id,
         trace_id=ctx.trace_id,
@@ -97,13 +98,19 @@ async def _list_with_engagement_sort(
     status: str | None,
     sort: str,
     public_only: bool = False,
+    owner_id: uuid.UUID | str | None = None,
 ) -> ContentPageDTO:
     """Apply projection-owned ordering without crossing the ORM boundary."""
 
     engagement_queries = services.engagement_queries
     if engagement_queries is None:
         return await services.content_queries.list_contents(
-            page=page, size=size, type_name=type_name, status=status, public_only=public_only
+            page=page,
+            size=size,
+            type_name=type_name,
+            status=status,
+            public_only=public_only,
+            owner_id=owner_id,
         )
     fields = [part.strip().lstrip("-") for part in sort.split(",")]
     if not fields or any(field not in _ENGAGEMENT_SORT_FIELDS for field in fields):
@@ -157,17 +164,33 @@ def build_router(
         sort: str | None = Query(default=None, max_length=200),
         ctx: AppContext = Depends(require_capability("content.read")),
     ) -> ContentPageDTO:
+        owner_id = (
+            None if "content.manage" in ctx.principal.capabilities else ctx.principal.subject_id
+        )
         if sort and _contains_engagement_sort(sort):
-            return await _list_with_engagement_sort(
-                services,
-                page=page,
-                size=size,
-                type_name=type_name,
-                status=status,
-                sort=sort,
-            )
+            # The engagement projection only owns opaque content IDs and has
+            # no owner predicate.  Never use it to page an author-scoped list;
+            # fall back to the content query, which applies the owner filter
+            # before hydration.
+            if owner_id is not None:
+                sort = None
+            else:
+                return await _list_with_engagement_sort(
+                    services,
+                    page=page,
+                    size=size,
+                    type_name=type_name,
+                    status=status,
+                    sort=sort,
+                    owner_id=owner_id,
+                )
         result = await services.content_queries.list_contents(
-            page=page, size=size, type_name=type_name, status=status, sort=sort
+            page=page,
+            size=size,
+            type_name=type_name,
+            status=status,
+            sort=sort,
+            owner_id=owner_id,
         )
         if services.engagement_queries is None:
             return result
@@ -191,7 +214,10 @@ def build_router(
         content_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("content.read")),
     ) -> ContentDTO:
-        content = await services.content_queries.get(content_id)
+        owner_id = (
+            None if "content.manage" in ctx.principal.capabilities else ctx.principal.subject_id
+        )
+        content = await services.content_queries.get_for_owner(content_id, owner_id=owner_id)
         if content is None:
             from inc.kernel.errors import ErrorCategory, KernelError
 

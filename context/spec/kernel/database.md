@@ -56,6 +56,7 @@ kernel 可以提供 Repository、分页和 QuerySpec 原语，但不能提供绕
 
 - 删除旧 `0001...0010` 和旧数据库 volume，不提供升级路径。
 - 实现期间可使用临时 revision；首个新基线验收前 squash 为一个 `0001_initial`。
+- 本轮临时 `0002_comments`、`0003_community` 已在空库发布验收前合并进 `0001_initial`；版本目录只允许保留该一个 deployable revision，comments/community 表、`pg_trgm` 与 trigram/排序索引必须由它一次创建。
 - 从新基线发布之时起恢复正常兼容迁移纪律，不再以 Demo 理由改写历史。
 
 ## 8. 验收

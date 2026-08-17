@@ -47,7 +47,7 @@ payments 声明：
 
 adapter 负责 SDK、credential、签名算法、timeout、provider idempotency、错误归一化和 API version。provider-specific payload 不得进入公开 Payment DTO 或 points。
 
-具体 provider 由部署在 provider 合同冻结后显式选择；选择只新增 adapter/config 和 provider 合同测试，不改变 payments/points 核心模型。
+具体 provider 由组合根在启动时全部注册到 provider catalog；`site_settings.payments.provider` 只选择当前已注册实现，缺省回退到 manifest 的默认 provider。选择只新增 adapter/config 和 provider 合同测试，不改变 payments/points 核心模型；未冻结的 Epay 仍不得进入 catalog。
 
 ## 6. Commands 与 webhook
 
@@ -92,7 +92,7 @@ webhook 入口必须先基于原始 bytes、签名 header、时间窗和 provide
 
 事件包含本地 order、subject、offer reference、受信 amount/currency 和 provider reference 摘要，不包含卡号、client secret、签名或原始 webhook。
 
-point_purchase feature 消费 captured/refund 事实并调用 points；payments 不关心发放结果。积分发放失败不会把已捕获支付伪装成失败，workflow 必须持续重试/人工恢复。
+`user_center` 的 point purchase 流程消费 captured/refund 事实并调用 points；payments 不关心发放结果。积分发放失败不会把已捕获支付伪装成失败，workflow 必须持续重试/人工恢复。
 
 ## 9. 安全、审计和 diagnostics
 

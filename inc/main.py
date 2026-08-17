@@ -2,9 +2,10 @@
 
 Contract source: context/spec/http-openapi.md §10, quality-release.md.
 
-``python -m inc.main`` runs the uvicorn server on the full product
-manifest; subcommands ``openapi-dump`` and ``openapi-check`` manage the
-frozen HTTP contract.
+``python -m inc.main`` runs the explicitly selected application profile. The
+default is the deployable administrator ``management_plane``; ``cms`` is the
+full profile with production adapters and ``cms_dev`` is the explicit local
+fake-provider profile.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from inc.api.config import DEFAULT_ISSUER, ApiSettings, load_api_settings
-from inc.api.manifest import cms
+from inc.api.manifest import cms, cms_dev, management_plane
 from inc.kernel.config import load_settings
 from inc.kernel.db import create_engine, create_session_factory
 
@@ -79,8 +80,39 @@ def _api_settings_from_env(environ: Mapping[str, str] | None = None) -> ApiSetti
             "api_audience": values.get("AIYA_API_AUDIENCE") or "aiya-admin",
             "secure_cookies": _parse_bool(values.get("AIYA_SECURE_COOKIES")),
             "cors_origins": _parse_cors_origins(values.get("AIYA_CORS_ORIGINS")),
+            "trusted_proxy_cidrs": _parse_cors_origins(values.get("AIYA_TRUSTED_PROXY_CIDRS")),
+            "oidc_signing_key_dir": values.get("AIYA_OIDC_SIGNING_KEY_DIR"),
+            "admin_session_secret": values.get("AIYA_ADMIN_SESSION_SECRET")
+            or "dev-admin-session-secret-change-me",
+            "admin_session_idle_seconds": int(
+                values.get("AIYA_ADMIN_SESSION_IDLE_SECONDS") or 8 * 3600
+            ),
+            "admin_session_absolute_seconds": int(
+                values.get("AIYA_ADMIN_SESSION_ABSOLUTE_SECONDS") or 14 * 86400
+            ),
+            "paypal_environment": values.get("AIYA_PAYPAL_ENVIRONMENT") or "sandbox",
+            "paypal_client_id": values.get("AIYA_PAYPAL_CLIENT_ID"),
+            "paypal_client_secret": values.get("AIYA_PAYPAL_CLIENT_SECRET"),
+            "paypal_webhook_id": values.get("AIYA_PAYPAL_WEBHOOK_ID"),
+            "paypal_return_url": values.get("AIYA_PAYPAL_RETURN_URL"),
+            "paypal_cancel_url": values.get("AIYA_PAYPAL_CANCEL_URL"),
         }
     )
+
+
+def _manifest_from_env(environ: Mapping[str, str] | None = None) -> Any:
+    values = os.environ if environ is None else environ
+    profile = (values.get("AIYA_APP_PROFILE") or "management").strip().lower()
+    environment = (
+        (values.get("AIYA_ENVIRONMENT") or values.get("AIYA_ENV") or "dev").strip().lower()
+    )
+    if environment == "production" and profile != "management":
+        raise ValueError("production only supports AIYA_APP_PROFILE=management")
+    manifests = {"management": management_plane, "cms": cms, "cms_dev": cms_dev}
+    try:
+        return manifests[profile]
+    except KeyError as exc:
+        raise ValueError("AIYA_APP_PROFILE must be one of: management, cms, cms_dev") from exc
 
 
 def _build_app() -> Any:
@@ -97,10 +129,11 @@ def _build_app() -> Any:
         return SqlAlchemyUnitOfWork(session_factory)
 
     return create_app(
-        manifest=cms,
+        manifest=_manifest_from_env(),
         uow_factory=_factory,
         clock=SYSTEM_CLOCK,
         settings=api_settings,
+        redis_url=kernel_settings.redis_url.get_secret_value(),
     )
 
 

@@ -56,6 +56,15 @@ class AccessQueries:
                 )
             return result
 
+    async def role_exists(self, slug: str) -> bool:
+        """Return whether a protected role seed is available."""
+
+        found = False
+        async with self._uow_factory() as uow:
+            result = await uow.session.execute(select(AccessRole.id).where(AccessRole.slug == slug))
+            found = result.scalar_one_or_none() is not None
+        return found
+
     async def grants_for(self, subject_type: str, subject_id: str) -> GrantSummary:  # type: ignore[return]
         async with self._uow_factory() as uow:
             rows = (

@@ -6,6 +6,12 @@ export type ClientRegistrationResult = components['schemas']['ClientRegistration
 export type RegisterClientBody = components['schemas']['RegisterClientBody'];
 export type UpdateClientBody = components['schemas']['UpdateClientBody'];
 
+export const ADMIN_OIDC_CLIENT_ID = 'admin';
+
+export function isProtectedOidcClient(client: Pick<ClientDTO, 'client_id'>): boolean {
+    return client.client_id === ADMIN_OIDC_CLIENT_ID;
+}
+
 export async function fetchOidcClients(signal?: AbortSignal): Promise<ClientDTO[]> {
     return getApi().get('/api/v1/admin/oidc/clients', undefined, signal);
 }
@@ -23,13 +29,31 @@ export async function updateOidcClient(clientId: string, body: UpdateClientBody,
 }
 
 export async function disableOidcClient(clientId: string, signal?: AbortSignal): Promise<ClientDTO> {
-    return getApi().post(apiPath('/api/v1/admin/oidc/clients/{client_id}/disable', { client_id: clientId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/oidc/clients/{client_id}/disable', {
+            client_id: clientId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function enableOidcClient(clientId: string, signal?: AbortSignal): Promise<ClientDTO> {
-    return getApi().post(apiPath('/api/v1/admin/oidc/clients/{client_id}/enable', { client_id: clientId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/oidc/clients/{client_id}/enable', {
+            client_id: clientId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function rotateOidcClientSecret(clientId: string, signal?: AbortSignal): Promise<ClientRegistrationResult> {
-    return getApi().post(apiPath('/api/v1/admin/oidc/clients/{client_id}/rotate-secret', { client_id: clientId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/oidc/clients/{client_id}/rotate-secret', {
+            client_id: clientId
+        }),
+        undefined,
+        { signal }
+    );
 }

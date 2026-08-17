@@ -25,7 +25,7 @@ flowchart TD
     CAPS --> KERNEL
 ```
 
-依赖箭头只允许向下。`kernel` 不认识业务；capability 之间不存在横向代码依赖；feature 负责合法的跨能力业务编排；API 只负责装配、传输适配和 adapter 选择，不成为业务服务仓库。adapter 与 capability/feature 同级是一等规格成员（`adapters.md`），由 manifest 按稳定 key 显式绑定，可被 api 与 feature 使用；capability 不得反向导入 adapter。
+依赖箭头只允许向下。`kernel` 不认识业务；capability 之间不存在横向代码依赖；feature 负责合法的跨能力业务编排；API 只负责装配、传输适配和 adapter/catalog 选择，不成为业务服务仓库。adapter 与 capability/feature 同级是一等规格成员（`adapters.md`），由 manifest 按稳定 key 显式绑定；provider-valued Port 在启动时注册所有允许实现，运行时由 settings resolver 选择当前 provider。capability 不得反向导入 adapter。
 
 ## 2. 术语
 
@@ -33,7 +33,7 @@ flowchart TD
 - **capability**：拥有模型、表、命令、查询、事件和迁移的业务边界。
 - **feature**：注册实际业务规格或串联多个 capability 的垂直切片。
 - **Port**：消费方声明的外部能力接口。
-- **adapter**：组合根选择的 Port 实现。
+- **adapter**：组合根注册的 Port 实现；provider-valued Port 通过 catalog/resolver 选择当前实现。
 - **Command/Query**：capability 公开的写/读入口。
 - **workflow**：跨事务、可持久化、可恢复的业务流程。
 - **activity**：workflow 中可单独执行、重试和幂等的步骤。
@@ -113,9 +113,9 @@ flowchart TD
 
 ## 10. 初始能力范围
 
-首个重建闭环包含 identity、access、oidc_provider、audit、content、comments、taxonomy、settings、assets、points、payments、membership、engagement，以及 post、page、check_in、point_purchase、membership_purchase、content_engagement features。notification 的契约已建立；是否进入某个运行时 manifest 由组合根显式选择，未装配时不得产生路由、worker、cron 或外部连接。
+首个重建闭环包含 identity、access、oidc_provider、audit、content、comments、taxonomy、settings、assets、points、payments、membership、engagement、community capabilities，以及 `auth`、`user_center`、`post`、`page` 产品 features 和 `site_settings`、`site_cleanup` 站点/运维 features。签到、积分购买和会员购买归 `user_center` 组装；engagement 投影与用户评论归 `post` 组装；注册、验证和密码找回归 `auth` 组装；page 独立；community 直接拥有 discussion/post/tag/search 产品面，不借用 content/taxonomy/comments 表。notification 的契约已建立；是否进入某个运行时 manifest 由组合根显式选择，未装配时不得产生路由、worker、cron 或外部连接。
 
-搜索、commerce 商品、下载、webhook 平台和 WordPress 兼容不在首个闭环。未来加入时必须遵守同一 capability/feature 边界，不得回填到 kernel。
+跨领域/全站搜索、commerce 商品、下载、webhook 平台和 WordPress 兼容不在首个闭环。community capability 自有的 discussion 搜索是其领域读模型，不构成 kernel 或全站搜索平台。未来扩展时必须遵守同一 capability/feature 边界，不得回填到 kernel。
 
 ## 11. 架构验收
 

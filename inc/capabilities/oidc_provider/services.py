@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, timedelta
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import jwt as pyjwt
 from sqlalchemy import select, update
@@ -347,11 +348,12 @@ class AuthorizationService:
             )
             await uow.commit()
 
-        query = {"code": code}
+        query = [("code", code)]
         if state is not None:
-            query["state"] = state
-        joined = "&".join(f"{k}={_quote(v)}" for k, v in query.items())
-        return f"{redirect_uri}?{joined}"
+            query.append(("state", state))
+        parsed = urlsplit(redirect_uri)
+        existing = parse_qsl(parsed.query, keep_blank_values=True)
+        return urlunsplit(parsed._replace(query=urlencode([*existing, *query], doseq=True)))
 
 
 class TokenService:
@@ -974,9 +976,3 @@ def _unverified_aud(token: str) -> str | None:
         return None
     aud = claims.get("aud")
     return aud if isinstance(aud, str) else None
-
-
-def _quote(value: str) -> str:
-    from urllib.parse import quote
-
-    return quote(value, safe="")

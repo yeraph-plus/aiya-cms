@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from inc.capabilities.access.models import AccessRole, AccessRoleCapability, AccessSubjectRole
@@ -44,6 +44,10 @@ def _conflict(message: str) -> KernelError:
 
 def _not_found(message: str) -> KernelError:
     return KernelError(code="access.not_found", category=ErrorCategory.NOT_FOUND, message=message)
+
+
+def _validation(code: str, message: str) -> KernelError:
+    return KernelError(code=code, category=ErrorCategory.VALIDATION, message=message)
 
 
 def _to_role(role: AccessRole, capability_keys: list[str]) -> RoleDTO:
@@ -146,6 +150,52 @@ class CreateRole:
             return _to_role(role, [])
 
 
+class UpdateRole:
+    """Edit a role's display metadata while keeping its stable slug."""
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, role_id: str, name: str, description: str | None = None) -> RoleDTO:  # type: ignore[return]
+        if not name.strip():
+            raise _validation("role.name_required", "role name is required")
+        async with self._ctx.uow_factory() as uow:
+            role = await uow.session.get(AccessRole, uuid.UUID(role_id))
+            if role is None:
+                raise _not_found("role not found")
+            if role.slug == "administrator":
+                raise _conflict("administrator role is protected")
+            role.name = name.strip()
+            role.description = description.strip() if description else None
+            keys = list(
+                (
+                    await uow.session.execute(
+                        select(AccessRoleCapability.capability_key).where(
+                            AccessRoleCapability.role_id == role.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            await _append_event(
+                uow,
+                self._ctx,
+                event_key="access.role_changed.v1",
+                payload={"role_id": role_id, "action": "updated"},
+                aggregate_id=role_id,
+            )
+            await _append_audit(
+                uow,
+                self._ctx,
+                action="access.role.updated",
+                target_type="role",
+                target_id=role_id,
+            )
+            await uow.commit()
+            return _to_role(role, keys)
+
+
 class DeleteRole:
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
@@ -189,6 +239,8 @@ class ReplaceRoleCapabilities:
             role = await uow.session.get(AccessRole, uuid.UUID(role_id))
             if role is None:
                 raise _not_found("role not found")
+            if role.slug == "administrator":
+                raise _conflict("administrator role is protected")
             existing = (
                 (
                     await uow.session.execute(
@@ -414,10 +466,6 @@ class BootstrapAdministrator:
                     category=ErrorCategory.CONFLICT,
                     message=("an administrator already exists; only one super admin is allowed"),
                 )
-            if target_holds:
-                await uow.commit()
-                return _to_role(role, list(self._ctx.permissions.keys()))
-
             existing_keys = {
                 row.capability_key
                 for row in (
@@ -432,9 +480,17 @@ class BootstrapAdministrator:
                     .all()
                 )
             }
+            # The administrator role is a protected projection of the
+            # currently registered permission registry.  Re-running install
+            # must repair permissions added after the original bootstrap,
+            # even when the subject binding itself is already present.
             for key in self._ctx.permissions.keys():
                 if key not in existing_keys:
                     uow.session.add(AccessRoleCapability(role_id=role.id, capability_key=key))
+
+            if target_holds:
+                await uow.commit()
+                return _to_role(role, list(self._ctx.permissions.keys()))
 
             uow.session.add(
                 AccessSubjectRole(
@@ -462,3 +518,178 @@ class BootstrapAdministrator:
             )
             await uow.commit()
             return _to_role(role, list(self._ctx.permissions.keys()))
+
+
+BASE_ROLE_TEMPLATES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "Editor",
+        "editor",
+        "Content editor",
+        (
+            "admin.dashboard.read",
+            "content.read",
+            "content.write",
+            "content.schedule",
+            "content.publish",
+            "content.archive",
+            "content.pin",
+            "content.manage",
+            "taxonomy.read",
+            "taxonomy.manage",
+            "assets.read",
+            "assets.upload",
+            "comments.read",
+            "comments.moderate",
+            "comments.delete",
+            "community.read_admin",
+            "community.posts.moderate",
+            "community.tags.manage",
+            "community.discussions.lock",
+            "community.discussions.archive",
+        ),
+    ),
+    (
+        "Author",
+        "author",
+        "Content author",
+        (
+            "content.read",
+            "content.write",
+            "taxonomy.read",
+            "assets.read",
+            "assets.upload",
+        ),
+    ),
+    (
+        "User",
+        "user",
+        "Registered user",
+        (
+            "community.discussions.create",
+            "community.discussions.reply",
+            "community.discussions.edit_own",
+            "comments.submit",
+        ),
+    ),
+)
+
+
+class EnsureBaseRoles:
+    """Create/update the protected Editor/Author/User role templates."""
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        async with self._ctx.uow_factory() as uow:
+            for name, slug, description, keys in BASE_ROLE_TEMPLATES:
+                role = (
+                    (
+                        await uow.session.execute(
+                            select(AccessRole).where(AccessRole.slug == slug).with_for_update()
+                        )
+                    )
+                    .scalars()
+                    .first()
+                )
+                if role is None:
+                    role = AccessRole(name=name, slug=slug, description=description, system=True)
+                    uow.session.add(role)
+                    await uow.session.flush()
+                elif not role.system:
+                    role.system = True
+                role.name = name
+                role.description = description
+                existing = {
+                    row.capability_key
+                    for row in (
+                        await uow.session.execute(
+                            select(AccessRoleCapability).where(
+                                AccessRoleCapability.role_id == role.id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                }
+                stale = existing.difference(keys)
+                if stale:
+                    await uow.session.execute(
+                        delete(AccessRoleCapability).where(
+                            AccessRoleCapability.role_id == role.id,
+                            AccessRoleCapability.capability_key.in_(stale),
+                        )
+                    )
+                for key in keys:
+                    self._ctx.permissions.require(key)
+                    if key not in existing:
+                        uow.session.add(AccessRoleCapability(role_id=role.id, capability_key=key))
+                result[slug] = str(role.id)
+            await uow.commit()
+        return result
+
+
+class AssignDefaultUserRole:
+    """Idempotently attach the protected User role to a new identity."""
+
+    def __init__(self, ctx: CommandContext) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, *, subject_type: str, subject_id: str) -> None:
+        if not await self._ctx.subject_exists.exists(subject_type, subject_id):
+            raise KernelError(
+                code="access.subject_not_found",
+                category=ErrorCategory.VALIDATION,
+                message=f"subject {subject_type}:{subject_id} does not exist",
+            )
+        async with self._ctx.uow_factory() as uow:
+            await self.assign_in_uow(
+                uow,
+                subject_type=subject_type,
+                subject_id=subject_id,
+            )
+            await uow.commit()
+
+    async def assign_in_uow(
+        self,
+        uow: UnitOfWork,
+        *,
+        subject_type: str,
+        subject_id: str,
+    ) -> None:
+        """Attach the role without committing a caller-owned transaction.
+
+        This method is reserved for composition workflows that have already
+        created and validated the opaque subject in the same UoW.
+        """
+
+        role = (
+            (await uow.session.execute(select(AccessRole).where(AccessRole.slug == "user")))
+            .scalars()
+            .first()
+        )
+        if role is None:
+            raise _not_found("base user role not initialized")
+        existing = (
+            (
+                await uow.session.execute(
+                    select(AccessSubjectRole).where(
+                        AccessSubjectRole.subject_type == subject_type,
+                        AccessSubjectRole.subject_id == subject_id,
+                        AccessSubjectRole.role_id == role.id,
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if existing is None:
+            uow.session.add(
+                AccessSubjectRole(
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                    role_id=role.id,
+                    scope="global",
+                )
+            )

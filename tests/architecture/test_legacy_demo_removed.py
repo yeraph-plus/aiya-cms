@@ -84,6 +84,36 @@ def test_old_migration_revisions_are_gone() -> None:
     assert stale == []
 
 
+def test_rebuild_release_has_one_initial_migration() -> None:
+    versions = REPO_ROOT / "alembic" / "versions"
+    revisions = sorted(path for path in versions.glob("*.py") if path.name != "__init__.py")
+
+    assert [path.name for path in revisions] == ["0001_initial.py", "0002_admin_catalog.py"]
+    source = revisions[0].read_text(encoding="utf-8")
+    assert 'revision: str = "0001_initial"' in source
+    assert "down_revision: str | None = None" in source
+    for table in (
+        "comments",
+        "community_discussions",
+        "community_posts",
+        "community_tags",
+        "community_search_documents",
+    ):
+        assert f'"{table}"' in source
+    assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in source
+
+
+def test_backend_image_contains_both_openapi_snapshot_pairs() -> None:
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    for artifact in (
+        "openapi.json",
+        "openapi.sha256",
+        "openapi.user.json",
+        "openapi.user.sha256",
+    ):
+        assert artifact in dockerfile
+
+
 def test_no_source_imports_legacy_paths() -> None:
     for root in (INC_ROOT, REPO_ROOT / "tests"):
         for path in iter_source_files(root):

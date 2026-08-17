@@ -55,10 +55,15 @@ class ContentTypeSpec:
         "allows_owner",
         "allows_references",
         "allows_incoming_references",
+        "slug_policy",
         "slug_pattern",
         "title_max_length",
-        "body_max_length",
+        "body_format",
+        "body_profile",
+        "body_max_bytes",
         "excerpt_max_length",
+        "requires_ready_markdown_assets",
+        "publication_policy_key",
         "required_access_keys",
         "public_fields",
         "sort_options",
@@ -80,10 +85,15 @@ class ContentTypeSpec:
         allows_owner: bool = False,
         allows_references: bool = False,
         allows_incoming_references: bool = True,
+        slug_policy: str = "generated_title_suffix_v1",
         slug_pattern: str = r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
         title_max_length: int = 200,
-        body_max_length: int | None = None,
+        body_format: str = "markdown",
+        body_profile: str = "gfm-v1",
+        body_max_bytes: int | None = 524288,
         excerpt_max_length: int | None = None,
+        requires_ready_markdown_assets: bool = False,
+        publication_policy_key: str | None = None,
         required_access_keys: tuple[str, ...] = (),
         public_fields: tuple[str, ...] = (
             "id",
@@ -139,13 +149,25 @@ class ContentTypeSpec:
             )
         if (
             title_max_length < 1
-            or (body_max_length is not None and body_max_length < 1)
+            or (body_max_bytes is not None and body_max_bytes < 1)
             or (excerpt_max_length is not None and excerpt_max_length < 1)
         ):
             raise ValueError(f"type {type_name} declares invalid length constraints")
         if not slug_pattern:
             raise ValueError(f"type {type_name} requires a slug pattern")
         re.compile(slug_pattern)
+        if slug_policy != "generated_title_suffix_v1":
+            raise ValueError(f"type {type_name} declares unsupported slug policy {slug_policy!r}")
+        if body_format != "markdown" or body_profile != "gfm-v1":
+            raise ValueError(
+                f"type {type_name} must declare the supported markdown/gfm-v1 body profile"
+            )
+        if requires_ready_markdown_assets and publication_policy_key is None:
+            raise ValueError(f"type {type_name} requires a content publication policy binding")
+        if publication_policy_key is not None and not re.match(
+            r"^[a-z0-9]+(?:[._][a-z0-9_]+)+$", publication_policy_key
+        ):
+            raise ValueError(f"type {type_name} declares invalid publication policy key")
         for key in required_access_keys:
             if not re.match(r"^[a-z0-9]+(\.[a-z0-9_]+)+$", key):
                 raise ValueError(f"type {type_name} declares invalid access key {key!r}")
@@ -163,10 +185,15 @@ class ContentTypeSpec:
         self.allows_owner = allows_owner
         self.allows_references = allows_references
         self.allows_incoming_references = allows_incoming_references
+        self.slug_policy = slug_policy
         self.slug_pattern = slug_pattern
         self.title_max_length = title_max_length
-        self.body_max_length = body_max_length
+        self.body_format = body_format
+        self.body_profile = body_profile
+        self.body_max_bytes = body_max_bytes
         self.excerpt_max_length = excerpt_max_length
+        self.requires_ready_markdown_assets = requires_ready_markdown_assets
+        self.publication_policy_key = publication_policy_key
         self.required_access_keys = required_access_keys
         self.public_fields = public_fields
         self.sort_options = sort_options

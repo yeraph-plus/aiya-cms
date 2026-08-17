@@ -1,6 +1,6 @@
 # 管理员 SPA 从壳到生产上线计划
 
-状态：规划基线。本文替换此前只描述 TS 骨架和占位路由的旧记录；它是一次性施工计划，不替代 `context/spec/`。实际行为仍以 `context/spec/admin(SPA)/admin.md`、`context/spec/admin(SPA)/admin-uikit.md`、`context/spec/http-openapi.md` 和当前 `openapi.json` 为准。
+状态：规划基线。本文替换此前只描述 TS 骨架和占位路由的旧记录；它是一次性施工计划，不替代 `context/` 规格事实源。实际行为仍以 `context/admin dash spec (SPA)/admin.md`、`context/admin dash spec (SPA)/admin-uikit.md`、`context/spec/http-openapi.md` 和当前 `openapi.json` 为准。
 
 ## 0. 施工状态
 

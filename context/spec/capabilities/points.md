@@ -27,9 +27,9 @@ subject/source/actor 是 opaque reference，不建立 identity/content/payment �
 
 ### 2.1 Program 定义的导出边界
 
-`points program` 是后端预留定义面：program key、状态和策略由代码/ops 声明与数据库行对齐，不由管理员 SPA 创建或解释。当前未导出 `/api/v1/admin/points/programs` 的读取、创建、更新或删除接口，也不提供通用 program CRUD。
+`points program` 由管理员受控维护：key 不可变，支持创建、描述/单位/冲正策略编辑、启用/停用、汇总和账户列表；存在账户后单位不可变，默认 `credit` 计划不可停用。所有变更要求 `points.programs.manage`、版本并发检查和审计，停用不删除历史账本。
 
-现有管理员 HTTP 面只允许在账本查询和积分调整中提交已注册的稳定 `program_key`；未知 key 必须由后端拒绝。未来若需要只读 program catalog 或受控的启停 Command，必须先更新本规格和权限/审计语义，再按“失败测试 -> 实现 -> OpenAPI”导出，不能从预留表字段自动生成端点。
+管理员 HTTP 面导出受控的 program catalog：`GET/POST /api/v1/admin/points/programs`、`PATCH /api/v1/admin/points/programs/{program_key}`、`POST .../activate|deactivate`、`GET .../summary` 和 `GET /api/v1/admin/points/accounts`。program key 不可变；存在账户后单位不可变；默认 `credit` 计划不可停用；停用时若仍有已注册行为或非零余额必须拒绝。所有写入带 `expected_version`、reason（状态/冻结）和审计事件，未知 key 必须由后端拒绝。
 
 ## 3. 不变量与执行模型
 
@@ -125,8 +125,8 @@ HTTP 自助面由组合根提供 `GET /api/v1/me/points/ledger`，只允许当�
 
 ## 8. 签到与购买接入
 
-- check-in feature 使用 `subject + program + business_date` 形成幂等键并调用 `CreditPoints`。
-- point_purchase workflow 只在受信 `payment.captured.v1` 事实后调用 `CreditPoints`。
+- `user_center` 的 check-in 流程使用 `subject + program + business_date` 形成幂等键并调用 `CreditPoints`。
+- `user_center` 的 point purchase workflow 只在受信 `payment.captured.v1` 事实后调用 `CreditPoints`。
 - 支付退款调用 `ReverseLedgerEntry`，重复退款事件返回原 reversal。
 - points 不订阅所有 content/payment 事件后自动猜测奖励。
 

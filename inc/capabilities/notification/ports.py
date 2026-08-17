@@ -83,6 +83,12 @@ class NotificationProvider(Protocol):
     ) -> ProviderResult: ...
 
 
+class ProviderChainResolver(Protocol):
+    """Composition-root supplied runtime provider selection."""
+
+    async def resolve_many(self) -> tuple[NotificationProvider, ...]: ...
+
+
 def timeout_result(provider_ref: str | None = None) -> ProviderResult:
     """Provider outcome is unknown after a timeout; never assume sent."""
 

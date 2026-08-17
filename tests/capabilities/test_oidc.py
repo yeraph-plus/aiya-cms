@@ -13,6 +13,7 @@ import hashlib
 import secrets
 import uuid
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import jwt as pyjwt
 import pytest
@@ -20,7 +21,9 @@ from sqlalchemy import select
 
 from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
 from inc.capabilities.oidc_provider.clients import (
+    ADMIN_OIDC_CLIENT_ID,
     ClientCommandContext,
+    DisableClient,
     RegisterClient,
     UpdateClient,
 )
@@ -311,6 +314,44 @@ async def test_redirect_uri_must_be_registered_exactly(
     assert "redirect" in (excinfo.value.description or "")
 
 
+async def test_authorization_preserves_existing_redirect_query_parameters(
+    ctx: ServiceContext,
+    client_ctx: ClientCommandContext,
+) -> None:
+    redirect_uri = "http://127.0.0.1:3000/cb?locale=zh-CN&source=admin"
+    await RegisterClient(client_ctx)(
+        name="Query callback client",
+        client_type="public",
+        redirect_uris=[redirect_uri],
+        client_id="query-callback",
+    )
+    _, challenge = _pkce_pair()
+
+    callback = await AuthorizationService(ctx).issue_code(
+        client_id="query-callback",
+        redirect_uri=redirect_uri,
+        response_type="code",
+        scope="openid",
+        state="state-value",
+        nonce="nonce-value",
+        code_challenge=challenge,
+        code_challenge_method="S256",
+        subject_id="u-1",
+        session_handle=None,
+    )
+
+    parsed = urlsplit(callback)
+    query = parse_qs(parsed.query)
+    assert parsed.fragment == ""
+    assert query["code"]
+    assert query == {
+        "locale": ["zh-CN"],
+        "source": ["admin"],
+        "code": query["code"],
+        "state": ["state-value"],
+    }
+
+
 async def test_register_client_rejects_malformed_redirect_uris(
     client_ctx: ClientCommandContext,
 ) -> None:
@@ -370,6 +411,24 @@ async def test_update_client_replaces_registered_redirect_uris(
 
     assert result.redirect_uris == ["http://127.0.0.1:5173/callback"]
     assert result.post_logout_redirect_uris == ["http://127.0.0.1:5173/logged-out"]
+
+
+async def test_admin_client_cannot_be_disabled(
+    client_ctx: ClientCommandContext,
+) -> None:
+    await RegisterClient(client_ctx)(
+        name="Admin SPA",
+        client_type="public",
+        redirect_uris=["http://127.0.0.1:8080/callback"],
+        client_id="admin",
+    )
+
+    with pytest.raises(OidcError) as excinfo:
+        await DisableClient(client_ctx)(client_id="admin")
+
+    assert excinfo.value.code == "invalid_request"
+    assert ADMIN_OIDC_CLIENT_ID == "admin"
+    assert "protected" in (excinfo.value.description or "")
 
 
 async def test_pkce_downgrade_attempts_are_rejected(
@@ -604,7 +663,7 @@ async def test_algorithm_confusion_is_rejected(
     # alg=HS256 (symmetric confusion: HMAC with a guessable secret)
     hs_token = pyjwt.encode(
         {"iss": ISSUER, "sub": "u-1", "aud": "spa"},
-        key="guessable-hmac-secret",
+        key="guessable-hmac-secret-32-byte-key",
         algorithm="HS256",
     )
     with pytest.raises(OidcError) as excinfo:
@@ -985,6 +1044,15 @@ async def test_client_auth_method_is_required_and_never_defaults_to_none(
     )
     assert public.client.auth_method == "none"
     assert public.client_secret is None
+
+    configured = await RegisterClient(client_ctx)(
+        name="Configured confidential client",
+        client_type="confidential",
+        redirect_uris=["https://site.example.com/auth/callback"],
+        client_id="configured-confidential",
+        initial_secret=CLIENT_SECRET * 2,
+    )
+    assert configured.client_secret == CLIENT_SECRET * 2
 
     from pydantic import ValidationError
 

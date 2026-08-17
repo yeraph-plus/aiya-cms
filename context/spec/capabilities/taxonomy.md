@@ -6,6 +6,8 @@ taxonomy 提供可由 feature 声明的平面多维标签。category 是一个�
 
 taxonomy 可以标记 content 等任意 target，但不导入目标 capability，也不建立跨能力外键。
 
+community tag 不属于 taxonomy term，也不以 opaque assignment 关联 discussion；其层级、数量约束、关联表和查询归 [`community.md`](community.md)，两者不得双写或共享 ID。
+
 ## 2. DimensionSpec
 
 feature 注册：

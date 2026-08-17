@@ -12,9 +12,16 @@ export const productMenu: NavMenuItem[] = [
     {
         labelKey: 'nav.dashboard',
         icon: 'pi pi-fw pi-chart-bar',
-        to: '/dashboard',
-        routeName: 'dashboard',
-        capability: 'admin.dashboard.read'
+        path: '/dashboard',
+        items: [
+            {
+                labelKey: 'nav.dashboardOverview',
+                icon: 'pi pi-fw pi-chart-bar',
+                to: '/dashboard',
+                routeName: 'dashboard',
+                capability: 'admin.dashboard.read'
+            }
+        ]
     },
     {
         labelKey: 'nav.content.group',
@@ -75,7 +82,7 @@ export const productMenu: NavMenuItem[] = [
                 icon: 'pi pi-fw pi-star',
                 to: '/users/points',
                 routeName: 'user-points',
-                capability: 'points.read'
+                capability: 'points.programs.read'
             },
             {
                 labelKey: 'nav.users.membership',
@@ -83,13 +90,27 @@ export const productMenu: NavMenuItem[] = [
                 to: '/users/membership',
                 routeName: 'user-membership',
                 capability: 'membership.read'
+            }
+        ]
+    },
+    {
+        labelKey: 'nav.community.group',
+        icon: 'pi pi-fw pi-comments',
+        path: '/community',
+        items: [
+            {
+                labelKey: 'nav.community.discussions',
+                icon: 'pi pi-fw pi-comment',
+                to: '/community/discussions',
+                routeName: 'community-discussions',
+                capability: 'community.read_admin'
             },
             {
-                labelKey: 'nav.users.payments',
-                icon: 'pi pi-fw pi-credit-card',
-                to: '/users/payments',
-                routeName: 'user-payments',
-                capability: 'payments.read'
+                labelKey: 'nav.community.tags',
+                icon: 'pi pi-fw pi-tag',
+                to: '/community/tags',
+                routeName: 'community-tags',
+                capability: 'community.tags.manage'
             }
         ]
     },
@@ -138,8 +159,22 @@ export const productMenu: NavMenuItem[] = [
     {
         labelKey: 'nav.settings',
         icon: 'pi pi-fw pi-sliders-h',
-        to: '/settings',
-        routeName: 'settings',
-        capability: 'settings.read'
+        path: '/settings',
+        items: [
+            {
+                labelKey: 'nav.settingsGeneral',
+                icon: 'pi pi-fw pi-sliders-h',
+                to: '/settings/general',
+                routeName: 'settings-general',
+                capability: 'settings.read'
+            },
+            {
+                labelKey: 'nav.settingsMembership',
+                icon: 'pi pi-fw pi-id-card',
+                to: '/settings/membership',
+                routeName: 'settings-membership',
+                capability: 'membership.levels.read'
+            }
+        ]
     }
 ];

@@ -28,6 +28,14 @@ class AssetQueries:
         self._ctx = ctx
         self._clock = clock
 
+    async def is_ready(self, asset_id: Any) -> bool:
+        """Return only the readiness fact needed by consumer-owned Ports."""
+
+        async with self._ctx.uow_factory() as uow:
+            row: AssetObject | None = await uow.session.get(AssetObject, asset_id)
+            return row is not None and row.state == "ready" and row.deleted_at is None
+        raise RuntimeError("asset readiness query did not execute")
+
     async def get(  # type: ignore[return]
         self, asset_id: Any, *, permissions: frozenset[str]
     ) -> AssetRefDTO | None:

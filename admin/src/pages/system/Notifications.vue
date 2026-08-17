@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { cancelNotificationDelivery, fetchNotificationDeliveries, fetchNotificationDelivery, retryNotificationDelivery, type NotificationDeliveryDetailDTO, type NotificationDeliveryPageDTO, type NotificationDeliveryRecordDTO } from '@/api/notifications';
+import {
+    cancelNotificationDelivery,
+    fetchNotificationDeliveries,
+    fetchNotificationDelivery,
+    retryNotificationDelivery,
+    type NotificationDeliveryDetailDTO,
+    type NotificationDeliveryPageDTO,
+    type NotificationDeliveryRecordDTO
+} from '@/api/notifications';
 import { hasCapability } from '@/auth/session';
 import PagedTable from '@/components/data/PagedTable.vue';
 import ApiErrorMessage from '@/components/feedback/ApiErrorMessage.vue';
@@ -13,7 +21,13 @@ import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t, locale } = useI18n();
 const statuses = ['pending', 'sending', 'delivered', 'unknown', 'failed', 'dead', 'cancelled'];
-const filters = reactive({ status: null as string | null, channel: '', providerKey: '', specKey: '', recipientId: '' });
+const filters = reactive({
+    status: null as string | null,
+    channel: '',
+    providerKey: '',
+    specKey: '',
+    recipientId: ''
+});
 const result = ref<NotificationDeliveryPageDTO | null>(null);
 const loading = ref(false);
 const error = ref<unknown>(null);
@@ -98,7 +112,12 @@ function onSize(value: number): void {
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 onMounted(() => void load());
@@ -108,14 +127,13 @@ onMounted(() => void load());
     <PageShell :title="t('routes.system.notifications')" :description="t('workbenches.notifications.description')" :loading="loading" @refresh="load()">
         <Message severity="info" :closable="false">{{ t('workbenches.notifications.templateReserved') }}</Message>
         <SurfaceCard>
-            <form class="flex flex-wrap items-end gap-3" @submit.prevent="load(true)">
+            <FilterBar :label="t('workbenches.search')" @submit="load(true)">
                 <Select v-model="filters.status" :options="statuses" show-clear :placeholder="t('workbenches.status')" class="min-w-44" />
                 <InputText v-model="filters.channel" :placeholder="t('workbenches.notifications.channel')" />
                 <InputText v-model="filters.providerKey" :placeholder="t('workbenches.notifications.provider')" />
                 <InputText v-model="filters.specKey" :placeholder="t('workbenches.notifications.specKey')" />
                 <InputText v-model="filters.recipientId" :placeholder="t('workbenches.notifications.recipientId')" />
-                <Button type="submit" icon="pi pi-search" :label="t('workbenches.search')" />
-            </form>
+            </FilterBar>
         </SurfaceCard>
 
         <PageState v-if="loading && !result" state="loading" />
@@ -123,14 +141,20 @@ onMounted(() => void load());
         <PageState v-else-if="result?.total === 0" state="empty" :title="t('workbenches.notifications.empty')" />
         <SurfaceCard v-else-if="result">
             <PagedTable :value="result.items" :total-records="result.total" :page="result.page" :size="result.size" :loading="loading" @update:page="onPage" @update:size="onSize">
-                <Column field="status" :header="t('workbenches.status')"><template #body="{ data }"><Tag :value="data.status" /></template></Column>
+                <Column field="status" :header="t('workbenches.status')"
+                    ><template #body="{ data }"><StatusTag :value="data.status" /></template
+                ></Column>
                 <Column field="spec_key" :header="t('workbenches.notifications.specKey')" />
                 <Column field="recipient_id" :header="t('workbenches.notifications.recipientId')" />
                 <Column field="channel" :header="t('workbenches.notifications.channel')" />
                 <Column field="provider_key" :header="t('workbenches.notifications.provider')" />
                 <Column field="attempt" :header="t('workbenches.notifications.attempt')" />
-                <Column field="created_at" :header="t('workbenches.notifications.createdAt')"><template #body="{ data }">{{ formatDate(data.created_at) }}</template></Column>
-                <Column><template #body="{ data }"><Button :label="t('workbenches.view')" text @click="openDelivery(data)" /></template></Column>
+                <Column field="created_at" :header="t('workbenches.notifications.createdAt')"
+                    ><template #body="{ data }">{{ formatDate(data.created_at) }}</template></Column
+                >
+                <Column
+                    ><template #body="{ data }"><Button :label="t('workbenches.view')" text @click="openDelivery(data)" /></template
+                ></Column>
             </PagedTable>
         </SurfaceCard>
 
@@ -140,13 +164,37 @@ onMounted(() => void load());
             <div v-if="detail && !detailLoading" class="flex flex-col gap-5">
                 <SurfaceCard>
                     <dl class="grid grid-cols-[10rem_1fr] gap-3 text-sm">
-                        <dt class="text-muted-color">{{ t('workbenches.status') }}</dt><dd><Tag :value="detail.delivery.status" /></dd>
-                        <dt class="text-muted-color">{{ t('workbenches.notifications.specKey') }}</dt><dd><code>{{ detail.delivery.spec_key }}</code></dd>
-                        <dt class="text-muted-color">{{ t('workbenches.notifications.recipientId') }}</dt><dd>{{ detail.delivery.recipient_type }}:{{ detail.delivery.recipient_id }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.notifications.maskedAddress') }}</dt><dd>{{ detail.delivery.masked_address }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.notifications.provider') }}</dt><dd>{{ detail.delivery.provider_key }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.notifications.error') }}</dt><dd>{{ detail.delivery.error_category || '-' }} {{ detail.delivery.error_summary || '' }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.notifications.nextRetry') }}</dt><dd>{{ formatDate(detail.delivery.next_retry_at) }}</dd>
+                        <dt class="text-muted-color">{{ t('workbenches.status') }}</dt>
+                        <dd><StatusTag :value="detail.delivery.status" /></dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.notifications.specKey') }}
+                        </dt>
+                        <dd>
+                            <code>{{ detail.delivery.spec_key }}</code>
+                        </dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.notifications.recipientId') }}
+                        </dt>
+                        <dd>{{ detail.delivery.recipient_type }}:{{ detail.delivery.recipient_id }}</dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.notifications.maskedAddress') }}
+                        </dt>
+                        <dd>{{ detail.delivery.masked_address }}</dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.notifications.provider') }}
+                        </dt>
+                        <dd>{{ detail.delivery.provider_key }}</dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.notifications.error') }}
+                        </dt>
+                        <dd>
+                            {{ detail.delivery.error_category || '-' }}
+                            {{ detail.delivery.error_summary || '' }}
+                        </dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.notifications.nextRetry') }}
+                        </dt>
+                        <dd>{{ formatDate(detail.delivery.next_retry_at) }}</dd>
                     </dl>
                     <template #footer>
                         <div class="flex flex-wrap gap-2">
@@ -161,16 +209,32 @@ onMounted(() => void load());
                         <Column field="provider_key" :header="t('workbenches.notifications.provider')" />
                         <Column field="status" :header="t('workbenches.status')" />
                         <Column field="error_category" :header="t('workbenches.notifications.error')" />
-                        <Column field="finished_at" :header="t('workbenches.notifications.finishedAt')"><template #body="{ data }">{{ formatDate(data.finished_at) }}</template></Column>
+                        <Column field="finished_at" :header="t('workbenches.notifications.finishedAt')"
+                            ><template #body="{ data }">{{ formatDate(data.finished_at) }}</template></Column
+                        >
                     </DataTable>
                 </SurfaceCard>
             </div>
         </EntityDrawerShell>
 
-        <SensitiveActionDialog v-model="cancelVisible" :title="t('workbenches.notifications.cancel')" :message="t('workbenches.notifications.cancelMessage')" :confirm-label="t('workbenches.notifications.cancel')" :loading="actionLoading" @confirm="confirmAction('cancel')">
+        <SensitiveActionDialog
+            v-model="cancelVisible"
+            :title="t('workbenches.notifications.cancel')"
+            :message="t('workbenches.notifications.cancelMessage')"
+            :confirm-label="t('workbenches.notifications.cancel')"
+            :loading="actionLoading"
+            @confirm="confirmAction('cancel')"
+        >
             <ApiErrorMessage v-if="actionError" :error="actionError" />
         </SensitiveActionDialog>
-        <SensitiveActionDialog v-model="retryVisible" :title="t('workbenches.notifications.retry')" :message="t('workbenches.notifications.retryMessage')" :confirm-label="t('workbenches.notifications.retry')" :loading="actionLoading" @confirm="confirmAction('retry')">
+        <SensitiveActionDialog
+            v-model="retryVisible"
+            :title="t('workbenches.notifications.retry')"
+            :message="t('workbenches.notifications.retryMessage')"
+            :confirm-label="t('workbenches.notifications.retry')"
+            :loading="actionLoading"
+            @confirm="confirmAction('retry')"
+        >
             <ApiErrorMessage v-if="actionError" :error="actionError" />
         </SensitiveActionDialog>
     </PageShell>

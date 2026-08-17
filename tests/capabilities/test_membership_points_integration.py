@@ -138,7 +138,32 @@ class RealPointsLedger(PointsLedgerPort):
         idempotency_key: str,
         source_ref: str,
     ) -> dict[str, Any]:
-        entry = await CreditPoints(self._points_ctx)(
+        async with self._points_ctx.uow_factory() as uow:
+            result = await self.grant_points_in_uow(
+                uow,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                amount=amount,
+                expires_at=expires_at,
+                idempotency_key=idempotency_key,
+                source_ref=source_ref,
+            )
+            await uow.commit()
+            return result
+
+    async def grant_points_in_uow(
+        self,
+        uow: Any,
+        *,
+        subject_type: str,
+        subject_id: str,
+        amount: int,
+        expires_at: Any,
+        idempotency_key: str,
+        source_ref: str,
+    ) -> dict[str, Any]:
+        entry = await CreditPoints(self._points_ctx).credit_in_uow(
+            uow,
             MEMBERSHIP_BEHAVIOR,
             CreditDebitInput(
                 subject_type=subject_type,

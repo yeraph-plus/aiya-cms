@@ -57,7 +57,9 @@ const onMouseEnter = () => {
 
 <template>
     <li :class="{ 'layout-root-menuitem': root, 'active-menuitem': isActive }">
-        <div v-if="root && item.visible !== false" class="layout-menuitem-root-text">{{ item.label }}</div>
+        <div v-if="root && item.visible !== false" class="layout-menuitem-root-text">
+            {{ item.label }}
+        </div>
         <a v-if="(!item.to || item.items) && item.visible !== false" :href="item.url" @click="itemClick($event, item)" :class="item.class" :target="item.target" tabindex="0" @mouseenter="onMouseEnter">
             <i :class="item.icon" class="layout-menuitem-icon" />
             <span class="layout-menuitem-text">{{ item.label }}</span>

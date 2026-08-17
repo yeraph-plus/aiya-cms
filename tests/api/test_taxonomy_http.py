@@ -11,10 +11,10 @@ import uuid
 from typing import Any
 
 
-async def _create_post(client: Any, headers: dict[str, str], slug: str) -> str:
+async def _create_post(client: Any, headers: dict[str, str], title: str) -> str:
     created = await client.post(
         "/api/v1/admin/content",
-        json={"type_name": "post", "title": slug, "slug": slug, "data": {"summary": "s"}},
+        json={"type_name": "post", "title": title, "data": {}},
         headers=headers,
     )
     assert created.status_code == 200, created.text

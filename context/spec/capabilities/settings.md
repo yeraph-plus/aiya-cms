@@ -149,14 +149,17 @@ settings capability 拥有 `settings_values` 表，每一行保存一个设置�
 
 - `general`：站点通用设置，至少包含 `site_logo_asset_id` 站点 LOGO asset ID。
 - `seo`：结构化站点默认值。
-- `notification`：Email 总开关、SMTP/SMTP2GO provider 开关、复用的 sender 字段、SMTP 连接设置和 SMTP2GO region/API key。
+- `notification`：Email 总开关、SMTP/SMTP2GO provider 开关、当前 `email_provider` 选择、复用的 sender 字段、SMTP 连接设置和 SMTP2GO region/API key。
 - `object_storage`：S3-compatible 资产存储设置。
+- `payments`（仅在 payments capability 启用时）：当前已注册支付 provider 选择（`dev_fake` 或 `paypal`）；凭据仍由具体 provider 契约管理。
 - `entitlements`：注册奖励、邀请奖励、赠送额度等整数数值。
 - `operations`：`audit_retention_days`，审计和终态自动执行日志的保留天数。
 
-`seo` 至少包含 site name、default title template、default description、default share image asset、robots policy 和 canonical host。后端不存页面路由树，不生成页面 HTML；具体页面 SEO 选择由前端实现。
+`seo` 至少包含 site name、default title template、default description、default share image asset、类型化 robots policy 和 expected canonical host。robots policy 不允许保存整段任意文本/HTML；非生产禁止索引策略由用户站部署环境强制覆盖。
 
-`notification` 的 SMTP password、SMTP2GO API key 和 `object_storage` 的 S3 access key/secret key 必须登记为 `sensitive`。`object_storage.s3_bucket` 是系统设置资源 bucket，`object_storage.s3_avatar_bucket` 是用户头像专用 bucket；两者都由设置提供名称，不允许业务端硬编码。`entitlements` 只保存数值，业务 feature 读取后调用 points behavior；settings 不执行积分逻辑。
+后端只保存并投影这些结构化输入，不存页面路由树，不生成页面 HTML、`<head>`、JSON-LD、`sitemap.xml` 或 `robots.txt`。Astro 用户站拥有最终 canonical origin、标签和爬虫文档生成；部署 canonical origin 与 expected canonical host 不一致必须 fail fast。default share image 继续保存 opaque asset ID，短期 signed URL 不得成为公开 meta 值。
+
+`notification` 的 SMTP password、SMTP2GO API key 和 `object_storage` 的 S3 access key/secret key 必须登记为 `sensitive`。`object_storage.s3_bucket` 是系统设置资源 bucket，`object_storage.s3_avatar_bucket` 是用户头像专用 bucket；两者都由设置提供名称，不允许业务端硬编码。`notification.email_provider`、`object_storage.storage_provider` 和 `payments.provider` 只能选择组合根已注册的 provider key；settings 只保存选择，不实例化或调用 provider。`entitlements` 只保存数值，业务 feature 读取后调用 points behavior；settings 不执行积分逻辑。
 
 ## 8. 事件、缓存与审计
 

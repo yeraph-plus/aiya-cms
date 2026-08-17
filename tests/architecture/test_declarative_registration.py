@@ -24,14 +24,19 @@ INITIAL_CAPABILITIES = (
     "audit",
     "settings",
     "content",
+    "comments",
+    "community",
+    "notification",
     "taxonomy",
     "assets",
     "points",
     "payments",
     "membership",
+    "engagement",
 )
 
 INITIAL_FEATURES = (
+    "auth",
     "post",
     "page",
     "site_settings",

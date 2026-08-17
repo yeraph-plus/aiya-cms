@@ -24,15 +24,18 @@ from inc.capabilities.notification.commands import (
 from inc.capabilities.notification.diagnostics import NotificationDiagnostics
 from inc.capabilities.notification.events import NOTIFICATION_EVENT_SCHEMAS
 from inc.capabilities.notification.models import (
+    IntentVariables,
     NotificationDelivery,
     NotificationDeliveryAttempt,
     NotificationIntent,
+    RecipientSnapshot,
 )
 from inc.capabilities.notification.ports import (
     ProviderError,
     ProviderResult,
     RecipientTarget,
 )
+from inc.capabilities.notification.retention import cleanup_notifications_in_uow
 from inc.capabilities.notification.schemas import RequestNotificationInput
 from inc.capabilities.notification.specs import (
     DeliveryPolicy,
@@ -558,6 +561,27 @@ async def test_diagnostics_report_only(
     assert codes["notification.expired_lease"] == "ok"
     assert codes["notification.unknown_dead_backlog"] == "ok"
     assert codes["notification.spec_drift"] == "ok"
+    assert codes["notification.template_seed"] == "ok"
+
+    async with uow_factory() as uow:
+        from inc.capabilities.notification.models import NotificationTemplate
+
+        template = (
+            (
+                await uow.session.execute(
+                    select(NotificationTemplate).where(
+                        NotificationTemplate.template_key == "moderation_submitted"
+                    )
+                )
+            )
+            .scalars()
+            .one()
+        )
+        template.status = "archived"
+        await uow.commit()
+    results = await diagnostics.run()
+    codes = {r.code: r.status.value for r in results}
+    assert codes["notification.template_seed"] == "degraded"
 
     result = await RequestNotification(ctx)(request_input())
     async with uow_factory() as uow:
@@ -568,3 +592,119 @@ async def test_diagnostics_report_only(
     results = await diagnostics.run()
     codes = {r.code: r.status.value for r in results}
     assert codes["notification.unknown_dead_backlog"] == "degraded"
+
+
+async def test_retention_deletes_only_terminal_notification_history(
+    uow_factory: UoWFactory, clock: Any
+) -> None:
+    old = clock.utc_now() - timedelta(days=31)
+    recent = clock.utc_now() - timedelta(days=1)
+    old_terminal_intent = NotificationIntent(
+        id=uuid.uuid4(),
+        spec_key=NOTIFY_KEY,
+        idempotency_key="retention-old-terminal",
+        recipient_type="identity",
+        recipient_id="user-old",
+        variables=IntentVariables(schema_version="1", values={}),
+        requested_at=old,
+        created_at=old,
+        updated_at=old,
+    )
+    old_pending_intent = NotificationIntent(
+        id=uuid.uuid4(),
+        spec_key=NOTIFY_KEY,
+        idempotency_key="retention-old-pending",
+        recipient_type="identity",
+        recipient_id="user-pending",
+        variables=IntentVariables(schema_version="1", values={}),
+        requested_at=old,
+        created_at=old,
+        updated_at=old,
+    )
+    recent_intent = NotificationIntent(
+        id=uuid.uuid4(),
+        spec_key=NOTIFY_KEY,
+        idempotency_key="retention-recent",
+        recipient_type="identity",
+        recipient_id="user-recent",
+        variables=IntentVariables(schema_version="1", values={}),
+        requested_at=recent,
+        created_at=recent,
+        updated_at=recent,
+    )
+    recipient = RecipientSnapshot(
+        channel="email",
+        recipient_type="identity",
+        recipient_id="user-old",
+        address_digest="digest",
+        masked_address="u***@example.com",
+    )
+    old_delivery = NotificationDelivery(
+        id=uuid.uuid4(),
+        intent_id=old_terminal_intent.id,
+        channel="email",
+        provider_key="email.primary",
+        recipient=recipient,
+        status="delivered",
+        created_at=old,
+        updated_at=old,
+    )
+    old_attempt = NotificationDeliveryAttempt(
+        id=uuid.uuid4(),
+        delivery_id=old_delivery.id,
+        delivery_attempt=1,
+        provider_sequence=1,
+        provider_key="email.primary",
+        status="delivered",
+        started_at=old,
+        finished_at=old,
+        created_at=old,
+        updated_at=old,
+    )
+    pending_delivery = NotificationDelivery(
+        id=uuid.uuid4(),
+        intent_id=old_pending_intent.id,
+        channel="email",
+        provider_key="email.primary",
+        recipient=recipient,
+        status="pending",
+        created_at=old,
+        updated_at=old,
+    )
+    recent_delivery = NotificationDelivery(
+        id=uuid.uuid4(),
+        intent_id=recent_intent.id,
+        channel="email",
+        provider_key="email.primary",
+        recipient=recipient,
+        status="delivered",
+        created_at=recent,
+        updated_at=recent,
+    )
+    async with uow_factory() as uow:
+        uow.session.add_all(
+            [
+                old_terminal_intent,
+                old_pending_intent,
+                recent_intent,
+                old_delivery,
+                old_attempt,
+                pending_delivery,
+                recent_delivery,
+            ]
+        )
+        await uow.session.flush()
+        counts = await cleanup_notifications_in_uow(uow, clock.utc_now() - timedelta(days=30))
+        await uow.commit()
+
+    assert counts == {
+        "notification_attempts_deleted": 1,
+        "notification_deliveries_deleted": 1,
+        "notification_intents_deleted": 1,
+    }
+    async with uow_factory() as uow:
+        assert await uow.session.get(NotificationDelivery, old_delivery.id) is None
+        assert await uow.session.get(NotificationDeliveryAttempt, old_attempt.id) is None
+        assert await uow.session.get(NotificationIntent, old_terminal_intent.id) is None
+        assert await uow.session.get(NotificationDelivery, pending_delivery.id) is not None
+        assert await uow.session.get(NotificationDelivery, recent_delivery.id) is not None

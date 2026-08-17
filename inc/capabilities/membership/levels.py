@@ -26,6 +26,8 @@ class MembershipLevelSpec:
         "cycle_days",
         "grant_points",
         "renewal_allowed",
+        "status",
+        "version",
     )
 
     def __init__(
@@ -37,6 +39,8 @@ class MembershipLevelSpec:
         cycle_days: int,
         grant_points: int,
         renewal_allowed: bool = True,
+        status: str = "active",
+        version: int = 1,
     ) -> None:
         if not _LEVEL_KEY.match(key):
             raise ValueError(f"invalid level key {key!r}")
@@ -54,6 +58,8 @@ class MembershipLevelSpec:
         self.cycle_days = cycle_days
         self.grant_points = grant_points
         self.renewal_allowed = renewal_allowed
+        self.status = status
+        self.version = version
 
 
 class MembershipLevelRegistry:
@@ -77,6 +83,27 @@ class MembershipLevelRegistry:
                 message=f"duplicate membership level {spec.key}",
             )
         self._levels[spec.key] = spec
+
+    def register_runtime(self, spec: MembershipLevelSpec) -> None:
+        """Register an administrator-managed level after boot freeze."""
+        if spec.key in self._levels:
+            raise KernelError(
+                code="membership.duplicate_level",
+                category=ErrorCategory.CONFLICT,
+                message=f"membership level {spec.key} already exists",
+            )
+        self._levels[spec.key] = spec
+
+    def update_runtime(self, key: str, **values: object) -> MembershipLevelSpec:
+        spec = self.require(key)
+        for name, value in values.items():
+            if name in {"key", "tier_rank", "cycle_days", "grant_points"}:
+                if name == "key":
+                    continue
+            if hasattr(spec, name):
+                setattr(spec, name, value)
+        spec.version += 1
+        return spec
 
     def freeze(self) -> None:
         self._frozen = True

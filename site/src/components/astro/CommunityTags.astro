@@ -1,0 +1,47 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { createServerApiClient } from '@/lib/api/server/client';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+
+interface Props {
+    locale: Locale;
+}
+
+const { locale } = Astro.props;
+const api = createServerApiClient(Astro.session, Astro.locals.requestId);
+const response = await api.GET('/api/v1/community/tags');
+const tags = response.data ?? [];
+---
+
+<BaseLayout locale={locale} title={t(locale, 'community.tags')} description={t(locale, 'community.tagsDescription')}>
+    <main class="detail-page">
+        <header class="detail-header">
+            <p class="eyebrow">{t(locale, 'community.eyebrow')}</p>
+            <h1>{t(locale, 'community.tags')}</h1>
+            <p class="lede">{t(locale, 'community.tagsDescription')}</p>
+        </header>
+        {
+            response.error ? (
+                <section class="placeholder-surface">
+                    <p>{t(locale, 'community.unavailable')}</p>
+                </section>
+            ) : (
+                <section class="tag-grid" aria-label={t(locale, 'community.tags')}>
+                    {tags.map((tag) => (
+                        <a
+                            class="tag-card"
+                            href={locale === 'en' ? `/en/community/tags/${tag.slug}` : `/community/tags/${tag.slug}`}
+                        >
+                            <span class="eyebrow">{tag.kind}</span>
+                            <strong>{tag.name}</strong>
+                            <span>
+                                {tag.published_discussion_count} {t(locale, 'community.discussions')}
+                            </span>
+                        </a>
+                    ))}
+                </section>
+            )
+        }
+    </main>
+</BaseLayout>

@@ -23,6 +23,7 @@ from inc.capabilities.access.commands import (
     DeleteRole,
     ReplaceRoleCapabilities,
     RevokeRoleFromSubject,
+    UpdateRole,
 )
 from inc.capabilities.access.schemas import GrantSummary, RoleDTO
 
@@ -40,6 +41,13 @@ class AssignRoleBody(BaseModel):
 
     subject_type: str = "identity"
     subject_id: str
+
+
+class UpdateRoleBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    description: str | None = None
 
 
 class CapabilityDTO(BaseModel):
@@ -125,6 +133,32 @@ def build_router(
         )
         return await services.access_queries.grants_for(
             subject_type=body.subject_type, subject_id=body.subject_id
+        )
+
+    @router.get(
+        "/subjects/{subject_type}/{subject_id}/roles",
+        response_model=GrantSummary,
+        include_in_schema=False,
+    )
+    @router.get("/access/subjects/{subject_type}/{subject_id}/roles", response_model=GrantSummary)
+    async def subject_roles(
+        subject_type: str = Path(..., min_length=1, max_length=64),
+        subject_id: str = Path(..., min_length=1, max_length=200),
+        ctx: AppContext = Depends(require_capability("access.roles.read")),
+    ) -> GrantSummary:
+        del ctx
+        return await services.access_queries.grants_for(
+            subject_type=subject_type, subject_id=subject_id
+        )
+
+    @router.patch("/roles/{role_id}", response_model=RoleDTO)
+    async def update_role(
+        body: UpdateRoleBody,
+        role_id: uuid.UUID = Path(...),
+        ctx: AppContext = Depends(require_capability("access.roles.manage")),
+    ) -> RoleDTO:
+        return await UpdateRole(_ctx(ctx, services))(
+            role_id=str(role_id), name=body.name, description=body.description
         )
 
     @router.put("/roles/{role_id}/capabilities", response_model=RoleDTO)

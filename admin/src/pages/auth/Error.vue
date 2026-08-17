@@ -19,7 +19,9 @@ const requestId = typeof route.query.requestId === 'string' ? route.query.reques
                         <div class="flex justify-center items-center border-2 border-pink-500 rounded-full" style="height: 3.2rem; width: 3.2rem">
                             <i class="pi pi-fw pi-exclamation-circle text-2xl! text-pink-500"></i>
                         </div>
-                        <h1 class="text-surface-900 dark:text-surface-0 font-bold text-5xl mb-2">{{ t('pages.errorTitle') }}</h1>
+                        <h1 class="text-surface-900 dark:text-surface-0 font-bold text-5xl mb-2">
+                            {{ t('pages.errorTitle') }}
+                        </h1>
                         <span class="text-muted-color mb-8">{{ message || t('pages.errorDescription') }}</span>
                         <span v-if="requestId" class="text-xs text-muted-color mb-8">{{ t('pages.requestId') }}: {{ requestId }}</span>
                         <div class="col-span-12 mt-8 text-center">

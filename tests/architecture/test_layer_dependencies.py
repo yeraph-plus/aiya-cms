@@ -96,6 +96,22 @@ def test_api_never_imports_capability_internals() -> None:
     assert offenders == []
 
 
+def test_http_adapters_never_use_orm_or_sqlalchemy() -> None:
+    """HTTP adapters map transport data to public commands/queries only."""
+
+    offenders: list[str] = []
+    for path in iter_source_files(INC_ROOT / "api" / "http"):
+        source = path.read_text(encoding="utf-8")
+        if (
+            "sqlalchemy" in source
+            or "uow.session" in source
+            or "session.add" in source
+            or ".models import" in source
+        ):
+            offenders.append(str(path))
+    assert offenders == []
+
+
 def test_adapters_use_only_public_capability_surfaces() -> None:
     adapters_root = INC_ROOT / "adapters"
     assert adapters_root.is_dir(), "inc/adapters skeleton missing"
@@ -116,11 +132,15 @@ def test_adapters_use_only_public_capability_surfaces() -> None:
 
 
 def test_auth_router_delegates_self_service_orchestration_to_feature() -> None:
-    router = INC_ROOT / "api" / "http" / "routers_auth.py"
-    source = router.read_text(encoding="utf-8")
-    assert "services.me" in source
-    assert "FinalizeAsset" not in source
-    assert "_me_dto" not in source
+    auth_source = (INC_ROOT / "api" / "http" / "routers_auth.py").read_text(encoding="utf-8")
+    me_source = (INC_ROOT / "api" / "http" / "routers_me.py").read_text(encoding="utf-8")
+    assert "services.me" in me_source
+    assert "inc.features.check_in" not in auth_source
+    assert "FinalizeAsset" not in me_source
+    assert "_me_dto" not in me_source
+    assert "RegisterLocalUser" not in auth_source
+    assert "RequestPasswordReset" not in auth_source
+    assert "AssignDefaultUserRole" not in auth_source
 
 
 def test_modules_layer_is_removed_and_unreferenced() -> None:

@@ -22,6 +22,9 @@ admin/dist/
 admin/.vite/
 admin/test-results/
 admin/playwright-report/
+site/node_modules/
+site/dist/
+site/.astro/
 reports/
 .reports/
 .claude/

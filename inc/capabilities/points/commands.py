@@ -643,6 +643,19 @@ class CreditPoints:
     async def __call__(  # type: ignore[return]
         self, behavior_key: str, input_: CreditDebitInput
     ) -> LedgerEntryDTO:
+        async with self._ctx.uow_factory() as uow:
+            entry = await self.credit_in_uow(uow, behavior_key, input_)
+            await uow.commit()
+            return entry
+
+    async def credit_in_uow(
+        self,
+        uow: UnitOfWork,
+        behavior_key: str,
+        input_: CreditDebitInput,
+    ) -> LedgerEntryDTO:
+        """Credit using a caller-owned transaction without committing it."""
+
         ctx = self._ctx
         spec = _require_behavior(ctx, behavior_key)
         if spec.direction != "credit":
@@ -655,92 +668,84 @@ class CreditPoints:
                 "points.source_type_not_allowed",
                 f"source type {input_.source_type!r} not allowed by {behavior_key}",
             )
-        async with ctx.uow_factory() as uow:
-            program = await _require_program(uow, spec.program_key)
-            existing = await _find_idempotent(uow, program.id, input_.idempotency_key)
-            if existing is not None:
-                if existing.entry_type != "credit":
-                    raise _conflict(
-                        "points.idempotency_mismatch",
-                        "idempotency key already used by a non-credit entry",
-                    )
-                return _to_entry(existing, program.program_key)
-            account = await _ensure_account(
-                ctx, uow, program, input_.subject_type, input_.subject_id
-            )
-            if account.state == "frozen":
-                raise _conflict("points.account_frozen", "points account is frozen")
-            await _validate_limits(ctx, uow, spec=spec, account=account, amount=input_.amount)
-            occurred_at = ctx.clock.utc_now()
-            bucket_type, identity, expires_at = _credit_routing(
-                spec, occurred_at, input_.expires_at
-            )
-            bucket = await _bucket_target(
-                uow,
-                account,
-                bucket_type=bucket_type,
-                expiration_identity=identity,
-                expires_at=expires_at,
-            )
-            new_balance = await _apply_balance(
-                uow, account, amount=input_.amount, allow_negative=True
-            )
-            # a credit in debt first pays down the debt; only the excess enters buckets
-            before = max(0, new_balance - input_.amount)
-            after = max(0, new_balance)
-            bucket_delta = after - before
-            if bucket_delta > 0:
-                await _add_to_bucket(uow, account, bucket, bucket_delta)
-            entry = PointsLedgerEntry(
-                program_id=program.id,
-                account_id=account.id,
-                amount=input_.amount,
-                entry_type="credit",
-                created_at=occurred_at,
-                behavior_key=spec.key,
-                behavior_version=spec.version,
-                source_type=input_.source_type,
-                source_id=input_.source_id,
-                idempotency_key=input_.idempotency_key,
-                actor_type=input_.actor_type,
-                actor_id=input_.actor_id or ctx.actor_id,
-                entry_metadata=LedgerMetadata(
-                    values={
-                        "bucket_type": bucket_type,
-                        **(
-                            {
-                                "expiration_identity": identity,
-                                "expires_at": expires_at.isoformat() if expires_at else None,
-                            }
-                            if identity is not None
-                            else {}
-                        ),
-                        **(input_.metadata or {}),
-                    }
-                ),
-            )
-            uow.session.add(entry)
-            try:
-                await uow.session.flush()
-            except IntegrityError as exc:
+        program = await _require_program(uow, spec.program_key)
+        existing = await _find_idempotent(uow, program.id, input_.idempotency_key)
+        if existing is not None:
+            if existing.entry_type != "credit":
                 raise _conflict(
-                    "points.duplicate_credit", "a credit with this idempotency key exists"
-                ) from exc
-            await _emit(
-                ctx,
-                uow,
-                key="points.credited.v1",
-                account=account,
-                program=program,
-                entry_id=str(entry.id),
-                amount=entry.amount,
-                balance=new_balance,
-                behavior_key=spec.key,
-                source_type=input_.source_type,
-                source_id=input_.source_id,
-            )
-            await uow.commit()
-            return _to_entry(entry, program.program_key)
+                    "points.idempotency_mismatch",
+                    "idempotency key already used by a non-credit entry",
+                )
+            return _to_entry(existing, program.program_key)
+        account = await _ensure_account(ctx, uow, program, input_.subject_type, input_.subject_id)
+        if account.state == "frozen":
+            raise _conflict("points.account_frozen", "points account is frozen")
+        await _validate_limits(ctx, uow, spec=spec, account=account, amount=input_.amount)
+        occurred_at = ctx.clock.utc_now()
+        bucket_type, identity, expires_at = _credit_routing(spec, occurred_at, input_.expires_at)
+        bucket = await _bucket_target(
+            uow,
+            account,
+            bucket_type=bucket_type,
+            expiration_identity=identity,
+            expires_at=expires_at,
+        )
+        new_balance = await _apply_balance(uow, account, amount=input_.amount, allow_negative=True)
+        # a credit in debt first pays down the debt; only the excess enters buckets
+        before = max(0, new_balance - input_.amount)
+        after = max(0, new_balance)
+        bucket_delta = after - before
+        if bucket_delta > 0:
+            await _add_to_bucket(uow, account, bucket, bucket_delta)
+        entry = PointsLedgerEntry(
+            program_id=program.id,
+            account_id=account.id,
+            amount=input_.amount,
+            entry_type="credit",
+            created_at=occurred_at,
+            behavior_key=spec.key,
+            behavior_version=spec.version,
+            source_type=input_.source_type,
+            source_id=input_.source_id,
+            idempotency_key=input_.idempotency_key,
+            actor_type=input_.actor_type,
+            actor_id=input_.actor_id or ctx.actor_id,
+            entry_metadata=LedgerMetadata(
+                values={
+                    "bucket_type": bucket_type,
+                    **(
+                        {
+                            "expiration_identity": identity,
+                            "expires_at": expires_at.isoformat() if expires_at else None,
+                        }
+                        if identity is not None
+                        else {}
+                    ),
+                    **(input_.metadata or {}),
+                }
+            ),
+        )
+        uow.session.add(entry)
+        try:
+            await uow.session.flush()
+        except IntegrityError as exc:
+            raise _conflict(
+                "points.duplicate_credit", "a credit with this idempotency key exists"
+            ) from exc
+        await _emit(
+            ctx,
+            uow,
+            key="points.credited.v1",
+            account=account,
+            program=program,
+            entry_id=str(entry.id),
+            amount=entry.amount,
+            balance=new_balance,
+            behavior_key=spec.key,
+            source_type=input_.source_type,
+            source_id=input_.source_id,
+        )
+        return _to_entry(entry, program.program_key)
 
 
 class DebitPoints:
@@ -1153,7 +1158,13 @@ class FreezePointsAccount:
         self._ctx = ctx
 
     async def __call__(  # type: ignore[return]
-        self, *, program_key: str, subject_type: str, subject_id: str, frozen: bool
+        self,
+        *,
+        program_key: str,
+        subject_type: str,
+        subject_id: str,
+        frozen: bool,
+        reason: str | None = None,
     ) -> BalanceDTO:
         ctx = self._ctx
         _require_permission(ctx, PERMISSION_FREEZE)
@@ -1177,6 +1188,14 @@ class FreezePointsAccount:
                     account=account,
                     program=program,
                     state=target,
+                )
+                await _append_audit(
+                    ctx,
+                    uow,
+                    action="points.account.frozen" if frozen else "points.account.unfrozen",
+                    target_type="points_account",
+                    target_id=str(account.id),
+                    details={"program_key": program_key, "reason": reason or "admin state change"},
                 )
             await uow.commit()
             return _to_balance(account, balance, program_key)

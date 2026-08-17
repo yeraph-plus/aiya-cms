@@ -14,16 +14,26 @@ from inc.adapters.registry import (
     AccessAuthorizationReader,
     ContentBatchExists,
     IdentityClaimsReader,
+    IdentityCommunityAuthor,
     IdentityCredentialAuthenticator,
+    ProviderCatalog,
+    ProviderRegistration,
+    ProviderResolver,
     TaxonomyContentExists,
     resolve_adapters,
+    resolve_provider_catalogs,
 )
 
 __all__ = [
     "AccessAuthorizationReader",
     "ContentBatchExists",
+    "IdentityCommunityAuthor",
     "IdentityClaimsReader",
     "IdentityCredentialAuthenticator",
+    "ProviderCatalog",
+    "ProviderRegistration",
+    "ProviderResolver",
+    "resolve_provider_catalogs",
     "TaxonomyContentExists",
     "resolve_adapters",
 ]

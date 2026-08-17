@@ -10,7 +10,9 @@ purge. Runs against SQLite with the kernel UoW/outbox/workflow code paths.
 
 from __future__ import annotations
 
+import re
 import uuid
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
@@ -18,6 +20,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import func, select
 
+from inc.adapters.content.markdown_assets import ReadyMarkdownAssetsPolicy
 from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
 from inc.capabilities.content.commands import (
     PERMISSION_MANAGE,
@@ -65,7 +68,6 @@ from inc.kernel.workflow import WorkflowRegistry, WorkflowRunner
 class PostData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    summary: str | None = None
     tags: list[str] = []
 
 
@@ -73,6 +75,11 @@ class PageData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     section: str | None = None
+
+
+class Ready:
+    async def is_ready(self, asset_id: uuid.UUID) -> bool:
+        return True
 
 
 def make_post_spec() -> ContentTypeSpec:
@@ -89,6 +96,8 @@ def make_post_spec() -> ContentTypeSpec:
         allows_pin=True,
         allows_owner=True,
         allows_references=True,
+        requires_ready_markdown_assets=True,
+        publication_policy_key="assets.ready_markdown.v1",
     )
 
 
@@ -107,6 +116,8 @@ def make_page_spec() -> ContentTypeSpec:
         allows_owner=True,
         allows_references=False,
         allows_incoming_references=False,
+        requires_ready_markdown_assets=True,
+        publication_policy_key="assets.ready_markdown.v1",
     )
 
 
@@ -152,6 +163,7 @@ def ctx(
         clock=clock,
         outbox=OutboxWriter(schema_registry, clock),
         types=types,
+        publication_policies={"assets.ready_markdown.v1": ReadyMarkdownAssetsPolicy(Ready())},
         permissions=ALL_PERMISSIONS,
         actor_id="actor-1",
         trace_id="trace-1",
@@ -167,7 +179,8 @@ async def create_post(
     ctx: CommandContext,
     *,
     title: str = "Hello",
-    slug: str | None = None,
+    body: str | None = "# Body",
+    excerpt: str | None = "Summary",
     owner_id: uuid.UUID | None = None,
     data: dict[str, Any] | None = None,
 ):
@@ -175,11 +188,82 @@ async def create_post(
         CreateContentInput(
             type_name="post",
             title=title,
-            slug=slug or f"slug-{uuid.uuid4().hex[:8]}",
-            data=data or {"summary": "sum"},
+            body=body,
+            excerpt=excerpt,
+            data=data or {},
             owner_id=owner_id,
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_create_normalizes_markdown_and_generates_immutable_slug(ctx: CommandContext) -> None:
+    created = await CreateContent(ctx)(
+        CreateContentInput(
+            type_name="post",
+            title="你好 Markdown",
+            body="# Heading\r\n\r\nText",
+            excerpt="Summary",
+        )
+    )
+
+    assert re.fullmatch(r"ni-hao-markdown-[a-z2-7]{8}", created.slug)
+    assert created.body == "# Heading\n\nText"
+    assert created.body_format == "markdown"
+    assert created.body_profile == "gfm-v1"
+
+    updated = await UpdateContent(ctx)(
+        uuid.UUID(created.id), UpdateContentInput(expected_version=created.version, title="Renamed")
+    )
+    assert updated.slug == created.slug
+
+
+@pytest.mark.asyncio
+async def test_markdown_rejects_raw_html_and_unsafe_link(ctx: CommandContext) -> None:
+    for body, code in (
+        ("<script>alert(1)</script>", "content.markdown_feature_not_allowed"),
+        ("[click](javascript:alert(1))", "content.markdown_link_not_allowed"),
+    ):
+        with pytest.raises(KernelError) as excinfo:
+            await CreateContent(ctx)(
+                CreateContentInput(type_name="post", title="Unsafe", body=body, excerpt="Summary")
+            )
+        assert excinfo.value.code == code
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_missing_markdown_body_or_excerpt(ctx: CommandContext) -> None:
+    created = await CreateContent(ctx)(CreateContentInput(type_name="post", title="Incomplete"))
+
+    with pytest.raises(KernelError) as excinfo:
+        await SubmitContent(ctx)(uuid.UUID(created.id))
+    assert excinfo.value.code == "content.excerpt_required"
+
+
+@pytest.mark.asyncio
+async def test_publish_rejects_markdown_asset_that_is_not_ready(ctx: CommandContext) -> None:
+    class NotReady:
+        async def is_ready(self, asset_id: uuid.UUID) -> bool:
+            return False
+
+    asset_id = uuid.uuid4()
+    policy = ReadyMarkdownAssetsPolicy(NotReady())
+    created = await CreateContent(
+        replace(ctx, publication_policies={"assets.ready_markdown.v1": policy})
+    )(
+        CreateContentInput(
+            type_name="post",
+            title="Asset post",
+            body=f"![Alt](asset:{asset_id})",
+            excerpt="Summary",
+        )
+    )
+
+    with pytest.raises(KernelError) as excinfo:
+        await PublishContent(
+            replace(ctx, publication_policies={"assets.ready_markdown.v1": policy})
+        )(uuid.UUID(created.id))
+    assert excinfo.value.code == "content.markdown_asset_invalid"
 
 
 async def _outbox_count(uow_factory: UoWFactory, event_key: str) -> int:
@@ -265,15 +349,13 @@ def test_type_spec_requires_pydantic_schema() -> None:
 
 async def test_create_requires_registered_type(ctx: CommandContext) -> None:
     with pytest.raises(KernelError) as excinfo:
-        await CreateContent(ctx)(CreateContentInput(type_name="ghost", title="x", slug="ghost-1"))
+        await CreateContent(ctx)(CreateContentInput(type_name="ghost", title="x"))
     assert excinfo.value.code == "content.unknown_type"
 
 
 async def test_create_validates_data_schema(ctx: CommandContext) -> None:
     with pytest.raises(ValidationError):
-        await CreateContent(ctx)(
-            CreateContentInput(type_name="post", title="x", slug="bad-data", data={"bogus": 1})
-        )
+        await CreateContent(ctx)(CreateContentInput(type_name="post", title="x", data={"bogus": 1}))
 
 
 async def test_create_requires_permission(
@@ -290,17 +372,16 @@ async def test_create_requires_permission(
         permissions=frozenset(),
     )
     with pytest.raises(KernelError) as excinfo:
-        await CreateContent(restricted)(
-            CreateContentInput(type_name="post", title="x", slug="nope")
-        )
+        await CreateContent(restricted)(CreateContentInput(type_name="post", title="x"))
     assert excinfo.value.code == "content.forbidden"
 
 
-async def test_create_duplicate_slug_conflicts(ctx: CommandContext) -> None:
-    await create_post(ctx, slug="same")
-    with pytest.raises(KernelError) as excinfo:
-        await create_post(ctx, slug="same")
-    assert excinfo.value.code == "content.duplicate_slug"
+async def test_create_same_titles_generate_distinct_slugs(ctx: CommandContext) -> None:
+    first = await create_post(ctx, title="Same")
+    second = await create_post(ctx, title="Same")
+    assert first.slug != second.slug
+    assert first.slug.startswith("same-")
+    assert second.slug.startswith("same-")
 
 
 async def test_create_event_and_audit_carry_real_content_id(
@@ -446,7 +527,14 @@ def publish_ctx(
     schema_registry: EventSchemaRegistry,
 ) -> tuple[WorkflowRunner, ContentPublishScanner, CommandContext]:
     outbox = OutboxWriter(schema_registry, clock)
-    activity = ScheduledPublishActivity(clock=clock, outbox=outbox, actor_id="scanner")
+    publication_policies = {"assets.ready_markdown.v1": ReadyMarkdownAssetsPolicy(Ready())}
+    activity = ScheduledPublishActivity(
+        clock=clock,
+        outbox=outbox,
+        types=types,
+        publication_policies=publication_policies,
+        actor_id="scanner",
+    )
     registry = WorkflowRegistry()
     register_publish_workflow(registry, activity=activity)
     runner = WorkflowRunner(uow_factory=uow_factory, registry=registry, clock=clock)
@@ -456,6 +544,7 @@ def publish_ctx(
         clock=clock,
         outbox=outbox,
         types=types,
+        publication_policies=publication_policies,
         permissions=ALL_PERMISSIONS,
     )
     return runner, scanner, cmd_ctx
@@ -641,6 +730,18 @@ async def test_public_list_excludes_drafts(ctx: CommandContext, queries: Content
     assert page.total == 1
 
 
+async def test_public_slug_lookup_returns_only_published_content(
+    ctx: CommandContext, queries: ContentQueries
+) -> None:
+    created = await create_post(ctx, title="Public route")
+    assert await queries.get_published_by_slug(type_name="post", slug=created.slug) is None
+
+    await PublishContent(ctx)(uuid.UUID(created.id))
+    found = await queries.get_published_by_slug(type_name="post", slug=created.slug)
+    assert found is not None
+    assert found.id == created.id
+
+
 # --- explicit sort (spec §7.1) -------------------------------------------
 
 
@@ -715,9 +816,7 @@ async def test_replace_references_validates_targets_and_kind(
         )
     assert excinfo.value.code == "content.reference_target_missing"
 
-    page = await CreateContent(ctx)(
-        CreateContentInput(type_name="page", title="Page", slug=f"page-{uuid.uuid4().hex[:8]}")
-    )
+    page = await CreateContent(ctx)(CreateContentInput(type_name="page", title="Page"))
     page_row = await queries.get(uuid.UUID(page.id))
     assert page_row is not None
     with pytest.raises(KernelError) as excinfo:

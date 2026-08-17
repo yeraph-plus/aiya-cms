@@ -32,6 +32,7 @@ from inc.api.container import (
     Services,
     build_container,
 )
+from inc.api.http.admin_session_store import AdminSessionStore
 from inc.api.http.context import (
     BearerVerifier,
     make_authenticated,
@@ -112,6 +113,8 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     },
     {"name": "content", "description": "Published content reads."},
     {"name": "comments", "description": "Published comment reads and authenticated submission."},
+    {"name": "discussions", "description": "Community discussions and published post streams."},
+    {"name": "community-tags", "description": "Community tag directory and metadata."},
     {"name": "engagement", "description": "Views, likes, ratings and favorites."},
     {"name": "webhooks", "description": "Provider webhook callbacks (signature verified)."},
     {
@@ -124,6 +127,7 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-access", "description": "Roles, grants and permission keys."},
     {"name": "admin-content", "description": "Content lifecycle management."},
     {"name": "admin-comments", "description": "Comment moderation."},
+    {"name": "admin-community", "description": "Community discussion, post and tag moderation."},
     {"name": "admin-taxonomy", "description": "Taxonomy dimensions and terms."},
     {"name": "admin-settings", "description": "Setting group management."},
     {"name": "admin-assets", "description": "Asset upload and metadata management."},
@@ -132,6 +136,7 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-payments", "description": "Payment order administration."},
     {"name": "admin-points", "description": "Points balance and ledger administration."},
     {"name": "admin-dashboard", "description": "Capability-owned administrator statistics."},
+    {"name": "admin-session", "description": "Administrator identity and active permissions."},
     {"name": "admin-engagement", "description": "Engagement projection administration."},
     {"name": "admin-membership", "description": "Membership subscriptions and renewals."},
     {
@@ -166,17 +171,30 @@ def create_app(
     uow_factory: UoWFactory,
     clock: Clock,
     settings: Any,
+    redis_url: str | None = None,
     start_workers: bool = True,
 ) -> FastAPI:
+    environment = getattr(settings, "environment", "dev")
+    if environment == "production" and not redis_url:
+        raise ValueError("production requires a Redis URL for administrator sessions")
     container: ApplicationContainer = build_container(
         manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings
     )
     services: Services = container.services  # type: ignore[assignment]
+    admin_session_store = AdminSessionStore(
+        secret=getattr(settings, "admin_session_secret", "dev-admin-session-secret-change-me"),
+        idle_seconds=getattr(settings, "admin_session_idle_seconds", 8 * 3600),
+        absolute_seconds=getattr(settings, "admin_session_absolute_seconds", 14 * 86400),
+        redis_url=redis_url,
+        clock=clock,
+    )
     verifier = BearerVerifier(
         services=services,
         issuer=getattr(settings, "issuer", DEFAULT_ISSUER),
         api_audience=getattr(settings, "api_audience", "aiya-admin"),
+        admin_session_store=admin_session_store,
     )
+    services.admin_session_store = admin_session_store
     require_capability = make_require_capability(verifier=verifier)
     require_authenticated = make_authenticated(verifier=verifier)
 
@@ -188,8 +206,9 @@ def create_app(
             yield
         finally:
             await container.stop()
+            await admin_session_store.close()
 
-    env = getattr(settings, "environment", "dev")
+    env = environment
     app = FastAPI(
         title=f"aiya-cms ({manifest.name})",
         version="0.1.0",
@@ -206,8 +225,8 @@ def create_app(
             CORSMiddleware,
             allow_origins=list(cors_origins),
             allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-Request-ID"],
         )
     app.add_middleware(_RequestIdMiddleware)
 
@@ -222,12 +241,20 @@ def create_app(
             )
         return True
 
+    async def _redis_readiness() -> bool:
+        return await asyncio.wait_for(admin_session_store.check_ready(), timeout=2.0)
+
+    async def _application_readiness() -> bool:
+        await _db_readiness()
+        await _redis_readiness()
+        return True
+
     app.include_router(
         build_health_router(
             manifest_name=manifest.name,
             capabilities=manifest.capabilities,
             routers=manifest.routers,
-            readiness=_db_readiness,
+            readiness=_application_readiness,
         )
     )
 
@@ -270,6 +297,7 @@ def create_app(
             revocation=services.oidc["revocation"],
             logout=services.oidc["logout"],
             secure_cookies=getattr(settings, "secure_cookies", False),
+            trusted_proxy_cidrs=getattr(settings, "trusted_proxy_cidrs", ()),
         )
         app.include_router(build_router(oidc_services))
 

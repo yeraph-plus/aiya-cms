@@ -3,7 +3,7 @@
 Contract source: context/spec/http-openapi.md §2.
 
 ``/healthz`` is process liveness without dependencies; ``/api/v1/health``
-reports manifest readiness by probing the database with a strict timeout.
+reports manifest readiness from the composition root's dependency probes.
 """
 
 from __future__ import annotations

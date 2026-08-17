@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Router } from 'vue-router';
 
-const { getUserMock, fetchMeMock } = vi.hoisted(() => ({
+const { getUserMock, fetchAdminSessionMock } = vi.hoisted(() => ({
     getUserMock: vi.fn(),
-    fetchMeMock: vi.fn()
+    fetchAdminSessionMock: vi.fn()
 }));
 
 vi.mock('@/auth/oidc', () => ({
@@ -12,7 +12,7 @@ vi.mock('@/auth/oidc', () => ({
 }));
 
 vi.mock('@/api/auth', () => ({
-    fetchMe: fetchMeMock
+    fetchAdminSession: fetchAdminSessionMock
 }));
 
 import router from '@/router';
@@ -27,7 +27,13 @@ function resetSession(): void {
 
 async function signIn(capabilities: string[] = ['content.read']): Promise<void> {
     getUserMock.mockResolvedValue({ access_token: 'token-1', expired: false });
-    fetchMeMock.mockResolvedValue({ id: 'u1', display_name: 'Admin', capabilities });
+    fetchAdminSessionMock.mockResolvedValue({
+        subject_id: 'u1',
+        username: 'admin',
+        display_name: 'Admin',
+        status: 'active',
+        capabilities
+    });
     resetSession();
     const target = capabilities.includes('content.read') ? '/content/articles' : '/users';
     const expected = capabilities.includes('content.read') ? 'content-articles' : 'users';
@@ -40,7 +46,12 @@ function registerProtectedRoute(routerInstance: Router): () => void {
         path: '/test-guard',
         name: 'test-guard',
         component: { template: '<div />' },
-        meta: { titleKey: 'routes.dashboard', requiresAuth: true, requiredCapability: 'identity.users.read', shell: 'app' }
+        meta: {
+            titleKey: 'routes.dashboard',
+            requiresAuth: true,
+            requiredCapability: 'identity.users.read',
+            shell: 'app'
+        }
     });
     return remove;
 }
@@ -50,7 +61,8 @@ describe('router guard', () => {
         resetSession();
         vi.clearAllMocks();
         getUserMock.mockReset();
-        fetchMeMock.mockReset();
+        fetchAdminSessionMock.mockReset();
+        fetchAdminSessionMock.mockRejectedValue(new Error('no cookie session'));
         document.title = '';
     });
 

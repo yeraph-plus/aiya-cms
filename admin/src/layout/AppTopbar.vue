@@ -41,7 +41,14 @@ const onSignOut = async () => {
                 </button>
                 <div class="relative">
                     <button
-                        v-styleclass="{ selector: '@next', enterFromClass: 'hidden', enterActiveClass: 'p-anchored-overlay-enter-active', leaveToClass: 'hidden', leaveActiveClass: 'p-anchored-overlay-leave-active', hideOnOutsideClick: true }"
+                        v-styleclass="{
+                            selector: '@next',
+                            enterFromClass: 'hidden',
+                            enterActiveClass: 'p-anchored-overlay-enter-active',
+                            leaveToClass: 'hidden',
+                            leaveActiveClass: 'p-anchored-overlay-leave-active',
+                            hideOnOutsideClick: true
+                        }"
                         type="button"
                         class="layout-topbar-action layout-topbar-action-highlight"
                     >
@@ -53,7 +60,14 @@ const onSignOut = async () => {
 
             <button
                 class="layout-topbar-menu-button layout-topbar-action"
-                v-styleclass="{ selector: '@next', enterFromClass: 'hidden', enterActiveClass: 'p-anchored-overlay-enter-active', leaveToClass: 'hidden', leaveActiveClass: 'p-anchored-overlay-leave-active', hideOnOutsideClick: true }"
+                v-styleclass="{
+                    selector: '@next',
+                    enterFromClass: 'hidden',
+                    enterActiveClass: 'p-anchored-overlay-enter-active',
+                    leaveToClass: 'hidden',
+                    leaveActiveClass: 'p-anchored-overlay-leave-active',
+                    hideOnOutsideClick: true
+                }"
             >
                 <i class="pi pi-ellipsis-v"></i>
             </button>

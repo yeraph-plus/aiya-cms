@@ -20,6 +20,7 @@ from sqlalchemy import select
 from inc.capabilities.membership.events import MEMBERSHIP_EVENT_SCHEMAS
 from inc.capabilities.membership.levels import MembershipLevelRegistry, MembershipLevelSpec
 from inc.capabilities.membership.models import (
+    MembershipLevel,
     MembershipRenewalRecord,
     MembershipSubscription,
 )
@@ -80,13 +81,36 @@ def _ensure_utc(value: Any) -> Any:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
-def _require_level(ctx: CommandContext, key: str) -> MembershipLevelSpec:
+async def _require_level(ctx: CommandContext, key: str) -> MembershipLevelSpec:
     try:
         return ctx.levels.require(key)
     except KernelError as exc:
-        if exc.code == "membership.unknown_level":
+        if exc.code != "membership.unknown_level":
+            raise
+        async with ctx.uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(MembershipLevel).where(MembershipLevel.level_key == key)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+        if row is None:
             raise _validation("membership.unknown_level", exc.message) from exc
-        raise
+        spec = MembershipLevelSpec(
+            key=row.level_key,
+            display_name=row.display_name,
+            tier_rank=row.tier_rank,
+            cycle_days=row.cycle_days,
+            grant_points=row.grant_points,
+            renewal_allowed=row.renewal_allowed,
+            status=row.status,
+            version=row.version,
+        )
+        ctx.levels.register_runtime(spec)
+        return spec
 
 
 async def _emit(
@@ -156,15 +180,33 @@ async def _grant(
     """Grant the cycle quota into points; returns (source_ref, entry_id)."""
 
     source_ref = _source_ref(subscription.id, subscription.cycle_end)
-    result = await ctx.points_ledger.grant_points(
-        subject_type=subscription.subject_type,
-        subject_id=subscription.subject_id,
-        amount=level.grant_points,
-        expires_at=subscription.cycle_end,
-        idempotency_key=_grant_key(subscription.id, subscription.cycle_end),
-        source_ref=source_ref,
-    )
+    transactional_grant = getattr(ctx.points_ledger, "grant_points_in_uow", None)
+    if transactional_grant is not None:
+        result = await transactional_grant(
+            uow,
+            subject_type=subscription.subject_type,
+            subject_id=subscription.subject_id,
+            amount=level.grant_points,
+            expires_at=subscription.cycle_end,
+            idempotency_key=_grant_key(subscription.id, subscription.cycle_end),
+            source_ref=source_ref,
+        )
+    else:
+        result = await ctx.points_ledger.grant_points(
+            subject_type=subscription.subject_type,
+            subject_id=subscription.subject_id,
+            amount=level.grant_points,
+            expires_at=subscription.cycle_end,
+            idempotency_key=_grant_key(subscription.id, subscription.cycle_end),
+            source_ref=source_ref,
+        )
     entry_id = str(result.get("entry_id") or "")
+    if not entry_id:
+        raise KernelError(
+            code="membership.points_grant_invalid",
+            category=ErrorCategory.INTERNAL,
+            message="points ledger did not return an entry id",
+        )
     uow.session.add(
         MembershipRenewalRecord(
             subscription_id=subscription.id,
@@ -172,7 +214,7 @@ async def _grant(
             cycle_end=subscription.cycle_end,
             granted_points=level.grant_points,
             points_source_id=source_ref,
-            points_entry_id=uuid.UUID(entry_id) if entry_id else None,
+            points_entry_id=uuid.UUID(entry_id),
             outcome="granted",
         )
     )
@@ -194,7 +236,9 @@ class SubscribeLevel:
                 "membership.subject_not_found",
                 f"subject {input_.subject_type}:{input_.subject_id} does not exist",
             )
-        level = _require_level(ctx, input_.level_key)
+        level = await _require_level(ctx, input_.level_key)
+        if level.status != "active":
+            raise _conflict("membership.level_inactive", f"level {level.key} is {level.status}")
         async with ctx.uow_factory() as uow:
             existing = await _find_subscription(uow, input_.subject_type, input_.subject_id)
             if existing is not None:
@@ -266,7 +310,12 @@ class RenewSubscription:
         ctx = self._ctx
         async with ctx.uow_factory() as uow:
             subscription = await _get_subscription(uow, input_.subscription_id)
-            level = _require_level(ctx, subscription.level_key)
+            level = await _require_level(ctx, subscription.level_key)
+            if level.status != "active":
+                raise _conflict(
+                    "membership.level_inactive",
+                    f"level {level.key} is {level.status}",
+                )
             if subscription.status != "active":
                 raise _conflict(
                     "membership.not_active",

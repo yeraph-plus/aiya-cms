@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from inc.capabilities.content import DEFAULT_TRANSITIONS, STANDARD_STATES, ContentTypeSpec
 from inc.kernel.boot import FeatureSpec
 
-spec = FeatureSpec(name="page", version="1", requires=("content",))
+spec = FeatureSpec(name="page", version="1", requires=("assets", "content"))
 
 
 class PageData(BaseModel):
@@ -40,5 +40,8 @@ content_type_spec = ContentTypeSpec(
     allows_references=False,
     allows_incoming_references=False,
     title_max_length=200,
+    body_max_bytes=524288,
     excerpt_max_length=300,
+    requires_ready_markdown_assets=True,
+    publication_policy_key="assets.ready_markdown.v1",
 )

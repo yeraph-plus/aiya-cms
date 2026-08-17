@@ -1,0 +1,52 @@
+{
+    "name": "@aiya-cms/site",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=24.0.0"
+    },
+    "scripts": {
+        "dev": "astro dev",
+        "build": "astro check && astro build",
+        "start": "node ./dist/server/entry.mjs",
+        "check": "astro check",
+        "typecheck": "astro check",
+        "lint": "eslint . --max-warnings=0",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "test": "vitest run",
+        "generate:api": "openapi-typescript ../openapi.user.json -o src/lib/api/generated/schema.d.ts"
+    },
+    "dependencies": {
+        "@astrojs/node": "^11.1.1",
+        "@astrojs/vue": "^7.0.2",
+        "astro": "^7.2.1",
+        "ioredis": "^5.11.1",
+        "lucide-vue-next": "^1.0.0",
+        "openid-client": "^6.8.5",
+        "openapi-fetch": "^0.17.0",
+        "reka-ui": "^2.10.3",
+        "unstorage": "^1.17.5",
+        "vue": "^3.5.41"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@astrojs/check": "^0.9.10",
+        "@tailwindcss/vite": "^4.3.3",
+        "@types/node": "^26.2.0",
+        "@vue/compiler-sfc": "^3.5.41",
+        "eslint": "^10.8.1",
+        "eslint-plugin-astro": "^3.1.0",
+        "eslint-plugin-vue": "^10.10.0",
+        "globals": "^17.9.0",
+        "openapi-typescript": "^7.13.0",
+        "prettier": "^3.9.6",
+        "prettier-plugin-astro": "^0.14.1",
+        "tailwindcss": "^4.3.3",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.66.0",
+        "vitest": "^4.1.10",
+        "vue-tsc": "^3.3.9"
+    }
+}

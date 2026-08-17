@@ -11,6 +11,8 @@ its digest is stored.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import secrets
 from datetime import UTC, timedelta
@@ -34,9 +36,14 @@ from inc.capabilities.oidc_provider.services import (
     UserInfoService,
 )
 from inc.kernel.db import UoWFactory
+from inc.kernel.security import resolve_client_ip
 from inc.kernel.time import Clock
 
 SESSION_LIFETIME_SECONDS = 3600
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_IP_FAILURE_LIMIT = 30
+LOGIN_FAILURE_WINDOW_SECONDS = 300
+LOGIN_FAILURE_MAX_KEYS = 10_000
 
 
 class OidcHttpServices:
@@ -56,6 +63,7 @@ class OidcHttpServices:
         revocation: RevocationService,
         logout: LogoutService,
         secure_cookies: bool = True,
+        trusted_proxy_cidrs: tuple[str, ...] = (),
     ) -> None:
         self.issuer = issuer
         self.uow_factory = uow_factory
@@ -68,6 +76,35 @@ class OidcHttpServices:
         self.revocation = revocation
         self.logout = logout
         self.secure_cookies = secure_cookies
+        self.trusted_proxy_cidrs = trusted_proxy_cidrs
+        self._login_failures: dict[str, list[Any]] = {}
+
+    def login_allowed(self, key: str, *, limit: int = LOGIN_FAILURE_LIMIT) -> bool:
+        now = self.clock.utc_now()
+        attempts = self._fresh_login_attempts(key, now)
+        return len(attempts) < limit
+
+    def record_login_failure(self, key: str) -> None:
+        now = self.clock.utc_now()
+        attempts = self._fresh_login_attempts(key, now)
+        if key not in self._login_failures and len(self._login_failures) >= LOGIN_FAILURE_MAX_KEYS:
+            self._login_failures.pop(next(iter(self._login_failures)), None)
+        self._login_failures[key] = [*attempts, now]
+
+    def clear_login_failures(self, key: str) -> None:
+        self._login_failures.pop(key, None)
+
+    def _fresh_login_attempts(self, key: str, now: Any) -> list[Any]:
+        attempts = [
+            timestamp
+            for timestamp in self._login_failures.get(key, [])
+            if (now - timestamp).total_seconds() < LOGIN_FAILURE_WINDOW_SECONDS
+        ]
+        if attempts:
+            self._login_failures[key] = attempts
+        else:
+            self._login_failures.pop(key, None)
+        return attempts
 
     async def establish_session(self, subject_id: str, client_id: str) -> str:
         """Create an OidcSession; returns the raw cookie value."""
@@ -124,7 +161,10 @@ def _error_response(error: OidcError) -> JSONResponse:
     body: dict[str, Any] = {"error": error.code}
     if error.description:
         body["error_description"] = error.description
-    return JSONResponse(status_code=error.http_status, content=body)
+    response = JSONResponse(status_code=error.http_status, content=body)
+    if error.code == "invalid_client":
+        response.headers["WWW-Authenticate"] = 'Basic realm="oidc"'
+    return response
 
 
 def _first(form: dict[str, Any], key: str) -> str | None:
@@ -141,23 +181,56 @@ def _required(form: dict[str, Any], key: str) -> str:
     return value
 
 
+def _client_credentials(request: Request, form: dict[str, Any]) -> tuple[str, str | None]:
+    """Read public body credentials or RFC 6749 HTTP Basic credentials."""
+
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        return _required(form, "client_id"), _first(form, "client_secret")
+
+    scheme, separator, encoded = authorization.partition(" ")
+    if separator != " " or scheme.lower() != "basic" or not encoded:
+        raise OidcError("invalid_client", "unsupported client authentication", http_status=401)
+    if _first(form, "client_secret") is not None:
+        raise OidcError("invalid_request", "multiple client authentication methods are not allowed")
+    try:
+        decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError) as exc:
+        raise OidcError("invalid_client", "invalid client credentials", http_status=401) from exc
+    client_id, separator, client_secret = decoded.partition(":")
+    if separator != ":" or not client_id or not client_secret:
+        raise OidcError("invalid_client", "invalid client credentials", http_status=401)
+    body_client_id = _first(form, "client_id")
+    if body_client_id is not None and body_client_id != client_id:
+        raise OidcError("invalid_client", "conflicting client identifiers", http_status=401)
+    return client_id, client_secret
+
+
 def _wants_json(request: Request) -> bool:
     return "application/json" in request.headers.get("accept", "").lower()
 
 
 def _login_form(params: dict[str, str]) -> str:
+    locale = "en" if "en" in params.get("ui_locales", "").split() else "zh-CN"
+    labels = (
+        {"title": "Sign in", "username": "Username", "password": "Password"}
+        if locale == "en"
+        else {"title": "登录", "username": "用户名", "password": "密码"}
+    )
     hidden = "".join(
         f'<input type="hidden" name="{_html_escape(k)}" value="{_html_escape(v)}"/>'
         for k, v in params.items()
     )
     return (
-        "<!doctype html><html><body>"
+        f'<!doctype html><html lang="{locale}"><head><meta charset="utf-8"/>'
+        f"<title>{labels['title']}</title></head><body>"
         '<form method="post" action="/oidc/login">'
-        '<label>Username <input type="text" name="username" autocomplete="username"/></label><br/>'
-        "<label>Password "
+        f"<label>{labels['username']} "
+        '<input type="text" name="username" autocomplete="username"/></label><br/>'
+        f"<label>{labels['password']} "
         '<input type="password" name="password" autocomplete="current-password"/></label><br/>'
         f"{hidden}"
-        '<button type="submit">Sign in</button>'
+        f'<button type="submit">{labels["title"]}</button>'
         "</form></body></html>"
     )
 
@@ -213,8 +286,27 @@ def build_router(services: OidcHttpServices) -> APIRouter:
         username = _required(form, "username")
         password = _required(form, "password")
         client_id = _first(form, "client_id") or "browser"
+        client_host = resolve_client_ip(
+            peer=request.client.host if request.client else None,
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            trusted_proxy_cidrs=services.trusted_proxy_cidrs,
+        )
+        limiter_key = f"{client_host}:{client_id}:{username.strip().casefold()}"
+        ip_limiter_key = f"{client_host}:{client_id}:*"
+        if not services.login_allowed(limiter_key) or not services.login_allowed(
+            ip_limiter_key, limit=LOGIN_IP_FAILURE_LIMIT
+        ):
+            return _error_response(
+                OidcError(
+                    "temporarily_unavailable",
+                    "too many login attempts; try again later",
+                    http_status=429,
+                )
+            )
         subject_id = await services.authenticator.authenticate(username, password)
         if subject_id is None:
+            services.record_login_failure(limiter_key)
+            services.record_login_failure(ip_limiter_key)
             if wants_json:
                 return _error_response(
                     OidcError("access_denied", "invalid username or password", http_status=401)
@@ -222,6 +314,7 @@ def build_router(services: OidcHttpServices) -> APIRouter:
             # Never echo the typed password back into the 401 page.
             redacted = {k: str(v) for k, v in form.items() if k != "password"}
             return HTMLResponse(_login_form(redacted), status_code=401)
+        services.clear_login_failures(limiter_key)
         # Preserve the original authorize parameters so the follow-up GET can
         # issue a code; only the credentials are stripped.
         authorize_params = {k: str(v) for k, v in form.items() if k not in ("username", "password")}
@@ -272,9 +365,8 @@ def build_router(services: OidcHttpServices) -> APIRouter:
     async def token(request: Request) -> Response:
         form = dict(await request.form())
         grant_type = _required(form, "grant_type")
-        client_id = _required(form, "client_id")
-        client_secret = _first(form, "client_secret")
         try:
+            client_id, client_secret = _client_credentials(request, form)
             if grant_type == "authorization_code":
                 result = await services.token.exchange(
                     client_id=client_id,
@@ -315,11 +407,12 @@ def build_router(services: OidcHttpServices) -> APIRouter:
     async def revoke(request: Request) -> Response:
         form = dict(await request.form())
         try:
+            client_id, client_secret = _client_credentials(request, form)
             await services.revocation.revoke(
-                client_id=_required(form, "client_id"),
+                client_id=client_id,
                 token=_required(form, "token"),
                 token_type_hint=_first(form, "token_type_hint"),
-                client_secret=_first(form, "client_secret"),
+                client_secret=client_secret,
             )
         except OidcError as error:
             return _error_response(error)

@@ -288,14 +288,16 @@ async def test_payments_capability_requires_provider_port(uow_factory: Any, cloc
 async def test_dev_fake_provider_denied_in_production(uow_factory: Any, clock: Any) -> None:
     from inc.api.config import ApiSettings
     from inc.api.container import build_container
-    from inc.api.manifest import cms
+    from inc.api.manifest import cms_dev
     from inc.kernel.errors import KernelError
 
     settings = ApiSettings(
         issuer="https://testserver",
         environment="production",
         secure_cookies=True,
+        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
+        admin_session_secret="test-admin-session-secret-0123456789012345",
     )
     with pytest.raises(KernelError) as excinfo:
-        build_container(manifest=cms, uow_factory=uow_factory, clock=clock, settings=settings)
+        build_container(manifest=cms_dev, uow_factory=uow_factory, clock=clock, settings=settings)
     assert excinfo.value.code == "kernel.adapter_production_denied"

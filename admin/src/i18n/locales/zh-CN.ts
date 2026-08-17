@@ -1,6 +1,7 @@
 export default {
     common: {
         refresh: '刷新',
+        loading: '加载中…',
         cancel: '取消',
         moreActions: '更多操作',
         language: '语言',
@@ -23,12 +24,18 @@ export default {
     },
     nav: {
         dashboard: '仪表盘',
+        dashboardOverview: '概览',
         content: {
             group: '内容',
             write: '写文章',
             articles: '文章列表',
             taxonomies: '分类法',
             comments: '评论'
+        },
+        community: {
+            group: '社区',
+            discussions: '讨论审核',
+            tags: '社区标签'
         },
         users: {
             group: '用户',
@@ -46,7 +53,9 @@ export default {
             notifications: '通知管理',
             oidc: 'OIDC 管理'
         },
-        settings: '设置'
+        settings: '设置',
+        settingsGeneral: '通用设置',
+        settingsMembership: '会员设置'
     },
     routes: {
         auth: {
@@ -68,6 +77,10 @@ export default {
             taxonomies: '分类法',
             comments: '评论审核'
         },
+        community: {
+            discussions: '讨论审核',
+            tags: '社区标签'
+        },
         users: {
             list: '用户列表',
             permissions: '权限管理',
@@ -83,6 +96,37 @@ export default {
             oidc: 'OIDC 管理'
         },
         settings: '设置'
+    },
+    statuses: {
+        active: '启用',
+        inactive: '停用',
+        draft: '草稿',
+        pending: '待处理',
+        scheduled: '已排期',
+        published: '已发布',
+        rejected: '已拒绝',
+        archived: '已归档',
+        hidden: '已隐藏',
+        ready: '就绪',
+        failed: '失败',
+        deleted: '已删除',
+        banned: '已封禁',
+        frozen: '已冻结',
+        sending: '发送中',
+        delivered: '已送达',
+        dead: '死信',
+        cancelled: '已取消',
+        created: '已创建',
+        captured: '已捕获',
+        completed: '已完成',
+        success: '成功',
+        failure: '失败',
+        partially_refunded: '部分退款',
+        refunded: '已退款',
+        terminated: '已终止',
+        expired: '已过期',
+        debt: '欠款',
+        unknown: '未知'
     },
     auth: {
         welcome: '欢迎使用 {app}',
@@ -123,6 +167,10 @@ export default {
     users: {
         workspaceTitle: '用户工作区',
         account: '账户管理',
+        roles: '角色',
+        manageRoles: '角色管理',
+        assignRole: '指派',
+        assigned: '已指派',
         description: '管理用户主体和账号状态。',
         empty: '暂无用户',
         emptyDescription: '当前筛选条件没有匹配的用户。',
@@ -132,6 +180,7 @@ export default {
         emailVerified: '邮箱已验证',
         created: '创建时间',
         view: '查看',
+        openList: '打开用户列表',
         managePoints: '积分管理',
         accountActions: '账号操作',
         banReason: '封禁原因',
@@ -188,7 +237,15 @@ export default {
             description: '按 capability 汇总总量和固定时间窗口内的增量。',
             hours24: '24 小时',
             days7: '7 天',
-            days30: '30 天'
+            days30: '30 天',
+            quickLinks: '快捷入口',
+            noQuickLinks: '暂无可用工作台',
+            users: '用户',
+            content: '内容',
+            comments: '评论',
+            community: '社区',
+            points: '积分',
+            membership: '会员'
         },
         execution: {
             description: '查看 outbox、inbox receipt 和 task 的安全执行摘要。',
@@ -351,8 +408,24 @@ export default {
             roleSlug: '稳定 slug'
         },
         points: {
-            description: '按用户和后端已注册的 program 查询账户、积分桶与流水。',
-            programReserved: 'Points program 是后端预留定义面；管理端只消费已注册的 program key，不提供目录或 CRUD。',
+            description: '管理已注册积分计划并查看账户统计。',
+            settingsDescription: '配置积分计划、状态和并发版本；用户账户操作仍在用户工作区完成。',
+            catalogDescription: '积分计划在这里管理；单个用户余额和调整从用户列表进入。',
+            accountCount: '账户数量',
+            accountCountHint: '选择用户后查看该用户账户快照。',
+            accounts: '积分账户',
+            operations: '用户操作',
+            operationsHint: '所有需要用户 ID 的操作统一放在用户工作区抽屉中。',
+            userDrawerHint: '请从用户列表打开用户工作区，在“积分”页签查看流水并调整积分。',
+            programReserved: '计划使用不可变 key 和乐观并发控制；单个用户的积分操作统一放在用户抽屉中。',
+            createProgram: '新建积分计划',
+            editProgram: '编辑积分计划',
+            emptyPrograms: '暂无已注册的积分计划。',
+            programName: '显示名称',
+            unit: '单位',
+            allowReversal: '允许管理员冲正',
+            activate: '启用',
+            deactivate: '停用',
             enterSubject: '输入用户主体 ID 后查询',
             balance: '可用余额',
             program: '当前 Program',
@@ -390,9 +463,15 @@ export default {
         },
         membership: {
             description: '查看代码注册的会员等级并管理用户订阅生命周期。',
-            levelReserved: 'Membership level 是后端预留定义面；此处只读展示，不提供新增、编辑、删除或状态修改。',
+            settingsDescription: '配置会员等级、周期和赠送积分；用户订阅生命周期仍在订阅工作台管理。',
+            levelReserved: '会员等级配置集中在设置菜单；订阅页面只展示统计和订阅生命周期。',
             empty: '暂无会员订阅',
             subscriptions: '会员订阅',
+            summary: '会员概览',
+            levels: '等级',
+            active: '活跃订阅',
+            cancelled: '已取消',
+            expired: '已过期',
             renewals: '续期记录',
             cancel: '取消订阅',
             terminate: '终止订阅',
@@ -405,7 +484,18 @@ export default {
             viewRenewals: '查看续期',
             start: '开始',
             end: '结束',
-            outcome: '结果'
+            outcome: '结果',
+            createLevel: '新建会员等级',
+            editLevel: '编辑会员等级',
+            emptyLevels: '暂无已注册的会员等级。',
+            displayName: '显示名称',
+            levelKey: '等级 key',
+            tierRank: '等级顺序',
+            cycleDays: '周期天数',
+            grantPoints: '赠送积分',
+            renewalAllowed: '允许续期',
+            activateLevel: '启用',
+            archiveLevel: '归档'
         },
         payments: {
             description: '查询支付账单与尝试记录，并通过语义命令执行取消、对账和退款。',
@@ -435,6 +525,7 @@ export default {
             edit: '编辑 OIDC Client',
             disable: '停用',
             enable: '启用',
+            protected: '系统客户端已保护',
             rotateSecret: '轮换 Secret',
             clientIdOptional: 'Client ID（可选）',
             name: '名称',
@@ -463,6 +554,50 @@ export default {
             rejectMessage: '拒绝后评论将不再公开展示，请填写可审计原因。',
             deleteMessage: '删除是终态软删除，公开接口将隐藏正文。',
             optionalReason: '可选的审计原因'
+        },
+        community: {
+            discussions: {
+                description: '审核独立社区的 discussion、post、锁定和归档状态。',
+                empty: '暂无讨论',
+                detail: '讨论详情',
+                title: '标题',
+                author: '作者',
+                template: '模板',
+                tags: '标签',
+                replies: '回复数',
+                lastPosted: '最后发布',
+                locked: '已锁定',
+                posts: '帖子流',
+                noPosts: '暂无已发布帖子',
+                publish: '发布',
+                hide: '隐藏',
+                restore: '恢复',
+                archive: '归档',
+                lock: '锁定',
+                unlock: '解锁',
+                approvePost: '通过帖子',
+                hidePost: '隐藏帖子',
+                deletePost: '删除帖子',
+                saveTags: '保存标签',
+                previousPosts: '上一页帖子',
+                nextPosts: '下一页帖子'
+            },
+            tags: {
+                description: '管理社区自有的 primary/secondary 标签和归档状态。',
+                empty: '暂无社区标签',
+                new: '新建标签',
+                name: '名称',
+                slug: 'Slug',
+                kind: '类型',
+                position: '顺序',
+                count: '公开讨论数',
+                color: '颜色',
+                icon: '图标 key',
+                edit: '编辑标签',
+                archive: '归档',
+                restore: '恢复',
+                archiveConfirm: '归档此社区标签？历史指派会保留，但不能新分配。'
+            }
         },
         notifications: {
             description: '查询通知投递与尝试记录，并通过命名命令取消待发送任务或显式重试。',

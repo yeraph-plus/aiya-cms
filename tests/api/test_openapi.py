@@ -17,7 +17,7 @@ def test_schema_generation_is_deterministic() -> None:
     assert first == second
 
 
-def test_cms_schema_contains_expected_contract() -> None:
+def test_management_schema_contains_only_releasable_contract() -> None:
     from inc.api.openapi import generate_schema
 
     schema = generate_schema()
@@ -25,8 +25,6 @@ def test_cms_schema_contains_expected_contract() -> None:
     for expected in (
         "/healthz",
         "/api/v1/health",
-        "/api/v1/me",
-        "/api/v1/me/points/ledger",
         "/api/v1/admin/points/ledger",
         "/api/v1/auth/grants",
         "/api/v1/auth/grants/{client_id}",
@@ -39,6 +37,9 @@ def test_cms_schema_contains_expected_contract() -> None:
         "/.well-known/openid-configuration",
     ):
         assert expected in paths, expected
+    assert "/api/v1/me" not in paths
+    assert "/api/v1/me/points/ledger" not in paths
+    assert "/api/v1/admin/notifications/deliveries" in paths
     assert "HTTPBearer" in schema.get("components", {}).get("securitySchemes", {})
 
 
@@ -66,6 +67,8 @@ def test_dump_and_check_roundtrip(tmp_path: Any, monkeypatch: Any) -> None:
 
     monkeypatch.setattr(openapi_module, "OPENAPI_PATH", tmp_path / "openapi.json")
     monkeypatch.setattr(openapi_module, "SHA256_PATH", tmp_path / "openapi.sha256")
+    monkeypatch.setattr(openapi_module, "USER_OPENAPI_PATH", tmp_path / "openapi.user.json")
+    monkeypatch.setattr(openapi_module, "USER_SHA256_PATH", tmp_path / "openapi.user.sha256")
     openapi_module.dump()
     assert openapi_module.check() is True
     # drift detection
@@ -74,3 +77,32 @@ def test_dump_and_check_roundtrip(tmp_path: Any, monkeypatch: Any) -> None:
         encoding="utf-8",
     )
     assert openapi_module.check() is False
+
+
+def test_user_schema_is_a_closed_allowlisted_projection() -> None:
+    from inc.api.openapi import USER_TAGS, generate_user_schema
+
+    schema = generate_user_schema()
+    assert schema["paths"], "the current auth surface must produce a non-empty user schema"
+    for path, methods in schema["paths"].items():
+        assert not path.startswith("/api/v1/admin"), path
+        assert not path.startswith("/api/v1/webhooks"), path
+        for method, operation in methods.items():
+            if method not in {"get", "post", "put", "patch", "delete", "options", "head"}:
+                continue
+            assert set(operation["tags"]) <= USER_TAGS
+
+    serialized = json.dumps(schema, sort_keys=True)
+    assert "#/components/schemas/" in serialized
+    for category, entries in schema.get("components", {}).items():
+        for name in entries:
+            if category == "securitySchemes":
+                assert any(
+                    name in requirement
+                    for methods in schema["paths"].values()
+                    for operation in methods.values()
+                    if isinstance(operation, dict)
+                    for requirement in operation.get("security", [])
+                )
+            else:
+                assert f"#/components/{category}/{name}" in serialized

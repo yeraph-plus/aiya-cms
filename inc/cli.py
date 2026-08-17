@@ -5,17 +5,18 @@ quality-release.md.
 
 ``python -m inc.cli migrate`` applies database migrations only (the single
 Compose entry for running ``alembic upgrade head``). ``python -m inc.cli
-install`` is the one-shot empty-database installation and the only path that
-creates the super administrator. In a single run it:
-applies migrations, seeds the credit points program, registers the admin
-OIDC client, and bootstraps the single administrator user (creating the
-account and binding the ``administrator`` role). The password is generated
+install --profile admin`` is the deployable management-plane installation and
+the only path that creates the super administrator. It applies migrations,
+seeds the credit points program, registers the admin OIDC client, and bootstraps
+the single administrator user. The opt-in ``full`` profile also registers the
+unfinished user-site client. The password is generated
 when not provided and printed exactly once. Re-running is safe for the same
 administrator but refuses to create a second one (``access.administrator_exists``).
 
 All database/redis/server configuration is read from environment variables
-(AIYA_DATABASE_URL, AIYA_REDIS_URL, AIYA_PUBLIC_BASE_URL, AIYA_API_AUDIENCE,
-etc.). There is no separate bootstrap subcommand, no CLI password recovery,
+(AIYA_DATABASE_URL, AIYA_REDIS_URL, AIYA_PUBLIC_BASE_URL, AIYA_SITE_BASE_URL,
+AIYA_SITE_OIDC_CLIENT_SECRET, AIYA_API_AUDIENCE, etc.). There is no separate
+bootstrap subcommand, no CLI password recovery,
 and no CLI user create/delete commands.
 
 The same entry also hosts the Compose-internalized quality gates:
@@ -34,10 +35,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from inc.api.config import load_api_settings
-from inc.api.manifest import cms
+from inc.api.manifest import cms, management_plane
 from inc.capabilities.access import (
     BootstrapAdministrator,
+    EnsureBaseRoles,
 )
 from inc.capabilities.access import (
     CommandContext as AccessCommandContext,
@@ -72,17 +73,18 @@ def _subject_exists(identity_queries: Any) -> Any:
 
 
 async def _create_admin(
-    *, username: str, email: str, password: str | None
+    *, username: str, email: str, password: str | None, manifest: Any
 ) -> tuple[str, str | None]:
     from inc.api.container import build_container
+    from inc.main import _api_settings_from_env
 
     factory, engine = _build_factory()
     try:
         container = build_container(
-            manifest=cms,
+            manifest=manifest,
             uow_factory=factory,
             clock=SYSTEM_CLOCK,
-            settings=load_api_settings(),
+            settings=_api_settings_from_env(),
         )
         services = container.services
         assert services is not None
@@ -129,6 +131,7 @@ async def _create_admin(
             audit_actor_id="cli",
             audit_trace_id="install",
         )
+        await EnsureBaseRoles(access_ctx)()
         await BootstrapAdministrator(access_ctx)(subject_type="identity", subject_id=subject_id)
         return subject_id, effective_password if generated else None
     finally:
@@ -195,21 +198,74 @@ async def _seed_points_program(factory: Any) -> None:
     print("  credit points program seeded")
 
 
-async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience: str) -> None:
+async def _seed_membership_levels(factory: Any) -> None:
+    """Seed the production-safe basic membership level idempotently."""
+    from sqlalchemy import select
+
+    from inc.capabilities.membership.models import LevelMetadata, MembershipLevel
+
+    async with factory() as uow:
+        existing = (
+            (
+                await uow.session.execute(
+                    select(MembershipLevel).where(MembershipLevel.level_key == "basic")
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if existing is None:
+            uow.session.add(
+                MembershipLevel(
+                    level_key="basic",
+                    display_name="Basic",
+                    tier_rank=1,
+                    status="active",
+                    cycle_days=30,
+                    grant_points=100,
+                    renewal_allowed=True,
+                    data=LevelMetadata(values={}),
+                )
+            )
+            await uow.commit()
+            print("  basic membership level seeded")
+        else:
+            print("  membership level basic already exists, skipping")
+
+
+async def _seed_auth_notification_templates(factory: Any) -> None:
+    """Install notification capability-owned authentication templates."""
+
+    from inc.capabilities.notification import ensure_auth_templates
+
+    created = await ensure_auth_templates(factory)
+    print(f"  authentication notification templates ensured ({created} created)")
+
+
+async def _seed_oidc_clients(
+    factory: Any,
+    *,
+    public_base_url: str,
+    include_site: bool,
+    site_base_url: str | None,
+    site_client_secret: str | None,
+    api_audience: str,
+) -> None:
     from sqlalchemy import select
 
     from inc.capabilities.audit.schemas import AUDIT_EVENT_KEY, AuditEntryRecorded
     from inc.capabilities.oidc_provider.clients import (
         ClientCommandContext,
+        EnableClient,
         RegisterClient,
         UpdateClient,
     )
     from inc.capabilities.oidc_provider.models import OidcClient
     from inc.kernel.events import EventSchemaRegistry, OutboxWriter
 
-    base = public_base_url.rstrip("/")
-    redirect_uris = [f"{base}/callback"]
-    post_logout_redirect_uris = [f"{base}/logged-out"]
+    admin_base = public_base_url.rstrip("/")
+    redirect_uris = [f"{admin_base}/callback"]
+    post_logout_redirect_uris = [f"{admin_base}/logged-out"]
     allowed_scopes = ["openid", "profile", "email", "offline_access"]
 
     async with factory() as uow:
@@ -230,6 +286,12 @@ async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience
         audit_trace_id="install",
     )
     if existing is not None:
+        if existing.client_type != "public":
+            raise RuntimeError(
+                "OIDC client 'admin' must remain public; refusing to repair a confidential client"
+            )
+        if existing.status != "active":
+            await EnableClient(client_ctx)(client_id="admin")
         await UpdateClient(client_ctx)(
             client_id="admin",
             redirect_uris=redirect_uris,
@@ -237,27 +299,72 @@ async def _seed_oidc_clients(factory: Any, *, public_base_url: str, api_audience
             allowed_scopes=allowed_scopes,
             allowed_audiences=[api_audience],
         )
-        print("  OIDC client 'admin' updated")
+        print("  OIDC client 'admin' enabled and updated")
+    else:
+        await RegisterClient(client_ctx)(
+            name="Admin SPA",
+            client_type="public",
+            redirect_uris=redirect_uris,
+            post_logout_redirect_uris=post_logout_redirect_uris,
+            allowed_scopes=allowed_scopes,
+            allowed_audiences=[api_audience],
+            client_id="admin",
+        )
+        print(f"  OIDC public client 'admin' registered (aud={api_audience})")
+
+    if not include_site:
+        return
+    if site_base_url is None or site_client_secret is None:
+        raise ValueError("full install requires the user-site URL and client secret")
+
+    site_base = site_base_url.rstrip("/")
+    async with factory() as uow:
+        existing_site = (
+            (
+                await uow.session.execute(
+                    select(OidcClient).where(OidcClient.client_id == "aiya-site")
+                )
+            )
+            .scalars()
+            .first()
+        )
+    site_redirect_uris = [f"{site_base}/auth/callback"]
+    site_post_logout_uris = [f"{site_base}/auth/logged-out"]
+    if existing_site is not None:
+        if existing_site.client_type != "confidential":
+            raise RuntimeError("OIDC client 'aiya-site' exists but is not confidential")
+        await UpdateClient(client_ctx)(
+            client_id="aiya-site",
+            redirect_uris=site_redirect_uris,
+            post_logout_redirect_uris=site_post_logout_uris,
+            allowed_scopes=allowed_scopes,
+            allowed_audiences=[api_audience],
+        )
+        print("  OIDC confidential client 'aiya-site' updated")
         return
 
     await RegisterClient(client_ctx)(
-        name="Admin SPA",
-        client_type="public",
-        redirect_uris=redirect_uris,
-        post_logout_redirect_uris=post_logout_redirect_uris,
+        name="User site BFF",
+        client_type="confidential",
+        redirect_uris=site_redirect_uris,
+        post_logout_redirect_uris=site_post_logout_uris,
         allowed_scopes=allowed_scopes,
         allowed_audiences=[api_audience],
-        client_id="admin",
+        client_id="aiya-site",
+        initial_secret=site_client_secret,
     )
-    print(f"  OIDC public client 'admin' registered (aud={api_audience})")
+    print(f"  OIDC confidential client 'aiya-site' registered (aud={api_audience})")
 
 
 async def _install_async(
     *,
+    profile: str,
     admin_username: str,
     admin_email: str,
     admin_password: str | None,
     public_base_url: str,
+    site_base_url: str | None,
+    site_client_secret: str | None,
     api_audience: str,
 ) -> int:
     """Seed steps (points program, OIDC clients, admin) after migrations."""
@@ -272,10 +379,18 @@ async def _install_async(
     try:
         print("[2/4] seeding credit points program ...")
         await _seed_points_program(factory)
+        if profile == "admin":
+            await _seed_membership_levels(factory)
+        await _seed_auth_notification_templates(factory)
 
         print("[3/4] registering OIDC clients ...")
         await _seed_oidc_clients(
-            factory, public_base_url=public_base_url, api_audience=api_audience
+            factory,
+            public_base_url=public_base_url,
+            include_site=profile == "full",
+            site_base_url=site_base_url,
+            site_client_secret=site_client_secret,
+            api_audience=api_audience,
         )
 
         print("[4/4] bootstrapping administrator ...")
@@ -283,6 +398,7 @@ async def _install_async(
             username=admin_username,
             email=admin_email,
             password=admin_password,
+            manifest=management_plane if profile == "admin" else cms,
         )
     finally:
         await engine.dispose()
@@ -298,10 +414,13 @@ async def _install_async(
 
 def _install_sync(
     *,
+    profile: str,
     admin_username: str,
     admin_email: str,
     admin_password: str | None,
     public_base_url: str,
+    site_base_url: str | None,
+    site_client_secret: str | None,
     api_audience: str,
 ) -> int:
     """Full empty-database installation.
@@ -310,7 +429,7 @@ def _install_sync(
     asyncio.run inside so it cannot be called from a running event loop),
     then async seed steps follow.
     """
-    print("=== aiya-cms install ===")
+    print(f"=== aiya-cms {profile} install ===")
     print()
 
     print("[1/4] running database migrations ...")
@@ -319,10 +438,13 @@ def _install_sync(
 
     return asyncio.run(
         _install_async(
+            profile=profile,
             admin_username=admin_username,
             admin_email=admin_email,
             admin_password=admin_password,
             public_base_url=public_base_url,
+            site_base_url=site_base_url,
+            site_client_secret=site_client_secret,
             api_audience=api_audience,
         )
     )
@@ -337,11 +459,12 @@ def _run_quality() -> int:
 
     import subprocess
 
+    python = sys.executable
     commands: list[list[str]] = [
-        ["python", "-m", "ruff", "check", "."],
-        ["python", "-m", "ruff", "format", "--check", "."],
-        ["python", "-m", "mypy", "inc"],
-        ["python", "-m", "pip", "check"],
+        [python, "-m", "ruff", "check", "."],
+        [python, "-m", "ruff", "format", "--check", "."],
+        [python, "-m", "mypy", "inc"],
+        [python, "-m", "pip", "check"],
     ]
     for cmd in commands:
         print(f"+ {' '.join(cmd)}", flush=True)
@@ -356,7 +479,7 @@ def _run_pytest(pytest_args: list[str]) -> int:
 
     import subprocess
 
-    cmd = ["python", "-m", "pytest", "-q", *pytest_args]
+    cmd = [sys.executable, "-m", "pytest", "-q", *pytest_args]
     print(f"+ {' '.join(cmd)}", flush=True)
     return subprocess.run(cmd, check=False).returncode
 
@@ -391,6 +514,12 @@ def main() -> None:
         help="one-shot empty-database installation (migrations + seed + single admin)",
     )
     install_parser.add_argument(
+        "--profile",
+        choices=("admin", "full"),
+        default=_env_str("AIYA_INSTALL_PROFILE", "admin"),
+        help="installation scope (default: admin; full also registers the unfinished user site)",
+    )
+    install_parser.add_argument(
         "--admin-username",
         default=_env_str("AIYA_ADMIN_USERNAME", "admin"),
         help="admin username (env: AIYA_ADMIN_USERNAME, default: admin)",
@@ -402,18 +531,23 @@ def main() -> None:
     )
     install_parser.add_argument(
         "--admin-password",
-        default=None,
-        help="admin password; omit to auto-generate one",
+        default=_env_str("AIYA_ADMIN_PASSWORD", "") or None,
+        help="admin password; AIYA_ADMIN_PASSWORD may provide one, otherwise auto-generate",
     )
     install_parser.add_argument(
         "--public-base-url",
-        default=_env_str("AIYA_PUBLIC_BASE_URL", "http://127.0.0.1:5173"),
+        default=_env_str("AIYA_PUBLIC_BASE_URL", "http://127.0.0.1:8080"),
         help="admin SPA base URL for OIDC redirects (env: AIYA_PUBLIC_BASE_URL)",
     )
     install_parser.add_argument(
         "--api-audience",
         default=_env_str("AIYA_API_AUDIENCE", "aiya-admin"),
         help="API audience for OIDC access tokens (env: AIYA_API_AUDIENCE)",
+    )
+    install_parser.add_argument(
+        "--site-base-url",
+        default=_env_str("AIYA_SITE_BASE_URL", "http://127.0.0.1:4321"),
+        help="Astro user-site base URL for OIDC redirects (env: AIYA_SITE_BASE_URL)",
     )
 
     subparsers.add_parser(
@@ -453,11 +587,20 @@ def main() -> None:
         print("migrations applied")
         sys.exit(0)
     if args.command == "install":
+        site_client_secret = _env_str("AIYA_SITE_OIDC_CLIENT_SECRET") or None
+        if args.profile == "full" and (site_client_secret is None or len(site_client_secret) < 32):
+            parser.error(
+                "AIYA_SITE_OIDC_CLIENT_SECRET must be supplied through the environment "
+                "and contain at least 32 characters"
+            )
         exit_code = _install_sync(
+            profile=args.profile,
             admin_username=args.admin_username,
             admin_email=args.admin_email,
             admin_password=args.admin_password,
             public_base_url=args.public_base_url,
+            site_base_url=args.site_base_url,
+            site_client_secret=site_client_secret,
             api_audience=args.api_audience,
         )
         sys.exit(exit_code)

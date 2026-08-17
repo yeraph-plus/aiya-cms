@@ -222,7 +222,8 @@ class Smtp2GoEmailAdapter:
             email_response = document["email_response"]
             succeeded = int(email_response.get("succeeded", 0))
             failed = int(email_response.get("failed", 0))
-        except KeyError, TypeError, ValueError, AttributeError:
+        except (KeyError, TypeError, ValueError, AttributeError) as _exc:
+            del _exc
             return ProviderResult(
                 status="unknown",
                 error_category="protocol",

@@ -1,6 +1,7 @@
 export default {
     common: {
         refresh: 'Refresh',
+        loading: 'Loading…',
         cancel: 'Cancel',
         moreActions: 'More actions',
         language: 'Language',
@@ -23,12 +24,18 @@ export default {
     },
     nav: {
         dashboard: 'Dashboard',
+        dashboardOverview: 'Overview',
         content: {
             group: 'Content',
             write: 'Write article',
             articles: 'Articles',
             taxonomies: 'Taxonomies',
             comments: 'Comments'
+        },
+        community: {
+            group: 'Community',
+            discussions: 'Discussion moderation',
+            tags: 'Community tags'
         },
         users: {
             group: 'Users',
@@ -46,7 +53,9 @@ export default {
             notifications: 'Notifications',
             oidc: 'OIDC management'
         },
-        settings: 'Settings'
+        settings: 'Settings',
+        settingsGeneral: 'General',
+        settingsMembership: 'Membership settings'
     },
     routes: {
         auth: {
@@ -68,6 +77,10 @@ export default {
             taxonomies: 'Taxonomies',
             comments: 'Comment moderation'
         },
+        community: {
+            discussions: 'Discussion moderation',
+            tags: 'Community tags'
+        },
         users: {
             list: 'User list',
             permissions: 'Permissions',
@@ -83,6 +96,37 @@ export default {
             oidc: 'OIDC management'
         },
         settings: 'Settings'
+    },
+    statuses: {
+        active: 'Active',
+        inactive: 'Inactive',
+        draft: 'Draft',
+        pending: 'Pending',
+        scheduled: 'Scheduled',
+        published: 'Published',
+        rejected: 'Rejected',
+        archived: 'Archived',
+        hidden: 'Hidden',
+        ready: 'Ready',
+        failed: 'Failed',
+        deleted: 'Deleted',
+        banned: 'Banned',
+        frozen: 'Frozen',
+        sending: 'Sending',
+        delivered: 'Delivered',
+        dead: 'Dead',
+        cancelled: 'Cancelled',
+        created: 'Created',
+        captured: 'Captured',
+        completed: 'Completed',
+        success: 'Success',
+        failure: 'Failure',
+        partially_refunded: 'Partially refunded',
+        refunded: 'Refunded',
+        terminated: 'Terminated',
+        expired: 'Expired',
+        debt: 'Debt',
+        unknown: 'Unknown'
     },
     auth: {
         welcome: 'Welcome to {app}',
@@ -123,6 +167,10 @@ export default {
     users: {
         workspaceTitle: 'User workspace',
         account: 'Account',
+        roles: 'Roles',
+        manageRoles: 'Manage roles',
+        assignRole: 'Assign',
+        assigned: 'Assigned',
         description: 'Manage user subjects and account status.',
         empty: 'No users',
         emptyDescription: 'No users match the current filters.',
@@ -132,6 +180,7 @@ export default {
         emailVerified: 'Email verified',
         created: 'Created',
         view: 'View',
+        openList: 'Open user list',
         managePoints: 'Manage points',
         accountActions: 'Account actions',
         banReason: 'Ban reason',
@@ -188,7 +237,15 @@ export default {
             description: 'Capability-owned totals and fixed-window increments.',
             hours24: '24 hours',
             days7: '7 days',
-            days30: '30 days'
+            days30: '30 days',
+            quickLinks: 'Quick links',
+            noQuickLinks: 'No available workbenches',
+            users: 'Users',
+            content: 'Content',
+            comments: 'Comments',
+            community: 'Community',
+            points: 'Points',
+            membership: 'Membership'
         },
         execution: {
             description: 'View safe execution summaries for outbox, inbox receipts, and tasks.',
@@ -351,8 +408,24 @@ export default {
             roleSlug: 'Stable slug'
         },
         points: {
-            description: 'Query accounts, buckets, and ledger entries by subject and registered program.',
-            programReserved: 'Points program is a backend-reserved definition. The admin consumes registered program keys and exposes no catalog or CRUD.',
+            description: 'Manage registered point programs and review aggregate account statistics.',
+            settingsDescription: 'Configure point programs, status and optimistic versions; account actions stay in the user workspace.',
+            catalogDescription: 'Programs are managed here; individual balances and adjustments are opened from the user list.',
+            accountCount: 'Accounts',
+            accountCountHint: 'Choose a user to inspect the account snapshot.',
+            accounts: 'Point accounts',
+            operations: 'User operations',
+            operationsHint: 'All subject-specific changes stay in the user workspace drawer.',
+            userDrawerHint: 'Select a user from the user list and use the Points tab for ledger and adjustments.',
+            programReserved: 'Programs use immutable keys and optimistic concurrency; account-level changes stay in the user drawer.',
+            createProgram: 'Create program',
+            editProgram: 'Edit program',
+            emptyPrograms: 'No point programs are registered.',
+            programName: 'Display name',
+            unit: 'Unit',
+            allowReversal: 'Allow administrator reversal',
+            activate: 'Activate',
+            deactivate: 'Deactivate',
             enterSubject: 'Enter a subject ID to search',
             balance: 'Available balance',
             program: 'Current program',
@@ -390,9 +463,15 @@ export default {
         },
         membership: {
             description: 'View code-registered membership levels and manage subscription lifecycles.',
-            levelReserved: 'Membership level is a backend-reserved definition. This catalog is read-only and exposes no create, edit, delete, or status mutation.',
+            settingsDescription: 'Configure membership levels, cycles and grants; subscription lifecycle actions stay in the subscription workbench.',
+            levelReserved: 'Membership level configuration lives under Settings; the subscription page focuses on statistics and lifecycle actions.',
             empty: 'No subscriptions',
             subscriptions: 'Subscriptions',
+            summary: 'Membership overview',
+            levels: 'Levels',
+            active: 'Active',
+            cancelled: 'Cancelled',
+            expired: 'Expired',
             renewals: 'Renewals',
             cancel: 'Cancel subscription',
             terminate: 'Terminate subscription',
@@ -405,7 +484,18 @@ export default {
             viewRenewals: 'View renewals',
             start: 'Start',
             end: 'End',
-            outcome: 'Outcome'
+            outcome: 'Outcome',
+            createLevel: 'Create level',
+            editLevel: 'Edit level',
+            emptyLevels: 'No membership levels are registered.',
+            displayName: 'Display name',
+            levelKey: 'Level key',
+            tierRank: 'Tier rank',
+            cycleDays: 'Cycle days',
+            grantPoints: 'Grant points',
+            renewalAllowed: 'Allow renewal',
+            activateLevel: 'Activate',
+            archiveLevel: 'Archive'
         },
         payments: {
             description: 'Query payment bills and attempts, then use semantic commands for cancel, reconcile, and refund.',
@@ -435,6 +525,7 @@ export default {
             edit: 'Edit OIDC client',
             disable: 'Disable',
             enable: 'Enable',
+            protected: 'System client protected',
             rotateSecret: 'Rotate secret',
             clientIdOptional: 'Client ID (optional)',
             name: 'Name',
@@ -463,6 +554,50 @@ export default {
             rejectMessage: 'Rejected comments are removed from public views. Enter an auditable reason.',
             deleteMessage: 'Deletion is terminal soft-delete and hides the body from public APIs.',
             optionalReason: 'Optional audit reason'
+        },
+        community: {
+            discussions: {
+                description: 'Moderate independent community discussions, posts, locks and archives.',
+                empty: 'No discussions',
+                detail: 'Discussion detail',
+                title: 'Title',
+                author: 'Author',
+                template: 'Template',
+                tags: 'Tags',
+                replies: 'Replies',
+                lastPosted: 'Last posted',
+                locked: 'Locked',
+                posts: 'Post stream',
+                noPosts: 'No published posts',
+                publish: 'Publish',
+                hide: 'Hide',
+                restore: 'Restore',
+                archive: 'Archive',
+                lock: 'Lock',
+                unlock: 'Unlock',
+                approvePost: 'Approve post',
+                hidePost: 'Hide post',
+                deletePost: 'Delete post',
+                saveTags: 'Save tags',
+                previousPosts: 'Previous posts',
+                nextPosts: 'Next posts'
+            },
+            tags: {
+                description: 'Manage community-owned primary/secondary tags and archival state.',
+                empty: 'No community tags',
+                new: 'New tag',
+                name: 'Name',
+                slug: 'Slug',
+                kind: 'Kind',
+                position: 'Position',
+                count: 'Published discussions',
+                color: 'Color',
+                icon: 'Icon key',
+                edit: 'Edit tag',
+                archive: 'Archive',
+                restore: 'Restore',
+                archiveConfirm: 'Archive this community tag? Existing assignments remain, but new assignments are blocked.'
+            }
         },
         notifications: {
             description: 'Query delivery and attempt records, then cancel pending work or explicitly retry through named commands.',

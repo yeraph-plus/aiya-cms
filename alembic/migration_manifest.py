@@ -24,6 +24,8 @@ MIGRATION_OWNER_MODULES: dict[str, str] = {
     "capability:access": "inc.capabilities.access.models",
     "capability:oidc_provider": "inc.capabilities.oidc_provider.models",
     "capability:content": "inc.capabilities.content.models",
+    "capability:comments": "inc.capabilities.comments.models",
+    "capability:community": "inc.capabilities.community.models",
     "capability:taxonomy": "inc.capabilities.taxonomy.models",
     "capability:settings": "inc.capabilities.settings.models",
     "capability:assets": "inc.capabilities.assets.models",

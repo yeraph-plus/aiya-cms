@@ -1,0 +1,68 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { createServerApiClient } from '@/lib/api/server/client';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+
+interface Props {
+    locale: Locale;
+}
+
+const { locale } = Astro.props;
+const api = createServerApiClient(Astro.session, Astro.locals.requestId);
+const response = await api.GET('/api/v1/community/discussions', {
+    params: { query: { page: 1, size: 20, sort: 'latest' } }
+});
+const discussions = response.data?.items ?? [];
+---
+
+<BaseLayout locale={locale} title={t(locale, 'community.title')} description={t(locale, 'community.description')}>
+    <main class="detail-page">
+        <header class="detail-header">
+            <p class="eyebrow">{t(locale, 'community.eyebrow')}</p>
+            <h1>{t(locale, 'community.title')}</h1>
+            <p class="lede">{t(locale, 'community.description')}</p>
+            <nav class="inline-actions" aria-label={t(locale, 'community.navigation')}>
+                <a class="text-action" href={locale === 'en' ? '/en/community/tags' : '/community/tags'}
+                    >{t(locale, 'community.tags')}</a
+                >
+            </nav>
+        </header>
+        {
+            response.error ? (
+                <section class="placeholder-surface">
+                    <p>{t(locale, 'community.unavailable')}</p>
+                </section>
+            ) : discussions.length === 0 ? (
+                <section class="placeholder-surface">
+                    <p>{t(locale, 'community.empty')}</p>
+                </section>
+            ) : (
+                <section class="community-stream" aria-label={t(locale, 'community.discussions')}>
+                    {discussions.map((discussion) => (
+                        <article class="community-card">
+                            <div class="community-card-meta">
+                                <span>
+                                    {discussion.reply_count} {t(locale, 'community.replies')}
+                                </span>
+                                <span>{discussion.tags?.map((tag) => tag.name).join(' · ')}</span>
+                            </div>
+                            <h2>
+                                <a
+                                    href={
+                                        locale === 'en'
+                                            ? `/en/community/discussions/${discussion.slug}`
+                                            : `/community/discussions/${discussion.slug}`
+                                    }
+                                >
+                                    {discussion.title}
+                                </a>
+                            </h2>
+                            <p>{discussion.author?.display_name ?? discussion.author_id}</p>
+                        </article>
+                    ))}
+                </section>
+            )
+        }
+    </main>
+</BaseLayout>

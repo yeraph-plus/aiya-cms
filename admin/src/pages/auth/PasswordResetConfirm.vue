@@ -26,7 +26,10 @@ async function submit() {
     error.value = null;
     submitting.value = true;
     try {
-        await confirmPasswordReset({ token: token.value.trim(), new_password: password.value });
+        await confirmPasswordReset({
+            token: token.value.trim(),
+            new_password: password.value
+        });
         completed.value = true;
     } catch (caught) {
         error.value = caught;

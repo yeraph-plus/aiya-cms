@@ -135,6 +135,18 @@ class TaskWorker:
         self._registry = registry
         self._clock = clock
         self._metrics = metrics
+        self._counters = (
+            {
+                name: metrics.counter(name)
+                for name in (
+                    "kernel.task.claimed",
+                    "kernel.task.completed",
+                    "kernel.task.failed",
+                )
+            }
+            if metrics
+            else {}
+        )
 
     async def run_cycle(
         self,
@@ -153,6 +165,8 @@ class TaskWorker:
                 now=self._clock.utc_now(),
             )
             await claim_uow.commit()
+        if self._counters:
+            self._counters["kernel.task.claimed"].inc(len(tasks))
 
         for task in tasks:
             await self._execute(task)
@@ -188,6 +202,8 @@ class TaskWorker:
                         error_category=RetryCategory.PERMANENT,
                         error_summary="unregistered task",
                     )
+                    if self._counters:
+                        self._counters["kernel.task.failed"].inc()
                 await uow.commit()
                 return
 
@@ -202,10 +218,15 @@ class TaskWorker:
                 )
             except Exception as exc:  # noqa: BLE001 - failures feed the retry state machine
                 category = classify_retry(exc)
-                if not spec.retry.should_retry(category=category, attempts=fresh.attempt + 1):
+                should_retry = spec.retry.should_retry(
+                    category=category, attempts=fresh.attempt + 1
+                )
+                if not should_retry:
                     await TaskRepository(uow).mark_dead(
                         fresh, error_category=category, error_summary=str(exc)
                     )
+                    if self._counters:
+                        self._counters["kernel.task.failed"].inc()
                 else:
                     delay = spec.retry.next_attempt_delay(
                         category=category, attempts=fresh.attempt + 1
@@ -221,3 +242,5 @@ class TaskWorker:
 
             await TaskRepository(uow).mark_completed(fresh, result=result)
             await uow.commit()
+            if self._counters:
+                self._counters["kernel.task.completed"].inc()

@@ -16,8 +16,9 @@ async def test_content_lifecycle_via_api(client: Any, admin_token: str, clock: A
         json={
             "type_name": "post",
             "title": "First post",
-            "slug": "first-post",
-            "data": {"summary": "hello"},
+            "body": "# First post",
+            "excerpt": "hello",
+            "data": {},
         },
         headers=headers,
     )
@@ -56,7 +57,7 @@ async def test_content_lifecycle_via_api(client: Any, admin_token: str, clock: A
 async def test_unknown_type_is_validation_error(client: Any, admin_token: str) -> None:
     response = await client.post(
         "/api/v1/admin/content",
-        json={"type_name": "ghost", "title": "x", "slug": "x-1", "data": {}},
+        json={"type_name": "ghost", "title": "x", "data": {}},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert response.status_code == 422
@@ -67,10 +68,10 @@ async def test_admin_content_list_contains_all_registered_types(
     client: Any, admin_token: str
 ) -> None:
     headers = {"Authorization": f"Bearer {admin_token}"}
-    for type_name, slug in (("post", "all-types-post"), ("page", "all-types-page")):
+    for type_name in ("post", "page"):
         created = await client.post(
             "/api/v1/admin/content",
-            json={"type_name": type_name, "title": type_name, "slug": slug, "data": {}},
+            json={"type_name": type_name, "title": type_name, "data": {}},
             headers=headers,
         )
         assert created.status_code == 200, created.text
@@ -87,8 +88,7 @@ async def test_invalid_transition_conflict(client: Any, admin_token: str) -> Non
         json={
             "type_name": "post",
             "title": "t",
-            "slug": "t-1",
-            "data": {"summary": "s"},
+            "data": {},
         },
         headers=headers,
     )
@@ -106,12 +106,12 @@ async def test_pin_pagination_stable_through_api(client: Any, admin_token: str, 
     headers = {"Authorization": f"Bearer {admin_token}"}
     first = await client.post(
         "/api/v1/admin/content",
-        json={"type_name": "post", "title": "A", "slug": "pin-a", "data": {"summary": "s"}},
+        json={"type_name": "post", "title": "A", "body": "# A", "excerpt": "s", "data": {}},
         headers=headers,
     )
     await client.post(
         "/api/v1/admin/content",
-        json={"type_name": "post", "title": "B", "slug": "pin-b", "data": {"summary": "s"}},
+        json={"type_name": "post", "title": "B", "body": "# B", "excerpt": "s", "data": {}},
         headers=headers,
     )
     first_id = first.json()["id"]
@@ -137,8 +137,9 @@ async def test_scheduled_publish_via_scanner(client: Any, admin_token: str, cloc
         json={
             "type_name": "post",
             "title": "Scheduled",
-            "slug": "sched-1",
-            "data": {"summary": "s"},
+            "body": "# Scheduled",
+            "excerpt": "s",
+            "data": {},
         },
         headers=headers,
     )
@@ -158,10 +159,10 @@ async def test_scheduled_publish_via_scanner(client: Any, admin_token: str, cloc
 
 async def test_explicit_sort_via_api(client: Any, admin_token: str) -> None:
     headers = {"Authorization": f"Bearer {admin_token}"}
-    for title, slug in (("banana", "sort-b"), ("apple", "sort-a"), ("cherry", "sort-c")):
+    for title in ("banana", "apple", "cherry"):
         created = await client.post(
             "/api/v1/admin/content",
-            json={"type_name": "post", "title": title, "slug": slug, "data": {"summary": "s"}},
+            json={"type_name": "post", "title": title, "data": {}},
             headers=headers,
         )
         assert created.status_code == 200, created.text

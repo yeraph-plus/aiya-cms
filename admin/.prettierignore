@@ -1,0 +1,4 @@
+# Generated declarations are owned by their generators and are covered by
+# dedicated type-drift/build checks instead of hand formatting.
+src/api/schema.d.ts
+src/components.d.ts

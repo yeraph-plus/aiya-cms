@@ -15,7 +15,9 @@ const { t } = useI18n();
                         <div class="flex justify-center items-center border-2 border-orange-500 rounded-full" style="width: 3.2rem; height: 3.2rem">
                             <i class="text-orange-500 pi pi-fw pi-lock text-2xl!"></i>
                         </div>
-                        <h1 class="text-surface-900 dark:text-surface-0 font-bold text-4xl lg:text-5xl mb-2">{{ t('pages.accessDeniedTitle') }}</h1>
+                        <h1 class="text-surface-900 dark:text-surface-0 font-bold text-4xl lg:text-5xl mb-2">
+                            {{ t('pages.accessDeniedTitle') }}
+                        </h1>
                         <span class="text-muted-color mb-8">{{ t('pages.accessDeniedDescription') }}</span>
                         <div class="col-span-12 mt-8 text-center">
                             <Button as="router-link" :label="t('pages.goToDashboard')" to="/dashboard" severity="warn" />

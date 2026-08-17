@@ -6,13 +6,19 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 
 普通业务 API 使用 `/api/v1`。OIDC 协议端点按 `capabilities/oidc-provider.md` 使用 issuer 下的标准路径和标准错误格式，不强行套入业务 API 前缀/错误 DTO。
 
-管理员 SPA 除共同认证面外只消费 `/api/v1/admin/**`：共同认证面包括 `/api/v1/auth/**`、带 `auth` tag 的 `/api/v1/me` 投影和 issuer 下的 OIDC 协议端点。管理员页面不得调用普通用户侧 content、points、membership、purchase 或 engagement 路由。该限制由前端 adapter 合同测试和 OpenAPI 路由测试共同守护。
+管理员 SPA 的会话与业务读取统一消费 `/api/v1/admin/**`；共同公共面只包括 `/api/v1/auth/**` 的注册、验证与密码重置，以及 issuer 下的 OIDC 协议端点。管理员页面不得调用 `/api/v1/me` 或普通用户侧 content、community、points、membership、purchase、engagement 路由。该限制由前端 adapter 合同测试和 OpenAPI 路由测试共同守护。
+
+Astro 用户站只消费由完整 schema 确定性投影的 `openapi.user.json`；其业务路径限定为 `site`、`auth`、`user-center`、`posts`、`pages`、`discussions`、`community-tags`。完整用户站、BFF 和端点矩阵见 [`用户站基础框架规格`](<../user site spec/user-site.md>)。
 
 ## 2. 基础端点
 
 - `GET /healthz`：进程 liveness，不访问依赖。
 - `GET /api/v1/health`：当前 manifest 的 readiness。
-- `GET /api/v1/me`：当前 Principal、最小 subject profile、capability keys 和已装配的用户摘要（当前包含 points 余额）。
+  readiness 必须同时探测数据库和管理员会话所需的 Redis；Redis 不可达时返回
+  `status=degraded`，而不是静默退回进程内存。
+- `GET /api/v1/admin/session`：当前管理员 Principal 的最小 identity 投影、当前 manifest 已注册且该主体实际拥有的 capability keys；不得返回用户站 points/membership 摘要，不得把数据库中的陈旧或未装配 permission key 投影给 SPA。
+- `GET /api/v1/site`：匿名站点 bootstrap，只返回 allowlist 内的 public settings、类型化 SEO 输入和公开 feature 摘要；不返回最终 head/XML/robots 文本。
+- `GET /api/v1/me`：当前 Principal、最小 subject profile、capability keys 和 `user_center` 装配的 points/membership 摘要；缺失账户或订阅不触发写入。
 - `PATCH /api/v1/me`：当前 subject 自助修改 `display_name`、`avatar_asset_id`。
 - `POST /api/v1/me/avatar/upload-intents`：当前 subject 为头像申请受限上传意图，组合根选择头像 bucket。
 - `POST /api/v1/me/avatar/upload-intents/{intent_id}/finalize`：完成头像资产 workflow，将 ready asset ID 写回当前 subject 资料。
@@ -21,10 +27,21 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 - `POST /api/v1/auth/register`：公开自助注册（无需 Bearer）；username/email 冲突返回稳定 conflict 错误；注册即签发 email_verification challenge，token 只经带外投递（notification 装配前由进程内调用方持有），从不出现在响应体。
 - `POST /api/v1/auth/verify-email`：公开端点；一次性 token 标记邮箱已验证，token 无效/已消费/过期返回稳定 validation 错误。
 - `POST /api/v1/auth/password-reset/request`：公开端点（无需 Bearer）；对未知或非 active 标识返回与成功等价的 202 响应，不泄露枚举；challenge token 只经带外投递，从不出现在响应体。
+- 登录失败按账号+来源地址在固定窗口内锁定并返回 429；密码重置请求按来源地址每小时最多 5 次并返回稳定 `auth.password_reset_rate_limited` 错误。注册端点不套用该限流。
 - `POST /api/v1/auth/password-reset/confirm`：公开端点；一次性 token + 新密码，token 无效/已消费/过期返回稳定 validation 错误。
-- `POST /api/v1/check-in`：显式签到写端点（需认证）；幂等域为 subject + program + 业务日期，重复调用返回原结果。
+- `POST /api/v1/me/check-ins`：`user_center` 显式签到写端点（需认证）；幂等域为 subject + program + 业务日期，重复调用返回原结果。
+- `GET /api/v1/me/points`：当前 subject 默认 program 的余额与安全桶摘要；未开户为逻辑零值。
 - `GET /api/v1/me/points/ledger`：当前 subject 默认 program 积分账本分页；未开户返回空分页，读路径零副作用。
-- `GET /api/v1/point-purchase/offers` / `POST /api/v1/point-purchase/orders`：受信价格目录读取与购买 workflow 启动（需认证 + `Idempotency-Key` 头）。
+- `GET /api/v1/me/points/offers` / `POST /api/v1/me/points/orders`：受信积分价格目录读取与购买 workflow 启动（需认证 + `Idempotency-Key` 头）。
+- `GET /api/v1/me/membership`、`GET /api/v1/me/membership/offers`、`POST /api/v1/me/membership/orders`：本人订阅摘要、受信会员目录与购买 workflow（写入要求 `Idempotency-Key`）。
+- `GET /api/v1/me/purchases` / `GET /api/v1/me/purchases/{order_reference}`：只读本人购买安全摘要，不泄露 provider payload 或他人订单存在性。
+- `GET /api/v1/me/favorites/posts`：当前 subject 已点赞 post 的稳定分页。
+- `GET /api/v1/posts` / `GET /api/v1/posts/by-slug/{slug}`：`post` feature 的 published 列表与详情，允许匿名并可选 Bearer 读取 viewer state；GET 不计 view。`slug` 是服务端创建时生成、不可变的 `generated_title_suffix_v1` 路由键；未知与非 published 内容统一为 404，不接受 UUID/数值短码替代。
+- `POST /api/v1/posts/{post_id}/views`、`PUT|DELETE .../like`、`PUT|DELETE .../rating`：`post` feature 的显式互动 Command；除 view 外均需认证。
+- `GET|POST /api/v1/posts/{post_id}/comments`：`post` feature 绑定的评论读取/提交；提交需认证和 `Idempotency-Key`。
+- `GET /api/v1/pages` / `GET /api/v1/pages/by-slug/{slug}`：`page` feature 的 published 目录与详情，不包含 taxonomy、engagement 或 comments。
+- `GET|POST /api/v1/community/discussions`、`GET /api/v1/community/discussions/by-slug/{slug}`、`GET /api/v1/community/discussions/{discussion_id}/posts`、`POST /api/v1/community/discussions/{discussion_id}/replies`：community 的 discussion/post 产品面；公开列表支持 `q`、`tag` 和 `latest|top|newest`，GET 不写 view/read/search 事实。
+- `GET /api/v1/community/tags` / `GET /api/v1/community/tags/by-slug/{slug}`：community 自有 Tags 分区，不读取通用 taxonomy。
 - `POST /api/v1/webhooks/payments/{provider_key}`：支付 webhook；先取原始 bytes 验签（§8），duplicate receipt 返回已处理结果，不承担浏览器 Principal。
 - `POST /api/v1/admin/users/{user_id}/unban`：管理员解封端点（`identity.users.unban` 权限）；仅 `banned` 用户可解封并发出 `identity.user_unbanned.v1` 安全事件，非 banned 返回稳定 conflict，未知用户返回 404。
 - `POST /api/v1/admin/points/adjust`：管理员积分调整端点（`points.adjust` 权限）；`program_key` 可选，省略时使用 `credit`，请求携带 `reason` 与 `idempotency_key`，正数金额入 perpetual 桶，负数金额按 expires-at FIFO 扣桶（不足允许进入 debt），首次调整自动开户，重复 key 返回原流水结果；该写操作计入管理员审计。
@@ -36,10 +53,12 @@ HTTP 是传输适配层。Router 只解析请求、建立 Principal/AppContext�
 - `GET /api/v1/admin/notifications/deliveries` 与 `GET /api/v1/admin/notifications/deliveries/{delivery_id}`：查询 delivery、intent 与 attempt 安全摘要（`notification.read` 权限）；恢复面只导出 `POST .../retry` 和 `POST .../cancel` 命名 Command。
 - capability/feature routers：只有完整产品 manifest 显式挂载后存在。
 
+旧 `/api/v1/check-in`、`/api/v1/point-purchase/**`、`/api/v1/membership-purchase/**`、用户 `/api/v1/content/{type_name}/**`、通用 content comments 和 `/api/v1/me/favorites/{type_name}` 在 feature 收敛时删除，不保留兼容路由。
+
 ### 2.1 明确不导出的定义管理接口
 
-- `points program` 的定义管理由后端代码/ops 保留；当前不导出 `/api/v1/admin/points/programs` 的 GET/POST/PATCH/DELETE。现有 points 端点只消费已注册的 `program_key`。
-- `membership level` 的定义管理由后端代码/ops 保留；`GET /api/v1/admin/membership/levels` 是只读目录，当前不导出 POST/PATCH/DELETE 或通用状态写入。
+- 管理员积分计划导出 `GET|POST /api/v1/admin/points/programs`、`PATCH /api/v1/admin/points/programs/{program_key}`、`POST .../activate|deactivate`、`GET .../summary` 和 `GET /api/v1/admin/points/accounts`；写入使用 expected_version/reason 并审计。
+- 管理员会员等级导出 `GET|POST /api/v1/admin/membership/levels`、`PATCH /api/v1/admin/membership/levels/{level_key}`、`POST .../activate|archive` 以及会员 summary/subscriptions 工作台；归档阻止新订阅/续费但不影响当前周期。
 - `notification template` 的定义管理由后端 capability/feature 注册表保留；当前不导出 `/api/v1/admin/notifications/templates` 的读取或写入接口。未来 notification 管理端点只覆盖 delivery/attempt 查询与命名恢复 Command，除非模板合同另行完成规格闭环。
 
 上述 OpenAPI 缺席是刻意边界，不得通过反射数据库模型、自动 CRUD、前端手写 DTO 或占位页面绕过。未来导出必须逐项声明稳定 operationId、权限、版本/幂等、审计与错误合同。
@@ -57,6 +76,8 @@ OIDC 协议端点继续位于 issuer 标准路径；OIDC client 的管理员配�
 - 成功响应直接返回资源 DTO 或 Page DTO，不再包一层无信息 envelope。
 - 删除成功按端点语义返回 204 或结果 DTO，必须在 OpenAPI 固定。
 - datetime 使用 UTC RFC 3339；UUID 为标准字符串；金额是 minor-unit integer + currency。
+- post/page 详情与内容编辑响应中的 `body` 是规范化 Markdown 原文，并返回服务端派生的 `body_format`、`body_profile` 与内容 `version`；写请求不得提交 format/profile，响应不得包含 `rendered_html`。
+- Markdown 上限按规范化后的 UTF-8 bytes 计算。OpenAPI description 与错误 response 必须声明该语义；JSON Schema `maxLength` 只能表达 code point 长度，不能冒充 byte 上限。
 
 普通 API 错误：
 
@@ -74,6 +95,7 @@ OIDC 协议端点继续位于 issuer 标准路径；OIDC client 的管理员配�
 ## 4. Request ID 与追踪
 
 - 客户端可传 `X-Request-ID`，服务端校验格式/长度；非法或缺失时生成。
+- `X-Forwarded-For` 只有在 `AIYA_TRUSTED_PROXY_CIDRS` 命中的直接反代地址下才参与来源地址解析；未配置或不可信来源一律使用连接对端地址。
 - 响应始终回传最终 request ID。
 - correlation/trace ID 向 outbox、workflow 和外部 adapter 传播。
 - 不信任客户端传入的内部 trace 权限或 actor 信息。
@@ -123,18 +145,26 @@ Page DTO：
 ## 9. CORS、Cookie 与 CSRF
 
 - 生产允许 origin 使用精确 allowlist，不允许带 credential 的 `*`。
-- 管理员 SPA 默认 Code + PKCE、内存 access token，以 Authorization header 调 API。
-- OIDC 登录 session cookie 必须 Secure/HttpOnly/SameSite 并有 CSRF/session fixation 防护。
-- 若未来增加 BFF/httpOnly application session，所有状态写请求必须加入与部署模式匹配的 CSRF 保护，并单独更新规格。
+- 管理员 SPA 使用 Code + PKCE 启动登录；登录完成后由 FastAPI 以 Redis-backed
+  `Secure + HttpOnly + SameSite=Lax` 会话 Cookie 承载浏览器请求，SPA 不持久化或
+  发送 access/refresh token。程序化客户端仍可使用 Authorization header。
+- Astro 用户站使用 confidential OIDC BFF：浏览器只持有用户站 host-only HttpOnly session ID，Astro server 持有 token 并以 Authorization header 调 API；FastAPI 不接受 Astro session cookie。
+- 用户站基线的 Vue island 只调用同源 Astro action，不直接 fetch FastAPI，因此 FastAPI 对用户站 origin 不启用 credentialed CORS。未来浏览器直连必须逐端点另行定义，不能只扩大 allowlist。
+- OIDC 登录 session cookie 必须 Secure/HttpOnly/SameSite 并有 CSRF/session fixation 防护；
+  管理员写请求携带可读 CSRF Cookie 对应的 `X-CSRF-Token`，会话同时受空闲和绝对 TTL 约束。
+- Astro BFF 的所有状态写 action 必须验证 Origin/Host、使用 CSRF token，并在登录、权限提升和登出时轮换/销毁 session。
 
 ## 10. OpenAPI
 
-- 根 `openapi.json` 和 `openapi.sha256` 是完整产品 manifest 的冻结 HTTP 契约。
-- `inc.api.openapi dump/check` 或替代命令以同一 manifest 确定性生成。
+- 本轮根 `openapi.json` 和 `openapi.sha256` 是唯一可部署 `management_plane` 的冻结 HTTP 契约；完整产品 manifest 的 schema 仅作为延期用户站投影的开发 fixture。
+- `openapi.user.json` 和对应 hash 是从同一完整 schema 按稳定 operation/tag allowlist 生成的用户站投影；不得手写第二套 schema，也不得包含 admin、webhook 或运维路径。
+- `inc.api.openapi dump/check` 确定性生成管理面根快照，并从延期完整产品 fixture 生成用户站投影；两者均不得被手写。
 - operationId、schema name、error response、security scheme 和 tags 必须稳定且唯一。
-- 每个 router 声明稳定 tags 以组织 `/docs`：公开端点使用领域 tag（`auth`、`check-in`、`points`、`point-purchase`、`membership-purchase`、`webhooks`、`oidc`、`system`）；管理员端点使用伞形 `admin` tag 加 `admin-<domain>` 子 tag（如 `admin-users`、`admin-content`）。tag 说明由组合根 `openapi_tags` 统一声明。
+- 每个 router 声明稳定 tags 以组织 `/docs`：用户产品端点使用 `site`、`auth`、`user-center`、`posts`、`pages`、`discussions`、`community-tags`；协议/系统端点使用 `webhooks`、`oidc`、`system`；管理员端点使用伞形 `admin` tag 加 `admin-<domain>` 子 tag（如 `admin-users`、`admin-content`、`admin-community`）。tag 说明由组合根 `openapi_tags` 统一声明。
 - 管理员 TypeScript 类型由 snapshot 生成，禁止手写重复后端 DTO 或以 `unknown` 绕过。
-- API 变更必须在同一提交同步规格、失败测试、实现、snapshot/hash、生成类型和管理员调用。
+- Astro 用户站 TypeScript 类型只从用户投影生成；生成 adapter 必须以合同测试拒绝 admin/webhook 路径。
+- 完整与用户 OpenAPI 都不得暴露内部 `TrustedHtml`、Markdown parser AST、sanitize 配置或派生 HTML schema；format/profile 是只读响应字段。
+- API 变更必须在同一提交同步规格、失败测试、实现、完整/用户 snapshot 与 hash、生成类型和受影响前端调用。
 - OIDC Discovery/JWKS 的动态内容另有协议合同测试，不把运行密钥固化进 OpenAPI。
 
 ## 11. RouterSpec
@@ -154,4 +184,7 @@ Page DTO：
 - 所有普通错误符合 Error DTO，所有 OIDC 错误符合协议。
 - GET/HEAD 副作用测试、权限负向测试、分页稳定性和幂等重放测试通过。
 - OpenAPI check 无漂移，管理员生成类型 typecheck 通过。
+- `management_plane` schema 只含健康检查、`/api/v1/auth/**`、`/api/v1/admin/**` 和 issuer OIDC 协议端点；不含 `/api/v1/me` 或任何普通用户业务路径。
+- 用户 OpenAPI 投影无 admin/webhook 路径，Astro 生成类型 typecheck/build 通过。
 - CORS/CSRF/cookie/token cache headers 有生产配置测试。
+- Markdown DTO 验证覆盖 UTF-8 byte 边界、只读 format/profile、稳定错误 code 和响应中不存在派生 HTML。

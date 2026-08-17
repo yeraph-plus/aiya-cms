@@ -19,6 +19,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from inc.api.container import Services
+from inc.api.http.admin_session_store import AdminSessionStore
 from inc.capabilities.access.schemas import Principal
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import ErrorCategory, KernelError
@@ -53,18 +54,72 @@ class BearerVerifier:
         services: Services,
         issuer: str,
         api_audience: str,
+        admin_session_store: AdminSessionStore | None = None,
         clock_skew_seconds: int = 60,
     ) -> None:
         self._services = services
         self._issuer = issuer
         self._api_audience = api_audience
         self._clock_skew_seconds = clock_skew_seconds
+        self._admin_session_store = admin_session_store
 
     async def verify(
         self,
         credentials: HTTPAuthorizationCredentials | None,
         request: Request,
     ) -> AppContext:
+        if (
+            self._admin_session_store is not None
+            and request.url.path.startswith("/api/v1/admin")
+            and request.cookies.get("aiya_admin_session")
+        ):
+            token = request.cookies.get("aiya_admin_session")
+            record = await self._admin_session_store.load(token)
+            if record is not None:
+                # A browser request must not combine a cookie session for one
+                # subject with a bearer token for another subject.  Reject the
+                # ambiguity instead of silently preferring either credential.
+                if credentials is not None:
+                    bearer_payload = await self._decode(credentials.credentials)
+                    if str(bearer_payload.get("sub", "")) != record.subject_id:
+                        raise _unauthorized("cookie and bearer subjects do not match")
+                if (
+                    request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
+                    and request.headers.get("x-csrf-token") != record.csrf_token
+                ):
+                    raise KernelError(
+                        code="api.csrf_failed",
+                        category=ErrorCategory.FORBIDDEN,
+                        message="missing or invalid CSRF token",
+                    )
+                subject = await self._services.identity_queries.get_subject(record.subject_id)
+                if subject is None or subject.status != "active":
+                    raise _unauthorized("administrator session subject is not active")
+                principal = Principal(
+                    subject_id=record.subject_id,
+                    status="active",
+                    auth_method="cookie",
+                    session_id=record.subject_id,
+                )
+                capabilities = await self._services.authorize.capabilities_of(principal)
+                capabilities &= set(self._services.permission_registry.keys())
+                principal = Principal(
+                    subject_id=record.subject_id,
+                    status="active",
+                    auth_method="cookie",
+                    session_id=record.subject_id,
+                    capabilities=capabilities,
+                )
+                request_id = getattr(request.state, "request_id", "unknown")
+                return AppContext(
+                    principal=principal,
+                    request_id=request_id,
+                    trace_id=request_id,
+                    uow_factory=self._services.uow_factory,
+                    clock=self._services.clock,
+                )
+            if credentials is None:
+                raise _unauthorized("missing or expired administrator session")
         if credentials is None or credentials.scheme.lower() != "bearer":
             raise _unauthorized("missing bearer token")
         payload = await self._decode(credentials.credentials)
@@ -92,6 +147,7 @@ class BearerVerifier:
             client_id=payload.get("client_id"),
         )
         capabilities = await self._services.authorize.capabilities_of(principal)
+        capabilities &= set(self._services.permission_registry.keys())
         principal = Principal(
             subject_id=subject_id,
             status="active",
@@ -118,7 +174,10 @@ class BearerVerifier:
         kid = unverified.get("kid")
         if not kid:
             raise _unauthorized("access token carries no kid")
-        jwks = await self._services.keys.public_jwks()
+        keys = self._services.keys
+        if keys is None:
+            raise _unauthorized("OIDC provider is not installed")
+        jwks = await keys.public_jwks()
         key = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
         if key is None:
             raise _unauthorized("access token key is not active")

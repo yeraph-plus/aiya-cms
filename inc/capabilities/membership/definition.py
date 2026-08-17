@@ -19,5 +19,7 @@ spec = CapabilitySpec(
     access_keys=(
         "membership.manage",
         "membership.read",
+        "membership.levels.read",
+        "membership.levels.manage",
     ),
 )

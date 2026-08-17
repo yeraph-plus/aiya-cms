@@ -16,6 +16,17 @@ export async function fetchRoles(signal?: AbortSignal): Promise<RoleDTO[]> {
     return getApi().get('/api/v1/admin/roles', undefined, signal);
 }
 
+export async function fetchSubjectRoles(subjectType: string, subjectId: string, signal?: AbortSignal): Promise<GrantSummary> {
+    return getApi().get(
+        apiPath('/api/v1/admin/access/subjects/{subject_type}/{subject_id}/roles', {
+            subject_type: subjectType,
+            subject_id: subjectId
+        }),
+        undefined,
+        signal
+    );
+}
+
 export async function createRole(body: CreateRoleBody, signal?: AbortSignal): Promise<RoleDTO> {
     return getApi().post('/api/v1/admin/roles', body, { signal });
 }

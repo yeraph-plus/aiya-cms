@@ -1,0 +1,105 @@
+---
+import UtilityControls from '@/components/vue/UtilityControls.vue';
+import { csrfToken } from '@/lib/auth/server/csrf';
+import type { PublicSessionUser } from '@/lib/auth/session';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+import { localizedEquivalent, localizedRoute, navigationRoutes, routeIdFromPath } from '@/lib/routing/routes';
+import type { Theme } from '@/lib/theme';
+
+interface Props {
+    locale: Locale;
+    currentPath: string;
+    user?: PublicSessionUser | undefined;
+    theme: Theme;
+}
+
+const { locale, currentPath, user, theme } = Astro.props;
+const currentRoute = routeIdFromPath(currentPath);
+const logoutCsrf = user && Astro.session ? await csrfToken(Astro.session) : undefined;
+const labels = {
+    open: t(locale, 'controls.open'),
+    language: t(locale, 'language.label'),
+    chinese: t(locale, 'language.zh-CN'),
+    english: t(locale, 'language.en'),
+    theme: t(locale, 'theme.label'),
+    system: t(locale, 'theme.system'),
+    light: t(locale, 'theme.light'),
+    dark: t(locale, 'theme.dark')
+};
+const localeLinks = [
+    { locale: 'zh-CN' as const, href: localizedEquivalent(currentPath, 'zh-CN'), label: labels.chinese },
+    { locale: 'en' as const, href: localizedEquivalent(currentPath, 'en'), label: labels.english }
+];
+---
+
+<div class="app-shell">
+    <aside class="global-sidebar" aria-label={t(locale, 'site.name')}>
+        <a class="brand" href={localizedRoute('home', locale)} aria-label={t(locale, 'site.name')}>
+            <span class="brand-mark" aria-hidden="true">A</span>
+            <span>
+                <strong>{t(locale, 'site.name')}</strong>
+                <small>{t(locale, 'site.tagline')}</small>
+            </span>
+        </a>
+
+        <nav class="primary-nav" aria-label={t(locale, 'site.name')}>
+            {
+                navigationRoutes.map((routeId) => (
+                    <a
+                        href={localizedRoute(routeId, locale)}
+                        aria-current={currentRoute === routeId ? 'page' : undefined}
+                    >
+                        {t(
+                            locale,
+                            routeId === 'home'
+                                ? 'nav.home'
+                                : routeId === 'account'
+                                  ? 'nav.account'
+                                  : routeId === 'community'
+                                    ? 'nav.community'
+                                    : 'nav.communityTags'
+                        )}
+                    </a>
+                ))
+            }
+        </nav>
+
+        <div class="sidebar-note" aria-hidden="true">
+            <span>Aiya</span>
+            <span>SSR / Vue islands</span>
+        </div>
+    </aside>
+
+    <div class="main-workspace">
+        <header class="top-utility-bar">
+            <a class="mobile-brand" href={localizedRoute('home', locale)}>{t(locale, 'site.name')}</a>
+            <div class="utility-actions">
+                {
+                    user ? (
+                        <form method="post" action="/auth/logout">
+                            <input type="hidden" name="csrf" value={logoutCsrf} />
+                            <button class="text-action" type="submit">
+                                {t(locale, 'nav.logout')}
+                            </button>
+                        </form>
+                    ) : (
+                        <a class="text-action" href={`/auth/login?returnTo=${encodeURIComponent(currentPath)}`}>
+                            {t(locale, 'nav.login')}
+                        </a>
+                    )
+                }
+                <UtilityControls
+                    client:idle
+                    currentLocale={locale}
+                    currentTheme={theme}
+                    localeLinks={localeLinks}
+                    labels={labels}
+                />
+            </div>
+        </header>
+        <main id="main-content" class="route-content" tabindex="-1">
+            <slot />
+        </main>
+    </div>
+</div>

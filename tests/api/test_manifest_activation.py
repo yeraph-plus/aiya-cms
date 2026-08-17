@@ -14,7 +14,7 @@ import pytest
 from inc.api.app import create_app
 from inc.api.config import ApiSettings
 from inc.api.container import build_container
-from inc.api.manifest import cms, kernel_only
+from inc.api.manifest import cms, kernel_only, management_plane
 from inc.kernel.boot import AppManifest
 from inc.kernel.errors import KernelError
 
@@ -52,6 +52,25 @@ async def test_kernel_only_exposes_only_health(
         assert body["code"] == "http.404"
 
 
+def test_production_app_requires_redis_for_admin_sessions(uow_factory: Any, clock: Any) -> None:
+    production = ApiSettings(
+        environment="production",
+        issuer="https://cms.example.com",
+        secure_cookies=True,
+        oidc_signing_key_dir="/var/lib/aiya/oidc-keys",
+        admin_session_secret="x" * 48,
+    )
+    with pytest.raises(ValueError, match="requires a Redis URL"):
+        create_app(
+            manifest=kernel_only,
+            uow_factory=uow_factory,
+            clock=clock,
+            settings=production,
+            redis_url=None,
+            start_workers=False,
+        )
+
+
 async def test_kernel_only_openapi_has_no_business_paths(
     uow_factory: Any, clock: Any, settings: ApiSettings
 ) -> None:
@@ -66,6 +85,31 @@ async def test_kernel_only_openapi_has_no_business_paths(
     assert "/healthz" in paths
     assert not any(p.startswith("/api/v1/admin") for p in paths)
     assert not any(p.startswith("/oidc") for p in paths)
+
+
+async def test_readiness_reports_redis_failure(
+    uow_factory: Any, clock: Any, settings: ApiSettings, monkeypatch: Any
+) -> None:
+    from redis.asyncio import Redis
+
+    class BrokenRedis:
+        async def ping(self) -> bool:
+            raise ConnectionError("redis unavailable")
+
+    monkeypatch.setattr(Redis, "from_url", lambda *args, **kwargs: BrokenRedis())
+    app = create_app(
+        manifest=kernel_only,
+        uow_factory=uow_factory,
+        clock=clock,
+        settings=settings,
+        redis_url="redis://broken/0",
+        start_workers=False,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/api/v1/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
 
 
 async def test_kernel_only_does_not_import_deferred_capability_or_business_router(
@@ -86,6 +130,55 @@ async def test_cms_admin_routes_require_auth_not_404(
     body = response.json()
     assert body["code"] == "api.unauthorized"
     assert "request_id" in body
+
+
+async def test_management_plane_exposes_only_admin_and_shared_protocol_paths(
+    uow_factory: Any, clock: Any, settings: ApiSettings
+) -> None:
+    app = create_app(
+        manifest=management_plane,
+        uow_factory=uow_factory,
+        clock=clock,
+        settings=settings,
+        start_workers=False,
+    )
+    paths = set(app.openapi()["paths"])
+
+    assert app.state.services.notification_auth is not None
+    assert "/api/v1/admin/session" in paths
+    assert "/api/v1/admin/community/discussions" in paths
+    assert "/api/v1/auth/register" in paths
+    assert "/.well-known/openid-configuration" in paths
+    assert "/api/v1/me" not in paths
+    assert "/api/v1/content/post" not in paths
+    assert "/api/v1/community/discussions" not in paths
+    assert "/api/v1/admin/content" in paths
+    assert "/api/v1/admin/notifications/deliveries" in paths
+    assert "/api/v1/admin/payments/orders" not in paths
+
+    allowed_exact = {"/healthz", "/api/v1/health", "/.well-known/openid-configuration"}
+    for path in paths:
+        assert (
+            path in allowed_exact
+            or path.startswith("/api/v1/admin/")
+            or path.startswith("/api/v1/auth/")
+            or path.startswith("/oidc/")
+        ), path
+
+
+def test_management_plane_declares_only_the_releasable_admin_scope() -> None:
+    assert management_plane.name == "management_plane"
+    assert management_plane.features == ("auth", "site_settings", "post", "page")
+    assert "payments" not in management_plane.capabilities
+    assert "content" in management_plane.capabilities
+    assert "comments" in management_plane.capabilities
+    assert "taxonomy" in management_plane.capabilities
+    assert "membership" in management_plane.capabilities
+    assert "community" in management_plane.capabilities
+    assert "notification" in management_plane.capabilities
+    assert "community_admin" in management_plane.routers
+    assert "community" not in management_plane.routers
+    assert "payments.dev_fake" not in dict(management_plane.adapters).values()
 
 
 async def test_manifest_unknown_capability_fails_fast(uow_factory: Any, clock: Any) -> None:
@@ -131,6 +224,19 @@ async def test_capability_dependency_fails_before_port_resolution(
     manifest = AppManifest(
         name="bad",
         capabilities=("access", "oidc_provider", "audit"),
+    )
+    with pytest.raises(KernelError) as excinfo:
+        build_container(
+            manifest=manifest, uow_factory=uow_factory, clock=clock, settings=ApiSettings()
+        )
+    assert excinfo.value.code == "kernel.capability_requires_missing"
+
+
+async def test_community_requires_audit_capability(uow_factory: Any, clock: Any) -> None:
+    manifest = AppManifest(
+        name="community-without-audit",
+        capabilities=("identity", "community"),
+        adapters=(("community.author", "identity.community_author"),),
     )
     with pytest.raises(KernelError) as excinfo:
         build_container(

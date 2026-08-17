@@ -1,7 +1,8 @@
 export const APP_NAME = 'AIYA-CMS';
 
 export const DEFAULT_ISSUER = 'http://127.0.0.1:8000';
-const DEFAULT_CLIENT_ID = 'admin';
+/** The administrator SPA is intentionally bound to the protected admin client. */
+export const ADMIN_OIDC_CLIENT_ID = 'admin';
 
 type PublicEnv = Record<string, string | boolean | undefined>;
 
@@ -63,7 +64,7 @@ const publicBaseRaw = envValue('VITE_PUBLIC_BASE_URL') ?? envValue('AIYA_PUBLIC_
 export const env: AdminEnv = {
     apiBaseUrl: envValue('VITE_API_BASE_URL') ?? originOf(oidcIssuerRaw),
     oidcIssuer: validateUrl('OIDC issuer', oidcIssuerRaw),
-    oidcClientId: envValue('VITE_OIDC_CLIENT_ID') ?? DEFAULT_CLIENT_ID,
+    oidcClientId: ADMIN_OIDC_CLIENT_ID,
     oidcRedirectUri: validateUrl('OIDC redirect URI', envValue('VITE_OIDC_REDIRECT_URI') ?? (publicBaseRaw ? `${publicBaseRaw}/callback` : localRedirectUri('/callback'))),
     oidcPostLogoutRedirectUri: validateUrl('OIDC post logout URI', envValue('VITE_OIDC_POST_LOGOUT_URI') ?? (publicBaseRaw ? `${publicBaseRaw}/logged-out` : localRedirectUri('/logged-out')))
 };

@@ -7,7 +7,7 @@ membership 管理会员等级（档位）、订阅周期、续费与到期，并
 - membership **不持有积分余额、不过期累进计算、不结算扣减**：授予额度经 `PointsLedger` Port 进入 points 的 expiring 桶（`expires_at = 订阅结束时刻`），到期后的剩余未消耗额度由 points 过期机制自动扣减，membership 只订阅、查看与续费。
 - membership **不维护权益模型**：等级的价格、积分额度、续费周期由 membership 自身声明；注册奖励、赠送额度、邀请奖励等其他权益数值发生在业务流，由 feature 从 `site_settings` 读取后调用 points，不进入 membership。
 - membership **不直接依赖用户系统**：subject 是 opaque reference，由组合根绑定的消费方 Port 校验存在性。
-- 现金支付与 membership 无关：购买会员的支付流程由下游 feature（如 `membership_purchase`）组装 payments；membership 不导入 payments。
+- 现金支付与 membership 无关：购买会员的支付流程由下游 `user_center` feature 组装 payments；membership 不导入 payments。
 
 ## 2. 表所有权
 
@@ -20,9 +20,9 @@ subject 是 opaque reference，不建立 identity 外键。授予积分通过 Po
 
 ### 2.1 Level 定义的导出边界
 
-`membership level` 的定义管理是后端预留面：level key、周期、授予额度和策略继续由代码/ops 声明并与数据库行对齐。当前 `GET /api/v1/admin/membership/levels` 只导出已注册等级的只读目录；不导出创建、更新、删除或任意状态修改接口，管理员 SPA 不提供等级 CRUD 表单。
+`membership level` 支持管理员受控完整生命周期：key 不可变，创建、编辑、启用、归档都要求 `membership.levels.manage`、版本并发检查和审计；归档阻止新订阅/续费，但不影响存量周期。等级与订阅均保留快照，不做物理删除。
 
-运行期若存在内部受控 level Command，它只供 install/ops 或明确 feature 使用，未进入 RouterSpec/OpenAPI。未来要开放任何等级管理动作，必须先明确版本、存量订阅快照、权限、审计和并发语义，再单独导出命名 Command，不能把 `membership_levels` 表直接映射为通用 CRUD。
+运行期等级管理由 membership capability 的命名 admin service/Command 提供，HTTP 只做适配；它不把 `membership_levels` 表映射为通用 CRUD。任何新增等级动作都必须明确版本、存量订阅快照、权限、审计和乐观并发语义。
 
 `GET /api/v1/admin/membership/subscriptions` 支持 `subject_type`、`subject_id`、`level_key`、`status` 精确过滤，以便全局会员工作台和单用户 Drawer 复用同一个只读 Query；过滤不得隐式修改或续期订阅。
 
@@ -86,8 +86,8 @@ membership 声明消费方 Port，由组合根绑定：
 
 - `SubjectExistsPort`：`(subject_type, subject_id) -> bool`。组合根用 identity/feature 提供的 adapter 实现；未绑定则 Subscribe 类命令启动失败。
 - `PointsLedgerPort`：
-  - `grant_points(subject, amount, expires_at, idempotency_key, source_ref) -> entry_ref`
-  - 组合根实现为调用 points 公开 `CreditPoints`（行为 `membership.grant`），只传数值与到期时刻，不读取 points 表。
+  - `grant_points(subject, amount, expires_at, idempotency_key, source_ref) -> {entry_id}`；`entry_id` 是必填的 points 账本 opaque UUID 字符串，缺失或无效必须让会员事务失败，不能以“已授予”状态落库。
+  - 组合根实现为调用 points 公开 `CreditPoints`（行为 `membership.grant`），只传数值与到期时刻，不读取 points 表；生产 adapter 必须复用 membership 外层 UoW，使订阅、积分流水和 outbox 同事务提交。
   - 未来若需要"授予额度回收"语义，也经由 Port 暴露的 points 公开 Command（如 `DebitPoints`），membership 不做账本计算。
 
 adapter 属于 `inc/adapters`（`adapters/membership/` 目录），遵循 `adapters.md` 目录合同；capability 不得反向导入 adapter。
@@ -109,7 +109,7 @@ adapter 属于 `inc/adapters`（`adapters/membership/` 目录），遵循 `adapt
 
 ## 10. 集成：购买会员（下游 feature 组装）
 
-- `membership_purchase` feature 负责：受信价格目录（level key -> 金额/币种）→ payments 订单 → 捕获后调用 `SubscribeLevel` → 授予积分。
+- `user_center` feature 负责：受信价格目录（level key -> 金额/币种）→ payments 订单 → 捕获后调用 `SubscribeLevel` → 授予积分。
 - 支付现金与积分互不参与：payments 只产生支付事实；membership 只在订阅成功事实后授予积分。
 - 到期自动过期依赖 points 过期 Cron 与订阅 end 时刻一致；`ExpireSubscription` 由组合根注册为持久 `TaskInstance` handler，不允许只靠人工调用或内存 timer。
 

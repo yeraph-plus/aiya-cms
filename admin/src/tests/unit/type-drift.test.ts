@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -21,7 +22,7 @@ describe('generated type no-drift gate', () => {
     });
 
     it('schema.d.ts is byte-identical to a fresh openapi-typescript run', () => {
-        const tmp = mkdtempSync(join(adminRoot, 'node_modules/.tmp/schema-drift-'));
+        const tmp = mkdtempSync(join(tmpdir(), 'aiya-cms-schema-drift-'));
         try {
             const out = join(tmp, 'schema.d.ts');
             execFileSync(process.execPath, [resolve(adminRoot, 'node_modules/openapi-typescript/bin/cli.js'), openapiPath, '-o', out], { cwd: adminRoot, stdio: 'pipe' });

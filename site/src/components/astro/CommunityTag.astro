@@ -1,0 +1,70 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { createServerApiClient } from '@/lib/api/server/client';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+
+interface Props {
+    locale: Locale;
+    slug: string;
+}
+
+const { locale, slug } = Astro.props;
+const api = createServerApiClient(Astro.session, Astro.locals.requestId);
+const tagResponse = await api.GET('/api/v1/community/tags/by-slug/{slug}', { params: { path: { slug } } });
+const tag = tagResponse.data;
+const discussionsResponse = tag
+    ? await api.GET('/api/v1/community/discussions', {
+          params: { query: { page: 1, size: 20, tag: tag.slug, sort: 'latest' } }
+      })
+    : null;
+const discussions = discussionsResponse?.data?.items ?? [];
+if (!tag) Astro.response.status = 404;
+---
+
+<BaseLayout
+    locale={locale}
+    title={tag?.name ?? t(locale, 'error.notFound.title')}
+    description={tag?.description ?? t(locale, 'community.tagsDescription')}
+>
+    <main class="detail-page">
+        {
+            tag ? (
+                <>
+                    <header class="detail-header">
+                        <p class="eyebrow">{tag.kind}</p>
+                        <h1>{tag.name}</h1>
+                        <p class="lede">{tag.description ?? t(locale, 'community.taggedDiscussions')}</p>
+                    </header>
+                    <section class="community-stream" aria-label={t(locale, 'community.discussions')}>
+                        {discussions.map((discussion) => (
+                            <article class="community-card">
+                                <h2>
+                                    <a
+                                        href={
+                                            locale === 'en'
+                                                ? `/en/community/discussions/${discussion.slug}`
+                                                : `/community/discussions/${discussion.slug}`
+                                        }
+                                    >
+                                        {discussion.title}
+                                    </a>
+                                </h2>
+                                <span>
+                                    {discussion.reply_count} {t(locale, 'community.replies')}
+                                </span>
+                            </article>
+                        ))}
+                    </section>
+                </>
+            ) : (
+                <section class="placeholder-surface">
+                    <>
+                        <h1>{t(locale, 'error.notFound.title')}</h1>
+                        <p>{t(locale, 'error.notFound.description')}</p>
+                    </>
+                </section>
+            )
+        }
+    </main>
+</BaseLayout>

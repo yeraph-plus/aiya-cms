@@ -27,7 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import md5
 from typing import Any, cast
 
@@ -203,7 +203,7 @@ class EpayClient:
         if "out_trade_no" not in param:
             # 拼接一个临时订单号
             param["out_trade_no"] = (
-                datetime.now().strftime("%Y%m%d")
+                datetime.now(UTC).strftime("%Y%m%d")
                 + str(random.randint(10000, 99999))
                 + str(int(time.time()))
             )

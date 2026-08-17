@@ -35,7 +35,7 @@ function initialLocale(): AppLocale {
     try {
         saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
     } catch {
-        saved = null;
+        // Locale persistence is optional; use the browser/default locale.
     }
     return resolveInitialLocale(saved, window.navigator.languages);
 }

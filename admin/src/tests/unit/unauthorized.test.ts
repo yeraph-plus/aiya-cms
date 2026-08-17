@@ -15,7 +15,7 @@ vi.mock('@/auth/oidc', () => ({
 }));
 
 vi.mock('@/api/auth', () => ({
-    fetchMe: vi.fn()
+    fetchAdminSession: vi.fn()
 }));
 
 import { handleUnauthorized } from '@/auth/unauthorized';
@@ -27,6 +27,7 @@ describe('401 single-flight reauthentication', () => {
     });
 
     it('expires the session and redirects exactly once for concurrent 401s', async () => {
+        sessionState.status = 'authenticated';
         handleUnauthorized();
         handleUnauthorized();
         handleUnauthorized();
@@ -38,12 +39,19 @@ describe('401 single-flight reauthentication', () => {
             name: 'login',
             query: { redirect: '/content', reason: 'expired' }
         });
+        // Let the single-flight promise settle before the next test starts.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     it('allows a new reauthentication after the first completes', async () => {
+        sessionState.status = 'authenticated';
         handleUnauthorized();
         await Promise.resolve();
         await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         handleUnauthorized();
         expect(pushMock).toHaveBeenCalledTimes(2);

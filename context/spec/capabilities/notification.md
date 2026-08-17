@@ -5,10 +5,12 @@
 notification 管理通知意图、模板变量、渠道选择、收件目标快照和可靠投递状态。Email、SMS 等是 adapter，不通过继承扩展一个全知 MailService。
 
 notification 不决定“何时因发帖/审核/积分而通知”；该业务触发由 feature workflow 明确调用。
+身份注册、邮箱验证和密码重置的通知模板、变量合同及投递编排由本 capability
+内部管理；API 组合根只在 identity challenge 成功签发后调用公开的 challenge notifier。
 
 ## 2. NotificationSpec 与模板
 
-capability/feature 注册 NotificationSpec：
+capability 注册 NotificationSpec：
 
 - 稳定 notification key 和版本。
 - 允许 channel 及优先/回退策略。
@@ -36,11 +38,14 @@ capability/feature 注册 NotificationSpec：
 ## 3. 表所有权
 
 - `notification_templates`：key/version/channel/locale、subject/body、状态和变量 schema version。
-- `notification_intents`：notification key、business idempotency key、recipient ref、variables、requested time/state。
+- `notification_intents`：notification key、business idempotency key、recipient ref、variables、requested time/state。`sensitive` spec 的 token/code 等字段必须使用部署级密钥加密保存；投递进入 delivered/dead/failed/cancelled 等终态后立即擦除密文，禁止明文落库。
 - `notification_deliveries`：intent、channel/当前或最终 provider、加密或 tokenized 收件地址快照、workflow attempt、provider message ref、状态、next retry/error category。
 - `notification_delivery_attempts`：delivery、workflow attempt、provider 顺序/key、归一化结果、provider message ref、错误分类与开始/完成时间；不保存完整地址或渲染正文。
 
-variables 为有模型 JSONB，不得包含不必要 secret。收件地址为可靠重试所需的受限个人数据，必须加密/脱敏日志并按 retention policy 清理。
+variables 为有模型 JSONB，不得包含不必要 secret。身份 challenge 的 token
+是投递重试所必需的敏感变量：只能存在于 intent 的受保护存储中，不得出现在
+HTTP DTO、事件、日志、管理员查询或 delivery attempt；必须按 challenge TTL
+和 retention policy 清理。收件地址为可靠重试所需的受限个人数据，必须加密/脱敏日志并按 retention policy 清理；敏感变量不得进入 DTO、事件或日志。
 
 ## 4. Port 与 adapters
 
@@ -56,9 +61,10 @@ Port 由 notification 定义，identity 或外部通讯录 adapter 由组合根�
 - `RequestNotification`：校验 spec/variables，幂等创建 intent 和 delivery 计划。
 - `CancelPendingNotification`：只能取消尚未交给 provider 的 delivery。
 - `RetryDelivery`：管理员有权限的显式恢复 Command。
-- `notification.deliver.v1` activity：领取、渲染、按组合根顺序调用 provider、逐 provider 记录尝试并归并最终结果。
+- `notification.deliver.v1` activity：领取、渲染、通过组合根注入的 resolver 解析当前 provider、记录 provider 尝试并归并最终结果。
 
-feature 可以直接调用 RequestNotification activity/Command；不得自行实例化 provider SDK。
+feature 或 API 组合根可以调用 RequestNotification activity/Command；不得自行实例化 provider SDK。
+认证 challenge 应调用 notification capability 的公开 notifier，不得复制 spec、模板或 provider wiring。
 
 ## 6. 投递语义
 
@@ -66,13 +72,20 @@ feature 可以直接调用 RequestNotification activity/Command；不得自行�
 - delivery 使用 lease，支持多 worker。
 - provider 支持 idempotency key 时必须传递稳定 key。
 - provider timeout 后结果不明时标记 `unknown`，先查询 provider 或人工恢复；不得盲目重发造成重复通知。
-- provider `unavailable` 不计为网络发送失败，继续调用同 channel 的下一个 provider；全部 unavailable 时以 `notification.no_available_provider` 永久失败并等待显式恢复。
+- provider `unavailable` 不计为网络发送失败；provider resolver 默认只返回 settings 选中的当前实现，显式提供 provider chain 的测试/部署组合才允许继续调用下一个 provider，全部 unavailable 时以 `notification.no_available_provider` 永久失败并等待显式恢复。
 - 只有 adapter 明确证明请求未被 provider 接受时才能返回允许切换；连接建立失败、明确 429 等可以切换，read timeout、提交后断线、成功响应无法解析等必须归 `unknown` 并停止切换。
-- provider 顺序由组合根静态声明，不由运行时 settings 改写；同一 provider 的稳定幂等键不随 workflow retry 次数变化。
+- provider catalog 的允许 key 集合由组合根静态声明并冻结；运行时 settings 的 `notification.email_provider` 只从该 catalog 选择当前 provider，不会实例化未注册实现或按字典顺序静默切换。当前 provider 的稳定幂等键不随 workflow retry 次数变化。
 - 永久错误进入 failed，暂时错误按 policy 重试，超限进入 dead。
 - channel 未绑定或模板缺失在启动校验或请求阶段明确失败，不静默丢弃。
 
 外部通知无法提供严格 exactly-once；系统保证 intent/delivery 不重复创建，并在 provider 能力范围内最大化幂等。
+
+### 6.1 Retention
+
+`operations.audit_retention_days` 是 notification history 的统一保留策略。组合根在启用
+notification 时注册 `notification.retention.v1` Cron：只删除超过 cutoff 的
+`delivered`/`failed`/`dead`/`cancelled` delivery 及其 attempts，并删除不再关联 delivery
+的过期 intent；`pending`、`sending`、`unknown` 和仍有关联 delivery 的 intent 永不由该任务删除。
 
 ## 7. 状态和事件
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { assignRole, createRole, deleteRole, fetchCapabilities, fetchRoles, replaceRoleCapabilities, type RoleDTO } from '@/api/access';
+import { createRole, deleteRole, fetchCapabilities, fetchRoles, replaceRoleCapabilities, type RoleDTO } from '@/api/access';
+import { useRouter } from 'vue-router';
 import { hasCapability } from '@/auth/session';
 import ApiErrorMessage from '@/components/feedback/ApiErrorMessage.vue';
 import ConfirmAction from '@/components/feedback/ConfirmAction.vue';
@@ -11,6 +12,7 @@ import PageShell from '@/components/shell/PageShell.vue';
 import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t } = useI18n();
+const router = useRouter();
 const roles = ref<RoleDTO[] | null>(null);
 const capabilityKeys = ref<string[]>([]);
 const loading = ref(false);
@@ -19,10 +21,8 @@ const error = ref<unknown>(null);
 const actionError = ref<unknown>(null);
 const createVisible = ref(false);
 const capabilitiesVisible = ref(false);
-const assignVisible = ref(false);
 const selectedRole = ref<RoleDTO | null>(null);
 const selectedCapabilities = ref<string[]>([]);
-const subjectId = ref('');
 const createForm = reactive({ name: '', slug: '', description: '' });
 const canManage = computed(() => hasCapability('access.roles.manage'));
 const canAssign = computed(() => hasCapability('access.roles.assign'));
@@ -49,17 +49,20 @@ function openCapabilities(role: RoleDTO): void {
 }
 
 function openAssign(role: RoleDTO): void {
-    selectedRole.value = role;
-    subjectId.value = '';
-    actionError.value = null;
-    assignVisible.value = true;
+    // Subjects are selected from the user workspace drawer.  Keeping a raw
+    // ID field here allowed accidental grants to arbitrary opaque IDs.
+    void router.push({ name: 'users', query: { assignRole: role.id } });
 }
 
 async function submitCreate(): Promise<void> {
     saving.value = true;
     actionError.value = null;
     try {
-        const created = await createRole({ name: createForm.name.trim(), slug: createForm.slug.trim(), description: createForm.description.trim() || null });
+        const created = await createRole({
+            name: createForm.name.trim(),
+            slug: createForm.slug.trim(),
+            description: createForm.description.trim() || null
+        });
         roles.value = [...(roles.value ?? []), created];
         Object.assign(createForm, { name: '', slug: '', description: '' });
         createVisible.value = false;
@@ -75,23 +78,11 @@ async function saveCapabilities(): Promise<void> {
     saving.value = true;
     actionError.value = null;
     try {
-        const updated = await replaceRoleCapabilities(selectedRole.value.id, { capability_keys: selectedCapabilities.value });
+        const updated = await replaceRoleCapabilities(selectedRole.value.id, {
+            capability_keys: selectedCapabilities.value
+        });
         roles.value = (roles.value ?? []).map((role) => (role.id === updated.id ? updated : role));
         capabilitiesVisible.value = false;
-    } catch (caught) {
-        actionError.value = caught;
-    } finally {
-        saving.value = false;
-    }
-}
-
-async function submitAssign(): Promise<void> {
-    if (!selectedRole.value || !subjectId.value.trim()) return;
-    saving.value = true;
-    actionError.value = null;
-    try {
-        await assignRole(selectedRole.value.id, { subject_type: 'identity', subject_id: subjectId.value.trim() });
-        assignVisible.value = false;
     } catch (caught) {
         actionError.value = caught;
     } finally {
@@ -117,7 +108,7 @@ onMounted(() => void load());
         <template #actions>
             <Button v-if="canManage" icon="pi pi-plus" :label="t('workbenches.permissions.createRole')" @click="createVisible = true" />
         </template>
-        <ApiErrorMessage v-if="actionError && !createVisible && !capabilitiesVisible && !assignVisible" :error="actionError" />
+        <ApiErrorMessage v-if="actionError && !createVisible && !capabilitiesVisible" :error="actionError" />
         <PageState v-if="loading && !roles" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" />
         <PageState v-else-if="roles?.length === 0" state="empty" :title="t('workbenches.permissions.empty')" />
@@ -131,7 +122,13 @@ onMounted(() => void load());
                 <div class="flex flex-wrap gap-2">
                     <Button v-if="canManage" :label="t('workbenches.permissions.capabilities')" icon="pi pi-key" severity="secondary" @click="openCapabilities(role)" />
                     <Button v-if="canAssign" :label="t('workbenches.permissions.assign')" icon="pi pi-user-plus" severity="secondary" @click="openAssign(role)" />
-                    <ConfirmAction v-if="canManage && !role.system" :label="t('workbenches.permissions.deleteRole')" :header="t('workbenches.permissions.deleteRole')" :message="t('workbenches.permissions.deleteConfirm', { name: role.name })" @confirmed="removeRole(role)" />
+                    <ConfirmAction
+                        v-if="canManage && !role.system"
+                        :label="t('workbenches.permissions.deleteRole')"
+                        :header="t('workbenches.permissions.deleteRole')"
+                        :message="t('workbenches.permissions.deleteConfirm', { name: role.name })"
+                        @confirmed="removeRole(role)"
+                    />
                 </div>
             </SurfaceCard>
         </div>
@@ -150,12 +147,6 @@ onMounted(() => void load());
             <ApiErrorMessage v-if="actionError" :error="actionError" />
             <MultiSelect v-model="selectedCapabilities" :options="capabilityKeys" filter display="chip" class="w-full" />
             <template #footer><Button :label="t('workbenches.save')" :loading="saving" @click="saveCapabilities" /></template>
-        </FormDialogShell>
-
-        <FormDialogShell v-model="assignVisible" :title="t('workbenches.permissions.assign')">
-            <ApiErrorMessage v-if="actionError" :error="actionError" />
-            <InputText v-model="subjectId" :placeholder="t('workbenches.subjectId')" class="w-full" />
-            <template #footer><Button :label="t('workbenches.permissions.assign')" :loading="saving" :disabled="!subjectId.trim()" @click="submitAssign" /></template>
         </FormDialogShell>
     </PageShell>
 </template>

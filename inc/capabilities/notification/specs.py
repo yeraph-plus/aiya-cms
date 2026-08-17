@@ -21,11 +21,15 @@ _KEY = re.compile(r"^[a-z0-9]+(?:\.[a-z0-9_]+)+$")
 _TEMPLATE_KEY = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 CHANNELS = ("email", "sms")
 SENSITIVITIES = ("normal", "sensitive")
+# Keep the worker retry budget in code so notification delivery does not rely
+# on an environment-specific default.  Identity challenge notifications use
+# this same budget explicitly in ``notification.auth``.
+NOTIFICATION_DELIVERY_MAX_ATTEMPTS = 5
 
 
 @dataclass(frozen=True, slots=True)
 class DeliveryPolicy:
-    max_attempts: int = 5
+    max_attempts: int = NOTIFICATION_DELIVERY_MAX_ATTEMPTS
     base_delay_seconds: float = 60.0
     max_delay_seconds: float = 3600.0
     unknown_requires_manual: bool = True

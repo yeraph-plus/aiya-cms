@@ -4,7 +4,7 @@
     "exclude": ["src/assets/**"],
     "compilerOptions": {
         "composite": true,
-        "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+        "tsBuildInfoFile": "../.tmp/admin-tsconfig.app.tsbuildinfo",
         "baseUrl": ".",
         "paths": {
             "@/*": ["./src/*"]

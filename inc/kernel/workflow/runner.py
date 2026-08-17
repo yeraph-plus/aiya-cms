@@ -143,6 +143,18 @@ class WorkflowRunner:
         self._registry = registry
         self._clock = clock
         self._metrics = metrics
+        self._counters = (
+            {
+                name: metrics.counter(name)
+                for name in (
+                    "kernel.workflow.claimed",
+                    "kernel.workflow.advanced",
+                    "kernel.workflow.failed",
+                )
+            }
+            if metrics
+            else {}
+        )
 
     async def start(  # type: ignore[return]
         self,
@@ -314,6 +326,8 @@ class WorkflowRunner:
                 now=self._clock.utc_now(),
             )
             await claim_uow.commit()
+        if self._counters:
+            self._counters["kernel.workflow.claimed"].inc(len(instances))
 
         advanced = 0
         for instance in instances:
@@ -322,7 +336,11 @@ class WorkflowRunner:
             try:
                 await self.advance(instance.id)
                 advanced += 1
+                if self._counters:
+                    self._counters["kernel.workflow.advanced"].inc()
             except KernelError:
+                if self._counters:
+                    self._counters["kernel.workflow.failed"].inc()
                 raise
         return advanced
 

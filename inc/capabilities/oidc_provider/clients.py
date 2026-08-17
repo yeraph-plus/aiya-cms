@@ -33,6 +33,7 @@ from inc.kernel.events import EventEnvelope, OutboxWriter
 from inc.kernel.time import Clock
 
 AUDIT_EVENT_KEY = "audit.entry.recorded.v1"
+ADMIN_OIDC_CLIENT_ID = "admin"
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "local.host"}
 
@@ -174,11 +175,16 @@ class RegisterClient:
         trusted: bool = False,
         allow_refresh: bool = True,
         client_id: str | None = None,
+        initial_secret: str | None = None,
     ) -> ClientRegistrationResult:
         if client_type not in ("public", "confidential"):
             raise OidcError("invalid_request", "client_type must be public or confidential")
         if not redirect_uris:
             raise OidcError("invalid_request", "at least one redirect uri is required")
+        if initial_secret is not None and client_type != "confidential":
+            raise OidcError("invalid_request", "public clients do not accept a secret")
+        if initial_secret is not None and len(initial_secret) < 32:
+            raise OidcError("invalid_request", "confidential client secret is too short")
         for uri in redirect_uris + (post_logout_redirect_uris or []):
             _require_valid_redirect_uri(uri)
         scopes = allowed_scopes or ["openid", "profile", "email"]
@@ -208,7 +214,7 @@ class RegisterClient:
             )
             uow.session.add(client)
             if client_type == "confidential":
-                client_secret = secrets.token_urlsafe(48)
+                client_secret = initial_secret or secrets.token_urlsafe(48)
                 uow.session.add(
                     OidcClientSecret(
                         client_id=unique_client_id,
@@ -309,6 +315,11 @@ class DisableClient:
             )
             if client is None:
                 raise OidcError("invalid_request", "unknown client")
+            if client.client_id == ADMIN_OIDC_CLIENT_ID:
+                raise OidcError(
+                    "invalid_request",
+                    "the administrator OIDC client is protected and cannot be disabled",
+                )
             client.status = "disabled"
             await _append_audit(
                 uow,

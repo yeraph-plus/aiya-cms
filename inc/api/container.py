@@ -17,7 +17,14 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from inc.adapters import ContentBatchExists, resolve_adapters
+from inc.adapters import (
+    ContentBatchExists,
+    ProviderCatalog,
+    ProviderResolver,
+    resolve_adapters,
+    resolve_provider_catalogs,
+)
+from inc.adapters.content.markdown_assets import ReadyMarkdownAssetsPolicy
 from inc.adapters.registry import (
     ADAPTER_REQUIREMENTS,
     KNOWN_ADAPTERS,
@@ -25,6 +32,7 @@ from inc.adapters.registry import (
     PORT_CONTRACTS,
 )
 from inc.api.config import DEFAULT_ISSUER
+from inc.api.retention import ManagementRetentionActivity
 from inc.capabilities.access import (
     AccessDiagnostics,
     AccessQueries,
@@ -41,8 +49,15 @@ from inc.capabilities.assets import (
 )
 from inc.capabilities.audit import AuditInboxHandler, AuditQueries, AuditRetentionActivity
 from inc.capabilities.comments import CommentQueries
+from inc.capabilities.community import (
+    GENERAL_DISCUSSION_TEMPLATE,
+    CommunityDiagnostics,
+    CommunityQueries,
+    DiscussionTemplateRegistry,
+)
 from inc.capabilities.content import (
     ContentDiagnostics,
+    ContentPublicationPolicy,
     ContentPublishScanner,
     ContentQueries,
     ContentTypeRegistry,
@@ -61,22 +76,29 @@ from inc.capabilities.membership import (
 )
 from inc.capabilities.membership import (
     ExpireSubscription,
+    MembershipAdminService,
     MembershipDiagnostics,
     MembershipLevelRegistry,
+    MembershipLevelSpec,
     MembershipQueries,
 )
 from inc.capabilities.notification import (
+    AUTH_NOTIFICATION_SPECS,
+    AuthChallengeNotifier,
     DeliverActivity,
     NotificationDiagnostics,
     NotificationQueries,
+    NotificationRetentionActivity,
     NotificationSpecRegistry,
     build_deliver_workflow_spec,
+)
+from inc.capabilities.notification import (
+    CommandContext as NotificationCommandContext,
 )
 from inc.capabilities.oidc_provider import (
     AuthorizationService,
     ClientQueries,
     GrantConsentService,
-    InMemorySigningKeyStore,
     KeyService,
     LogoutService,
     OidcDiagnostics,
@@ -100,6 +122,7 @@ from inc.capabilities.points import (
 from inc.capabilities.points import (
     ExpireBuckets,
     PointBehaviorRegistry,
+    PointsAdminService,
     PointsDiagnostics,
     PointsQueries,
 )
@@ -112,6 +135,7 @@ from inc.capabilities.taxonomy import (
     TaxonomyDiagnostics,
     TaxonomyQueries,
 )
+from inc.features.auth.api import AuthService
 from inc.kernel.boot import AppManifest, CapabilitySpec, FeatureSpec
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import ErrorCategory, KernelError
@@ -121,8 +145,8 @@ from inc.kernel.events import (
     OutboxDispatcher,
     OutboxWriter,
 )
-from inc.kernel.observability import AdminSummaryRegistry, DiagnosticRegistry
-from inc.kernel.security import Argon2PasswordHasher
+from inc.kernel.observability import AdminSummaryRegistry, DiagnosticRegistry, MetricRegistry
+from inc.kernel.security import Argon2PasswordHasher, SensitiveValueProtector
 from inc.kernel.tasks import (
     CronRegistry,
     CronScheduler,
@@ -144,6 +168,7 @@ CAPABILITY_DEFINITIONS: dict[str, tuple[str, str]] = {
     "settings": ("inc.capabilities.settings.definition", "spec"),
     "content": ("inc.capabilities.content.definition", "spec"),
     "comments": ("inc.capabilities.comments.definition", "spec"),
+    "community": ("inc.capabilities.community.definition", "spec"),
     "taxonomy": ("inc.capabilities.taxonomy.definition", "spec"),
     "assets": ("inc.capabilities.assets.definition", "spec"),
     "notification": ("inc.capabilities.notification.definition", "spec"),
@@ -161,6 +186,7 @@ STAT_PROVIDER_MODULES: dict[str, str] = {
     "settings": "inc.capabilities.settings.stat",
     "content": "inc.capabilities.content.stat",
     "comments": "inc.capabilities.comments.stat",
+    "community": "inc.capabilities.community.stat",
     "taxonomy": "inc.capabilities.taxonomy.stat",
     "assets": "inc.capabilities.assets.stat",
     "notification": "inc.capabilities.notification.stat",
@@ -175,8 +201,10 @@ FEATURE_DEFINITIONS: dict[str, tuple[str, str]] = {
     "page": ("inc.features.page.definition", "spec"),
     "site_settings": ("inc.features.site_settings.definition", "spec"),
     "check_in": ("inc.features.check_in.definition", "spec"),
+    "auth": ("inc.features.auth.definition", "spec"),
     "point_purchase": ("inc.features.point_purchase.definition", "spec"),
     "membership_purchase": ("inc.features.membership_purchase.definition", "spec"),
+    "membership_grants": ("inc.features.membership_grants.definition", "spec"),
     "site_cleanup": ("inc.features.site_cleanup.definition", "spec"),
     "content_engagement": ("inc.features.content_engagement.definition", "spec"),
 }
@@ -223,13 +251,30 @@ ROUTER_BINDINGS: dict[str, RouterBinding] = {
     "health": RouterBinding(module=None),
     "auth": RouterBinding(
         module="inc.api.http.routers_auth",
+        capabilities=("identity", "oidc_provider"),
+        features=("auth",),
+    ),
+    "me": RouterBinding(
+        module="inc.api.http.routers_me",
         capabilities=("identity", "assets", "settings", "points"),
         features=("check_in",),
+    ),
+    "admin_session": RouterBinding(
+        module="inc.api.http.routers_admin_session", capabilities=("identity", "access")
     ),
     "identity": RouterBinding(module="inc.api.http.routers_identity", capabilities=("identity",)),
     "access": RouterBinding(module="inc.api.http.routers_access", capabilities=("access",)),
     "content": RouterBinding(module="inc.api.http.routers_content", capabilities=("content",)),
     "comments": RouterBinding(module="inc.api.http.routers_comments", capabilities=("comments",)),
+    "comments_admin": RouterBinding(
+        module="inc.api.http.routers_comments_admin", capabilities=("comments",)
+    ),
+    "community": RouterBinding(
+        module="inc.api.http.routers_community", capabilities=("community",)
+    ),
+    "community_admin": RouterBinding(
+        module="inc.api.http.routers_community_admin", capabilities=("community",)
+    ),
     "content_public": RouterBinding(
         module="inc.api.http.routers_content_public",
         capabilities=("content", "engagement"),
@@ -311,20 +356,23 @@ class Services:
 
     uow_factory: UoWFactory
     clock: Clock
+    metrics: MetricRegistry
     outbox: OutboxWriter
     dispatcher: OutboxDispatcher
     runner: WorkflowRunner
     identity_queries: IdentityQueries
     access_queries: AccessQueries
     authorize: AuthorizeService
-    keys: KeyService
+    keys: KeyService | None
     hasher: Argon2PasswordHasher
     permission_registry: PermissionRegistry
     content_types: ContentTypeRegistry
+    community_templates: DiscussionTemplateRegistry
     dimensions: DimensionRegistry
     settings_groups: SettingGroupRegistry
     content_queries: ContentQueries
     comments_queries: CommentQueries | None
+    community_queries: CommunityQueries | None
     taxonomy_queries: TaxonomyQueries
     settings_queries: SettingsQueries
     audit_queries: AuditQueries
@@ -332,13 +380,17 @@ class Services:
     behaviors: PointBehaviorRegistry
     points_queries: PointsQueries
     payments_queries: PaymentsQueries
+    points_admin: PointsAdminService | None = None
     membership_levels: MembershipLevelRegistry | None = None
+    membership_admin: MembershipAdminService | None = None
     membership_queries: MembershipQueries | None = None
     me: Any | None = None
+    auth: AuthService | None = None
     adapters: dict[str, Any] = field(default_factory=dict)
     settings: Any = None
     asset_providers: dict[str, Any] = field(default_factory=dict)
     asset_queries: AssetQueries | None = None
+    content_publication_policies: dict[str, ContentPublicationPolicy] = field(default_factory=dict)
     scanner: ContentPublishScanner | None = None
     oidc: dict[str, Any] | None = None
     oidc_grants: GrantConsentService | None = None
@@ -347,13 +399,30 @@ class Services:
     payment_webhook_secrets: dict[str, str] = field(default_factory=dict)
     engagement_commands: EngagementCommands | None = None
     engagement_queries: EngagementQueries | None = None
+    community_diagnostics: CommunityDiagnostics | None = None
     notification_queries: NotificationQueries | None = None
     notification_specs: NotificationSpecRegistry | None = None
     notification_resolver: Any | None = None
     notification_providers: dict[str, tuple[Any, ...]] = field(default_factory=dict)
+    provider_catalogs: dict[str, ProviderCatalog[Any]] = field(default_factory=dict)
+    provider_resolvers: dict[str, ProviderResolver[Any]] = field(default_factory=dict)
+    notification_auth: AuthChallengeNotifier | None = None
     admin_summaries: AdminSummaryRegistry | None = None
     task_worker: TaskWorker | None = None
     cron_scheduler: CronScheduler | None = None
+    admin_session_store: Any | None = None
+
+    async def selected_provider_key(self, port: str) -> str:
+        """Return the provider selected by current persisted settings."""
+
+        resolver = self.provider_resolvers.get(port)
+        if resolver is None:
+            raise KernelError(
+                code="kernel.provider_unbound",
+                category=ErrorCategory.DEPENDENCY_UNAVAILABLE,
+                message=f"no provider resolver is bound for {port!r}",
+            )
+        return await resolver.selected_key()
 
 
 class ApplicationContainer:
@@ -370,6 +439,7 @@ class ApplicationContainer:
         self._manifest = manifest
         self._uow_factory = uow_factory
         self._clock = clock
+        self.metrics = MetricRegistry()
         self._settings = settings
         self._frozen = False
         self._started = False
@@ -385,6 +455,9 @@ class ApplicationContainer:
         self.cron_registry = CronRegistry()
         self.permission_registry = PermissionRegistry()
         self.content_types = ContentTypeRegistry(permission_keys=self.permission_registry)
+        self.community_templates = DiscussionTemplateRegistry(
+            permission_keys=self.permission_registry
+        )
         self.dimensions = DimensionRegistry(permission_keys=self.permission_registry)
         self.settings_groups = SettingGroupRegistry()
         self.behaviors = PointBehaviorRegistry()
@@ -557,6 +630,11 @@ class ApplicationContainer:
 
             for key, schema in COMMENT_EVENT_SCHEMAS.items():
                 self.schema_registry.register(key, schema)
+        if "community" in capabilities:
+            from inc.capabilities.community.events import COMMUNITY_EVENT_SCHEMAS
+
+            for key, schema in COMMUNITY_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
         if "taxonomy" in capabilities:
             from inc.capabilities.taxonomy.events import TAXONOMY_EVENT_SCHEMAS
 
@@ -605,8 +683,12 @@ class ApplicationContainer:
             self.permission_registry.register_alias("admin.dashboard.read", owner="access")
 
     def _register_declarations(self) -> None:
+        capabilities = set(self._manifest.capabilities)
         for name in self._manifest.features:
             module = self._feature_modules[name]
+            if "notification" in capabilities:
+                for notification_spec in getattr(module, "notification_specs", ()):
+                    self.notification_specs.register(notification_spec)
             content_type = getattr(module, "content_type_spec", None)
             if content_type is not None:
                 self.content_types.register(content_type)
@@ -616,13 +698,50 @@ class ApplicationContainer:
                 self.behaviors.register(behavior)
             for level in getattr(module, "level_specs", ()):
                 self.membership_levels.register(level)
+        if "notification" in capabilities:
+            for notification_spec in AUTH_NOTIFICATION_SPECS:
+                self.notification_specs.register(notification_spec)
+        # The management plane owns a small, production-safe membership
+        # catalog even though it deliberately does not enable the payment
+        # purchase feature.  Keep the declaration explicit and stable so
+        # subscriptions can be granted by administrators without importing
+        # the dev-only payment workflow.
+        if "membership" in self._manifest.capabilities and not self.membership_levels.specs():
+            self.membership_levels.register(
+                MembershipLevelSpec(
+                    key="basic",
+                    display_name="Basic",
+                    tier_rank=1,
+                    cycle_days=30,
+                    grant_points=100,
+                    renewal_allowed=True,
+                )
+            )
+        # The admin management plane does not enable the payment-backed
+        # membership_purchase workflow, but subscriptions still need the
+        # stable grant behavior consumed by the membership PointsLedger port.
+        # Keep this explicit so the behavior is present without importing any
+        # payment code into the production admin profile.
+        if "membership" in self._manifest.capabilities and "payments" not in capabilities:
+            from inc.features.membership_grants.definition import behavior_specs
+
+            for behavior in behavior_specs:
+                if not any(item.key == behavior.key for item in self.behaviors.specs()):
+                    self.behaviors.register(behavior)
         if "site_settings" in self._manifest.features:
             from inc.features.site_settings.definition import (
                 build_site_setting_group_specs,
             )
 
-            for spec in build_site_setting_group_specs():
+            setting_specs = build_site_setting_group_specs()
+            if "payments" not in capabilities:
+                setting_specs = tuple(
+                    spec for spec in setting_specs if spec.group_key != "payments"
+                )
+            for spec in setting_specs:
                 self.settings_groups.register(spec)
+        if "community" in self._manifest.capabilities:
+            self.community_templates.register(GENERAL_DISCUSSION_TEMPLATE)
 
     def _build_services(self) -> Services:
         capabilities = set(self._manifest.capabilities)
@@ -630,12 +749,18 @@ class ApplicationContainer:
         self._outbox = outbox
         hasher = Argon2PasswordHasher()
         identity_queries = IdentityQueries(uow_factory=self._uow_factory)
-        authorize = AuthorizeService(uow_factory=self._uow_factory, clock=self._clock)
+        authorize = AuthorizeService(
+            uow_factory=self._uow_factory,
+            clock=self._clock,
+            permissions=self.permission_registry,
+        )
         access_queries = AccessQueries(uow_factory=self._uow_factory)
         content_queries = ContentQueries(uow_factory=self._uow_factory, types=self.content_types)
         comments_queries = (
             CommentQueries(uow_factory=self._uow_factory) if "comments" in capabilities else None
         )
+        community_queries: CommunityQueries | None = None
+        community_diagnostics: CommunityDiagnostics | None = None
         engagement_commands: EngagementCommands | None = None
         engagement_queries: EngagementQueries | None = None
         if "engagement" in capabilities:
@@ -658,10 +783,14 @@ class ApplicationContainer:
         execution_queries = ExecutionLogQueries(uow_factory=self._uow_factory)
         execution_cleaner = ExecutionLogCleaner(self._uow_factory)
         runner = WorkflowRunner(
-            uow_factory=self._uow_factory, registry=self.workflow_registry, clock=self._clock
+            uow_factory=self._uow_factory,
+            registry=self.workflow_registry,
+            clock=self._clock,
+            metrics=self.metrics,
         )
 
         asset_queries: AssetQueries | None = None
+        content_publication_policies: dict[str, ContentPublicationPolicy] = {}
         asset_command_ctx: AssetCommandContext | None = None
 
         if "payments" in capabilities and _binds_dev_payment(self._manifest):
@@ -674,7 +803,11 @@ class ApplicationContainer:
         scanner: ContentPublishScanner | None = None
         if "content" in capabilities:
             publish_activity = ScheduledPublishActivity(
-                clock=self._clock, outbox=outbox, actor_id="system"
+                clock=self._clock,
+                outbox=outbox,
+                types=self.content_types,
+                publication_policies=content_publication_policies,
+                actor_id="system",
             )
             register_publish_workflow(self.workflow_registry, activity=publish_activity)
             scanner = ContentPublishScanner(
@@ -701,23 +834,111 @@ class ApplicationContainer:
             session_revoker=session_revoker,
             settings_queries=settings_queries,
         )
+        provider_catalogs = resolve_provider_catalogs(
+            self,
+            capabilities=capabilities,
+            authenticator=CredentialAuthenticator(uow_factory=self._uow_factory, hasher=hasher),
+            identity_queries=identity_queries,
+            authorize=authorize,
+            content_queries=content_queries,
+            session_revoker=session_revoker,
+            settings_queries=settings_queries,
+        )
+        provider_resolvers: dict[str, ProviderResolver[Any]] = {}
+        for port, catalog in provider_catalogs.items():
+            bound = next(
+                (
+                    provider
+                    for bound_port, adapter_key in self._manifest.adapters
+                    if bound_port == port
+                    for provider in (
+                        catalog.get(adapter_key) or catalog.get(adapter_key.split(".", 1)[-1]),
+                    )
+                    if provider is not None
+                ),
+                None,
+            )
+            default_key = getattr(bound, "key", None)
+            if port == "notification.email":
+                provider_resolvers[port] = ProviderResolver(
+                    catalog=catalog,
+                    settings_queries=settings_queries,
+                    settings_group="notification",
+                    settings_field="email_provider",
+                    default_key=default_key,
+                )
+            elif port == "assets.object_storage":
+                provider_resolvers[port] = ProviderResolver(
+                    catalog=catalog,
+                    settings_queries=settings_queries,
+                    settings_group="object_storage",
+                    settings_field="storage_provider",
+                    default_key=default_key,
+                )
+            elif port == "payments.provider":
+                provider_resolvers[port] = ProviderResolver(
+                    catalog=catalog,
+                    settings_queries=settings_queries,
+                    settings_group="payments",
+                    settings_field="provider",
+                    default_key=default_key,
+                )
         self._validate_required_ports(adapters)
+        if "community" in capabilities:
+            community_queries = CommunityQueries(
+                uow_factory=self._uow_factory,
+                templates=self.community_templates,
+                author_port=adapters["community.author"],
+            )
+            community_diagnostics = CommunityDiagnostics(
+                uow_factory=self._uow_factory,
+                templates=self.community_templates,
+                clock=self._clock,
+                author_port=adapters["community.author"],
+            )
+            self.diagnostic_registry.register(community_diagnostics)
 
         notification_queries: NotificationQueries | None = None
         notification_resolver: Any | None = None
         notification_providers: dict[str, tuple[Any, ...]] = {}
+        notification_auth: AuthChallengeNotifier | None = None
         if "notification" in capabilities:
+            sensitive_value_protector = SensitiveValueProtector.from_secret(
+                getattr(
+                    self._settings,
+                    "admin_session_secret",
+                    "dev-admin-session-secret-change-me",
+                )
+            )
             notification_queries = NotificationQueries(uow_factory=self._uow_factory)
             notification_resolver = adapters["notification.recipient"]
             notification_providers = {
-                "email": tuple(adapters["notification.email"]),
+                "email": provider_resolvers.get(
+                    "notification.email", adapters["notification.email"]
+                ),
             }
+            notification_auth = AuthChallengeNotifier(
+                NotificationCommandContext(
+                    uow_factory=self._uow_factory,
+                    clock=self._clock,
+                    outbox=outbox,
+                    specs=self.notification_specs,
+                    resolver=notification_resolver,
+                    providers=notification_providers,
+                    runner=runner,
+                    permissions=frozenset(self.permission_registry.keys()),
+                    actor_id="system",
+                    sensitive_value_protector=sensitive_value_protector,
+                )
+            )
             deliver_activity = DeliverActivity(
                 clock=self._clock,
                 outbox=outbox,
                 specs=self.notification_specs,
                 resolver=notification_resolver,
                 providers=notification_providers,
+                sensitive_value_protector=sensitive_value_protector,
+                metrics=self.metrics,
             )
             self.workflow_registry.register(build_deliver_workflow_spec(activity=deliver_activity))
             self.diagnostic_registry.register(
@@ -728,10 +949,37 @@ class ApplicationContainer:
                 )
             )
 
+        auth_service: AuthService | None = None
+        if "auth" in self._manifest.features:
+            if notification_auth is None:
+                raise _fail(
+                    "kernel.feature_requires_missing",
+                    "feature 'auth' requires the notification capability and its delivery port",
+                )
+            auth_service = AuthService(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                hasher=hasher,
+                identity_queries=identity_queries,
+                access_queries=access_queries,
+                permission_registry=self.permission_registry,
+                notification_auth=notification_auth,
+            )
+
         asset_providers: dict[str, Any] = {}
         if "assets" in capabilities:
-            asset_provider = adapters["assets.object_storage"]
-            asset_providers[asset_provider.key] = asset_provider
+            asset_catalog = provider_catalogs.get("assets.object_storage")
+            if asset_catalog is not None:
+                asset_providers.update(
+                    {
+                        registration.key: registration.provider
+                        for registration in asset_catalog.registrations()
+                    }
+                )
+            else:
+                asset_provider = adapters["assets.object_storage"]
+                asset_providers[asset_provider.key] = asset_provider
             asset_command_ctx = AssetCommandContext(
                 uow_factory=self._uow_factory,
                 clock=self._clock,
@@ -741,18 +989,52 @@ class ApplicationContainer:
             )
             register_asset_workflows(self.workflow_registry, ctx=asset_command_ctx)
             asset_queries = AssetQueries(ctx=asset_command_ctx, clock=self._clock)
+            content_publication_policies["assets.ready_markdown.v1"] = ReadyMarkdownAssetsPolicy(
+                asset_queries
+            )
+
+        if "content" in capabilities:
+            for content_type in self.content_types.specs():
+                key = content_type.publication_policy_key
+                if content_type.requires_ready_markdown_assets and (
+                    key is None or key not in content_publication_policies
+                ):
+                    raise _fail(
+                        "kernel.port_unbound",
+                        "content publication policy "
+                        f"{key!r} is not bound for {content_type.type_name}",
+                    )
 
         payment_providers: dict[str, Any] = {}
         payment_webhook_secrets: dict[str, str] = {}
-        bound_provider = adapters.get("payments.provider")
-        if bound_provider is not None:
-            from inc.adapters.payments.dev_fake import DEV_FAKE_WEBHOOK_SECRET
-
-            payment_providers[bound_provider.key] = bound_provider
-            if bound_provider.key == "dev_fake":
-                payment_webhook_secrets[bound_provider.key] = DEV_FAKE_WEBHOOK_SECRET
+        payment_catalog = provider_catalogs.get("payments.provider")
+        if payment_catalog is not None:
+            payment_providers.update(
+                {
+                    registration.key: registration.provider
+                    for registration in payment_catalog.registrations()
+                }
+            )
+        else:
+            bound_provider = adapters.get("payments.provider")
+            if bound_provider is not None:
+                payment_providers[bound_provider.key] = bound_provider
+        for provider_key, provider in payment_providers.items():
+            webhook_secret = getattr(provider, "webhook_secret", None)
+            if isinstance(webhook_secret, str) and webhook_secret:
+                payment_webhook_secrets[provider_key] = webhook_secret
 
         points_queries = PointsQueries(uow_factory=self._uow_factory, behaviors=self.behaviors)
+        points_admin = (
+            PointsAdminService(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                behaviors=self.behaviors,
+            )
+            if "points" in capabilities
+            else None
+        )
         payments_queries = PaymentsQueries(uow_factory=self._uow_factory)
 
         points_expire: ExpireBuckets | None = None
@@ -847,6 +1129,7 @@ class ApplicationContainer:
 
         membership_queries: MembershipQueries | None = None
         membership_ctx: MembershipCommandContext | None = None
+        membership_admin: MembershipAdminService | None = None
         if "membership" in capabilities:
             membership_ctx = MembershipCommandContext(
                 uow_factory=self._uow_factory,
@@ -861,6 +1144,12 @@ class ApplicationContainer:
             )
             membership_queries = MembershipQueries(
                 uow_factory=self._uow_factory, levels=self.membership_levels
+            )
+            membership_admin = MembershipAdminService(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                levels=self.membership_levels,
             )
             self.diagnostic_registry.register(
                 MembershipDiagnostics(
@@ -910,11 +1199,6 @@ class ApplicationContainer:
                 build_membership_purchase_workflow_spec(ctx=membership_purchase_ctx)
             )
 
-        keys = KeyService(
-            uow_factory=self._uow_factory,
-            store=InMemorySigningKeyStore(),
-            clock=self._clock,
-        )
         if "site_cleanup" in features:
             from inc.features.site_cleanup import SiteCleanupActivity
             from inc.features.site_cleanup.definition import RETENTION_CRON_KEY
@@ -939,10 +1223,40 @@ class ApplicationContainer:
                 schedule="0 4 * * *",
                 handler=cleanup_activity,
             )
+        elif {"audit", "settings"}.issubset(capabilities):
+            self._register_cron(
+                key="management.retention.v1",
+                schedule="0 4 * * *",
+                handler=ManagementRetentionActivity(
+                    settings=settings_queries,
+                    execution_logs=execution_cleaner,
+                    audit=AuditRetentionActivity(
+                        uow_factory=self._uow_factory,
+                        outbox=outbox,
+                        clock=self._clock,
+                    ),
+                    clock=self._clock,
+                ),
+            )
+        if "notification" in capabilities:
+            self._register_cron(
+                key="notification.retention.v1",
+                schedule="15 4 * * *",
+                handler=NotificationRetentionActivity(
+                    settings=settings_queries,
+                    clock=self._clock,
+                ),
+            )
         oidc: dict[str, Any] | None = None
         oidc_grants: GrantConsentService | None = None
         oidc_client_queries: ClientQueries | None = None
+        keys: KeyService | None = None
         if "oidc_provider" in capabilities:
+            keys = KeyService(
+                uow_factory=self._uow_factory,
+                store=adapters["oidc.signing_keys"],
+                clock=self._clock,
+            )
             service_ctx = ServiceContext(
                 uow_factory=self._uow_factory,
                 clock=self._clock,
@@ -996,6 +1310,7 @@ class ApplicationContainer:
             schema_registry=self.schema_registry,
             handler_registry=self.handler_registry,
             clock=self._clock,
+            metrics=self.metrics,
         )
 
         if "identity" in capabilities:
@@ -1069,10 +1384,12 @@ class ApplicationContainer:
             uow_factory=self._uow_factory,
             registry=self.task_registry,
             clock=self._clock,
+            metrics=self.metrics,
         )
         self.services = Services(
             uow_factory=self._uow_factory,
             clock=self._clock,
+            metrics=self.metrics,
             outbox=outbox,
             dispatcher=dispatcher,
             runner=runner,
@@ -1083,6 +1400,7 @@ class ApplicationContainer:
             hasher=hasher,
             permission_registry=self.permission_registry,
             content_types=self.content_types,
+            community_templates=self.community_templates,
             dimensions=self.dimensions,
             settings_groups=self.settings_groups,
             adapters=adapters,
@@ -1097,17 +1415,26 @@ class ApplicationContainer:
             notification_specs=self.notification_specs if "notification" in capabilities else None,
             notification_resolver=notification_resolver,
             notification_providers=notification_providers,
+            provider_catalogs=provider_catalogs,
+            provider_resolvers=provider_resolvers,
+            notification_auth=notification_auth,
             admin_summaries=self.admin_summary_registry,
             settings_queries=settings_queries,
             asset_queries=asset_queries,
+            content_publication_policies=content_publication_policies,
             audit_queries=audit_queries,
             execution_queries=execution_queries,
             behaviors=self.behaviors,
             points_queries=points_queries,
             payments_queries=payments_queries,
+            points_admin=points_admin,
+            community_queries=community_queries,
+            community_diagnostics=community_diagnostics,
             membership_levels=self.membership_levels,
+            membership_admin=membership_admin,
             membership_queries=membership_queries,
             me=me_service,
+            auth=auth_service,
             scanner=scanner,
             oidc=oidc,
             oidc_grants=oidc_grants,
@@ -1160,6 +1487,7 @@ class ApplicationContainer:
             self.cron_registry,
             self.permission_registry,
             self.content_types,
+            self.community_templates,
             self.dimensions,
             self.settings_groups,
             self.behaviors,
@@ -1177,6 +1505,43 @@ class ApplicationContainer:
     def frozen(self) -> bool:
         return self._frozen
 
+    @property
+    def manifest(self) -> AppManifest:
+        """Return the immutable runtime declaration selected by the composition root."""
+
+        return self._manifest
+
+    @property
+    def provider_catalogs(self) -> dict[str, ProviderCatalog[Any]]:
+        """Expose boot-time provider catalogs from the composition root.
+
+        The catalogs are built and frozen with the service graph.  Keeping this
+        read-only access on the root makes the startup contract observable
+        without requiring callers to reach through a concrete service object.
+        """
+
+        services = self.services
+        if services is None:
+            raise _fail("kernel.container_not_built", "container has not been built")
+        return services.provider_catalogs
+
+    @property
+    def provider_resolvers(self) -> dict[str, ProviderResolver[Any]]:
+        """Expose settings-backed provider resolvers from the composition root."""
+
+        services = self.services
+        if services is None:
+            raise _fail("kernel.container_not_built", "container has not been built")
+        return services.provider_resolvers
+
+    async def selected_provider_key(self, port: str) -> str:
+        """Resolve the currently selected provider for a registered port."""
+
+        services = self.services
+        if services is None:
+            raise _fail("kernel.container_not_built", "container has not been built")
+        return await services.selected_provider_key(port)
+
     # -- lifecycle --------------------------------------------------------
 
     async def start(self) -> None:
@@ -1187,6 +1552,8 @@ class ApplicationContainer:
             raise _fail("kernel.container_not_frozen", "container must be frozen before start")
         if self._started:
             raise _fail("kernel.container_already_started", "container already started")
+        if services.membership_admin is not None:
+            await services.membership_admin.hydrate_persisted_levels()
         sleep = getattr(self._settings, "worker_sleep_seconds", 1.0)
         if "outbox" in self._manifest.workers:
             self._tasks.append(
@@ -1257,6 +1624,9 @@ def _binds_dev_payment(manifest: AppManifest) -> bool:
     )
 
 
+PRODUCTION_DENIED_ADAPTERS = frozenset({"payments.dev_fake", "oidc.in_memory_keys"})
+
+
 def build_container(
     *,
     manifest: AppManifest,
@@ -1264,6 +1634,23 @@ def build_container(
     clock: Clock,
     settings: Any,
 ) -> ApplicationContainer:
+    denied_adapter = next(
+        (adapter for _port, adapter in manifest.adapters if adapter in PRODUCTION_DENIED_ADAPTERS),
+        None,
+    )
+    if getattr(settings, "environment", None) == "production" and denied_adapter is not None:
+        raise _fail(
+            "kernel.adapter_production_denied",
+            f"{denied_adapter} must not be bound in production",
+        )
+    if (
+        getattr(settings, "environment", None) == "production"
+        and manifest.name != "management_plane"
+    ):
+        raise _fail(
+            "kernel.production_manifest_denied",
+            "production only supports the management_plane manifest",
+        )
     container = ApplicationContainer(
         manifest=manifest, uow_factory=uow_factory, clock=clock, settings=settings
     )

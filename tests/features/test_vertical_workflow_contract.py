@@ -71,8 +71,6 @@ APPROVAL_SIGNAL = "moderation.approval.v1"
 class PostData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    summary: str | None = None
-
 
 class NotifyVariables(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -276,8 +274,9 @@ async def _create_content(harness: dict[str, Any], *, title: str = "Pending post
         CreateContentInput(
             type_name="post",
             title=title,
-            slug=f"pending-{uuid.uuid4().hex[:6]}",
-            data={"summary": "s"},
+            body="# Pending post",
+            excerpt="s",
+            data={},
         )
     )
     return created.id

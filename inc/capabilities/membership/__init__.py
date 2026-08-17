@@ -8,6 +8,7 @@ diagnostics and the Ports consumed by this capability.
 
 from __future__ import annotations
 
+from inc.capabilities.membership.admin import MembershipAdminService
 from inc.capabilities.membership.commands import CommandContext, ExpireSubscription
 from inc.capabilities.membership.diagnostics import MembershipDiagnostics
 from inc.capabilities.membership.levels import (
@@ -26,6 +27,7 @@ __all__ = [
     "CommandContext",
     "ExpireSubscription",
     "MembershipDiagnostics",
+    "MembershipAdminService",
     "MembershipLevelRegistry",
     "MembershipLevelSpec",
     "MembershipQueries",

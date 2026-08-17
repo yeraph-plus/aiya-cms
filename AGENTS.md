@@ -1,6 +1,6 @@
 # aiya-cms 开发总纲
 
-`context/spec/` 是唯一规格事实来源。新增或改变行为时，必须按“规格 -> 失败测试 -> 实现 -> 集成验证”推进；不维护 ADR、roadmap 或第二套长期规格。
+`context/` 是唯一规格事实来源：后端规格在 `context/spec/`，Astro 用户站规格与设计在 `context/user site spec/`，Vue 管理员端规格在 `context/admin dash spec (SPA)/`。新增或改变行为时，必须按“规格 -> 失败测试 -> 实现 -> 集成验证”推进；三个目录按 owner 分工，不维护 ADR、roadmap、重复合同或第二套长期规格。
 
 ## 架构硬约束
 
@@ -22,11 +22,12 @@
 - `inc/features`：垂直业务声明与持久化工作流；规格见 `context/spec/features.md`。
 - `inc/adapters`：外部 Port 实现库，按 capability 分目录，可被 api 与 feature 使用；规格见 `context/spec/adapters.md`。
 - `inc/api`：应用组合根与 HTTP 适配层；规格见 `context/spec/composition.md` 和 `context/spec/http-openapi.md`。
-- `admin`：Vue 管理员 SPA，只依赖 OpenAPI；规格见 `context/spec/admin.md`。
+- `site`：Astro SSR 用户站，只依赖用户 OpenAPI 与同目录设计合同；规格见 `context/user site spec/`。
+- `admin`：Vue 管理员 SPA，只依赖 OpenAPI；规格见 `context/admin dash spec (SPA)/`。
 - `alembic`：迁移汇总入口；表与 revision 所有权见 `context/spec/kernel/database.md`。
 - `tests`：架构、kernel、capability、feature、API 和端到端测试。
 
-完整阅读顺序和文档状态见 `context/README.md`。修改某项能力时，必须同步该能力规格、迁移、事件/OpenAPI 契约、测试以及管理员消费层。
+完整阅读顺序和文档状态见 `context/README.md`。修改某项能力时，必须同步该能力规格、迁移、事件/OpenAPI 契约、测试以及受影响的用户站/管理员端消费层。
 
 ## 运行与验证
 

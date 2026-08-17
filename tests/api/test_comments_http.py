@@ -43,6 +43,8 @@ async def test_public_read_and_admin_moderation(
     )
     assert listed.status_code == 200, listed.text
     assert listed.json()["items"][0]["id"] == str(comment_id)
+    assert "author" in listed.json()["items"][0]
+    assert "target" in listed.json()["items"][0]
 
     approved = await client.post(f"/api/v1/admin/comments/{comment_id}/approve", headers=headers)
     assert approved.status_code == 200, approved.text

@@ -1,7 +1,7 @@
 """Payment provider adapters.
 
-Implement ``inc.capabilities.payments.ports.PaymentProvider``
-(create_payment / get_payment / verify_webhook / create_refund /
-get_refund with ProviderError classification). Planned integrations are
-declared here as side-effect-free placeholders.
+Each implementation owns its SDK, credentials, timeout, webhook verification
+and provider-error normalization. The manifest chooses exactly one provider
+for the payments Port; ``cms_dev`` is the only profile that uses the fake
+provider.
 """

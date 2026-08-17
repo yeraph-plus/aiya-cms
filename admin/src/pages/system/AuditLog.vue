@@ -4,8 +4,11 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router';
 import { fetchAuditEntries, type AuditEntryDTO, type AuditPageDTO, type AuditQuery } from '@/api/audit';
 import PageState from '@/components/feedback/PageState.vue';
+import FilterBar from '@/components/data/FilterBar.vue';
+import ListPanel from '@/components/data/ListPanel.vue';
 import PageShell from '@/components/shell/PageShell.vue';
 import EntityDrawerShell from '@/components/shell/EntityDrawerShell.vue';
+import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 import PagedTable from '@/components/data/PagedTable.vue';
 
 const { t, locale } = useI18n();
@@ -72,7 +75,10 @@ function restoreFromRoute(): void {
 }
 
 async function syncRoute(): Promise<void> {
-    const nextQuery: LocationQueryRaw = { page: String(page.value), size: String(size.value) };
+    const nextQuery: LocationQueryRaw = {
+        page: String(page.value),
+        size: String(size.value)
+    };
     const values: Array<[keyof typeof filters, string | undefined]> = [
         ['action', filters.action.trim() || undefined],
         ['actor_type', filters.actor_type.trim() || undefined],
@@ -134,7 +140,10 @@ function refresh(): void {
 }
 
 function formatDate(value: string): string {
-    return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+    return new Intl.DateTimeFormat(locale.value, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    }).format(new Date(value));
 }
 
 function detailsText(entry: AuditEntryDTO): string {
@@ -149,9 +158,8 @@ onMounted(() => {
 
 <template>
     <PageShell :title="t('routes.system.audit')" :description="t('workbenches.audit.description')" :loading="loading" @refresh="refresh">
-
-        <div class="card">
-            <form class="grid grid-cols-12 gap-4 items-end" @submit.prevent="applyFilters">
+        <SurfaceCard>
+            <FilterBar :label="t('common.applyFilters')" layout-class="grid grid-cols-12 gap-4 items-end" @submit="applyFilters">
                 <div class="col-span-12 md:col-span-6 xl:col-span-3 flex flex-col gap-2">
                     <label for="audit-action" class="font-medium">{{ t('workbenches.audit.action') }}</label>
                     <InputText id="audit-action" v-model="filters.action" placeholder="settings.update" />
@@ -168,9 +176,6 @@ onMounted(() => {
                     <label for="audit-outcome" class="font-medium">{{ t('workbenches.audit.outcome') }}</label>
                     <Select id="audit-outcome" v-model="filters.outcome" :options="['success', 'failure']" show-clear :placeholder="t('common.all')" fluid />
                 </div>
-                <div class="col-span-12 md:col-span-6 xl:col-span-2">
-                    <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" class="w-full" />
-                </div>
                 <div class="col-span-12 md:col-span-6 xl:col-span-3 flex flex-col gap-2">
                     <label for="audit-after" class="font-medium">{{ t('workbenches.audit.after') }}</label>
                     <DatePicker id="audit-after" v-model="filters.occurred_after" show-time hour-format="24" show-button-bar fluid />
@@ -179,37 +184,40 @@ onMounted(() => {
                     <label for="audit-before" class="font-medium">{{ t('workbenches.audit.before') }}</label>
                     <DatePicker id="audit-before" v-model="filters.occurred_before" show-time hour-format="24" show-button-bar fluid />
                 </div>
-            </form>
-        </div>
+            </FilterBar>
+        </SurfaceCard>
 
         <PageState v-if="loading && !result" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" />
         <PageState v-else-if="result && result.total === 0" state="empty" :title="t('workbenches.audit.empty')" :description="t('workbenches.audit.emptyDescription')" />
-        <PagedTable v-else-if="result" :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
-            <Column field="occurred_at" :header="t('workbenches.audit.time')" style="min-width: 12rem">
-                <template #body="{ data }">{{ formatDate(data.occurred_at) }}</template>
-            </Column>
-            <Column field="action" :header="t('workbenches.audit.action')" style="min-width: 16rem" />
-            <Column field="actor_id" :header="t('workbenches.audit.actor')" style="min-width: 14rem">
-                <template #body="{ data }">{{ data.actor_type || '-' }} / {{ data.actor_id || '-' }}</template>
-            </Column>
-            <Column field="target_id" :header="t('workbenches.audit.target')" style="min-width: 14rem">
-                <template #body="{ data }">{{ data.target_type || '-' }} / {{ data.target_id || '-' }}</template>
-            </Column>
-            <Column field="outcome" :header="t('workbenches.audit.outcome')" style="min-width: 8rem">
-                <template #body="{ data }"><Tag :value="data.outcome" :severity="data.outcome === 'success' ? 'success' : 'danger'" /></template>
-            </Column>
-            <Column :header="t('workbenches.audit.details')" style="width: 8rem">
-                <template #body="{ data }"><Button :label="t('workbenches.view')" text @click="selectedEntry = data" /></template>
-            </Column>
-        </PagedTable>
+        <ListPanel v-else-if="result">
+            <PagedTable :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
+                <Column field="occurred_at" :header="t('workbenches.audit.time')" style="min-width: 12rem">
+                    <template #body="{ data }">{{ formatDate(data.occurred_at) }}</template>
+                </Column>
+                <Column field="action" :header="t('workbenches.audit.action')" style="min-width: 16rem" />
+                <Column field="actor_id" :header="t('workbenches.audit.actor')" style="min-width: 14rem">
+                    <template #body="{ data }">{{ data.actor_type || '-' }} / {{ data.actor_id || '-' }}</template>
+                </Column>
+                <Column field="target_id" :header="t('workbenches.audit.target')" style="min-width: 14rem">
+                    <template #body="{ data }">{{ data.target_type || '-' }} / {{ data.target_id || '-' }}</template>
+                </Column>
+                <Column field="outcome" :header="t('workbenches.audit.outcome')" style="min-width: 8rem">
+                    <template #body="{ data }"><StatusTag :value="data.outcome" /></template>
+                </Column>
+                <Column :header="t('workbenches.audit.details')" style="width: 8rem">
+                    <template #body="{ data }"><Button :label="t('workbenches.view')" text @click="selectedEntry = data" /></template>
+                </Column>
+            </PagedTable>
+        </ListPanel>
 
         <EntityDrawerShell v-model="detailVisible" :title="t('workbenches.audit.detailTitle')" width-class="!w-full md:!w-[38rem]">
             <template v-if="selectedEntry">
                 <div class="flex flex-col gap-4">
                     <div class="grid grid-cols-2 gap-3 text-sm">
-                        <span class="text-muted-color">ID</span><span class="break-all">{{ selectedEntry.id }}</span> <span class="text-muted-color">{{ t('workbenches.audit.requestId') }}</span><span class="break-all">{{ selectedEntry.request_id || '-' }}</span>
-                        <span class="text-muted-color">{{ t('workbenches.audit.occurredAt') }}</span><span>{{ formatDate(selectedEntry.occurred_at) }}</span>
+                        <span class="text-muted-color">ID</span><span class="break-all">{{ selectedEntry.id }}</span> <span class="text-muted-color">{{ t('workbenches.audit.requestId') }}</span
+                        ><span class="break-all">{{ selectedEntry.request_id || '-' }}</span> <span class="text-muted-color">{{ t('workbenches.audit.occurredAt') }}</span
+                        ><span>{{ formatDate(selectedEntry.occurred_at) }}</span>
                     </div>
                     <Divider />
                     <pre class="p-3 rounded-border bg-surface-100 dark:bg-surface-800 text-sm whitespace-pre-wrap break-all">{{ detailsText(selectedEntry) }}</pre>

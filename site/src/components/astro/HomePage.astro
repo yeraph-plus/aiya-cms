@@ -1,0 +1,30 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+
+interface Props {
+    locale: Locale;
+}
+
+const { locale } = Astro.props;
+const statuses = ['ssr', 'auth', 'api', 'a11y'] as const;
+---
+
+<BaseLayout locale={locale} title={t(locale, 'home.title')} description={t(locale, 'home.description')}>
+    <section class="editorial-hero">
+        <p class="eyebrow">{t(locale, 'home.eyebrow')}</p>
+        <h1>{t(locale, 'home.title')}</h1>
+        <p class="lede">{t(locale, 'home.description')}</p>
+        <div class="status-grid" aria-label={t(locale, 'home.eyebrow')}>
+            {statuses.map((status) => <span>{t(locale, `home.status.${status}`)}</span>)}
+        </div>
+    </section>
+    <section class="foundation-band" aria-labelledby="foundation-heading">
+        <div>
+            <p class="eyebrow">{t(locale, 'home.foundation.kicker')}</p>
+            <h2 id="foundation-heading">{t(locale, 'home.foundation.title')}</h2>
+        </div>
+        <p>{t(locale, 'site.tagline')}</p>
+    </section>
+</BaseLayout>

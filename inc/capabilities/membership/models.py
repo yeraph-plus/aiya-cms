@@ -51,6 +51,7 @@ class MembershipLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     grant_points: Mapped[int] = mapped_column(Integer, nullable=False)
     renewal_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     data: Mapped[LevelMetadata] = mapped_column(JsonBModel(LevelMetadata, "1"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 @TableOwnership.owned_by("capability:membership")

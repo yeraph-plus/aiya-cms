@@ -84,7 +84,7 @@ def build_router(
                 category=ErrorCategory.VALIDATION,
                 message="no payment provider is bound",
             )
-        provider_key = sorted(services.payment_providers)[0]
+        provider_key = await services.selected_provider_key("payments.provider")
         subject_id = ctx.principal.subject_id
         # Namespace the client-supplied key with the authenticated subject so
         # two different users sharing an Idempotency-Key header cannot collide

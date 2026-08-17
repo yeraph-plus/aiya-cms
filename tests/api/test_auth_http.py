@@ -47,6 +47,37 @@ async def test_me_returns_principal_and_capabilities(client: Any, admin_token: s
     assert "content.write" in body["capabilities"]
 
 
+async def test_administrator_projection_repairs_stale_capability_rows(
+    client: Any, admin_token: str
+) -> None:
+    """A protected Administrator role remains a live projection of the registry."""
+
+    from sqlalchemy import delete, select
+
+    from inc.capabilities.access.models import AccessRole, AccessRoleCapability
+
+    services = client.app.state.services
+    async with services.uow_factory() as uow:
+        role_ids = (
+            (
+                await uow.session.execute(
+                    select(AccessRole.id).where(AccessRole.slug == "administrator")
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await uow.session.execute(
+            delete(AccessRoleCapability).where(AccessRoleCapability.role_id.in_(role_ids))
+        )
+        await uow.commit()
+
+    response = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {admin_token}"})
+    assert response.status_code == 200, response.text
+    assert "points.programs.read" in response.json()["capabilities"]
+    assert "content.read" in response.json()["capabilities"]
+
+
 async def test_me_patch_updates_current_profile(client: Any, admin_token: str) -> None:
     headers = {"Authorization": f"Bearer {admin_token}"}
     avatar_id = str(uuid.uuid4())
@@ -164,17 +195,18 @@ async def test_error_details_never_leak_secrets(client: Any, admin_token: str) -
     payload = {
         "type_name": "post",
         "title": "redact-me",
-        "slug": "redact-slug",
-        "data": {"summary": "s"},
+        "data": {},
     }
     headers = {"Authorization": f"Bearer {admin_token}"}
     first = await client.post("/api/v1/admin/content", json=payload, headers=headers)
     assert first.status_code == 200, first.text
 
-    # Re-register with a secret embedded in a details field via a duplicate
-    # conflict that carries an api key-ish detail (the content conflict keeps
-    # details opaque, so assert the generic DTO shape instead).
-    second = await client.post("/api/v1/admin/content", json=payload, headers=headers)
+    # Trigger a version conflict; its details must remain opaque.
+    second = await client.patch(
+        f"/api/v1/admin/content/{first.json()['id']}",
+        json={"expected_version": 0, "title": "retry"},
+        headers=headers,
+    )
     assert second.status_code == 409
     body = second.json()
     assert "code" in body
@@ -188,16 +220,19 @@ async def test_conflict_maps_to_409(client: Any, admin_token: str) -> None:
     payload = {
         "type_name": "post",
         "title": "dup",
-        "slug": "same-slug",
-        "data": {"summary": "s"},
+        "data": {},
     }
     headers = {"Authorization": f"Bearer {admin_token}"}
     first = await client.post("/api/v1/admin/content", json=payload, headers=headers)
     assert first.status_code == 200
-    second = await client.post("/api/v1/admin/content", json=payload, headers=headers)
+    second = await client.patch(
+        f"/api/v1/admin/content/{first.json()['id']}",
+        json={"expected_version": 0, "title": "retry"},
+        headers=headers,
+    )
     assert second.status_code == 409
     body = second.json()
-    assert body["code"] == "content.duplicate_slug"
+    assert body["code"] == "content.version_conflict"
     assert "request_id" in body
 
 
@@ -449,8 +484,7 @@ async def test_writer_without_publish_cannot_publish(
         json={
             "type_name": "post",
             "title": "writer post",
-            "slug": "writer-post",
-            "data": {"summary": "s"},
+            "data": {},
         },
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -498,6 +532,20 @@ async def test_password_reset_request_is_public_and_enumeration_safe(
     # equivalent external responses; the token never appears in any body
     assert known.json() == ghost.json()
     assert "token" not in str(known.json()).lower()
+
+
+async def test_password_reset_request_is_limited_per_source(client: Any) -> None:
+    for _ in range(5):
+        response = await client.post(
+            "/api/v1/auth/password-reset/request", json={"identifier": "ghost@example.com"}
+        )
+        assert response.status_code == 202
+
+    limited = await client.post(
+        "/api/v1/auth/password-reset/request", json={"identifier": "ghost@example.com"}
+    )
+    assert limited.status_code == 429
+    assert limited.json()["code"] == "auth.password_reset_rate_limited"
 
 
 async def test_password_reset_confirm_rotates_credential_and_blocks_replay(
@@ -572,14 +620,57 @@ async def test_register_is_public_and_normalizes(client: Any, uow_factory: Any) 
     authenticator = CredentialAuthenticator(uow_factory=uow_factory, hasher=Argon2PasswordHasher())
     assert await authenticator.authenticate_local("newuser", "password-123456") is not None
 
-    # registered users carry no roles: me works but capabilities are empty
+    # API registration attaches the protected baseline User role.
     from tests.api.conftest import _mint_token_for
 
     services = client.app.state.services
     token = await _mint_token_for(services, body["id"])
     me = await client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
-    assert me.json()["capabilities"] == []
+    assert {
+        "community.discussions.create",
+        "community.discussions.reply",
+        "community.discussions.edit_own",
+        "comments.submit",
+    } <= set(me.json()["capabilities"])
+
+
+async def test_register_fails_closed_when_default_role_seed_is_missing(
+    client: Any, uow_factory: Any
+) -> None:
+    from sqlalchemy import delete, select
+
+    from inc.capabilities.access.models import AccessRole, AccessRoleCapability
+    from inc.capabilities.identity.models import IdentityUser
+
+    async with uow_factory() as uow:
+        role_id = (
+            await uow.session.execute(select(AccessRole.id).where(AccessRole.slug == "user"))
+        ).scalar_one()
+        await uow.session.execute(
+            delete(AccessRoleCapability).where(AccessRoleCapability.role_id == role_id)
+        )
+        await uow.session.execute(delete(AccessRole).where(AccessRole.id == role_id))
+        await uow.commit()
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "missing-role",
+            "email": "missing-role@example.com",
+            "password": "password-123456",
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "auth.registration_unavailable"
+
+    async with uow_factory() as uow:
+        created = (
+            await uow.session.execute(
+                select(IdentityUser.id).where(IdentityUser.username_normalized == "missing-role")
+            )
+        ).scalar_one_or_none()
+    assert created is None
 
 
 async def test_register_conflict_and_weak_password_are_stable_errors(client: Any) -> None:

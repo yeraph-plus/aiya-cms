@@ -13,6 +13,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from inc.capabilities.access.models import AccessRole, AccessRoleCapability, AccessSubjectRole
+from inc.capabilities.access.registry import PermissionRegistry
 from inc.capabilities.access.schemas import AuthorizationDecision, Principal
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import ErrorCategory, KernelError
@@ -20,9 +21,16 @@ from inc.kernel.time import Clock
 
 
 class AuthorizeService:
-    def __init__(self, *, uow_factory: UoWFactory, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        uow_factory: UoWFactory,
+        clock: Clock,
+        permissions: PermissionRegistry | None = None,
+    ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
+        self._permissions = permissions
 
     async def decide(
         self,
@@ -46,9 +54,16 @@ class AuthorizeService:
         async with self._uow_factory() as uow:
             rows = (
                 await uow.session.execute(
-                    select(AccessRoleCapability.capability_key, AccessSubjectRole.scope)
-                    .join(
-                        AccessSubjectRole, AccessSubjectRole.role_id == AccessRoleCapability.role_id
+                    select(
+                        AccessRoleCapability.capability_key,
+                        AccessSubjectRole.scope,
+                        AccessRole.slug,
+                    )
+                    .select_from(AccessSubjectRole)
+                    .join(AccessRole, AccessRole.id == AccessSubjectRole.role_id)
+                    .outerjoin(
+                        AccessRoleCapability,
+                        AccessRoleCapability.role_id == AccessSubjectRole.role_id,
                     )
                     .where(
                         AccessSubjectRole.subject_type == "identity",
@@ -60,10 +75,17 @@ class AuthorizeService:
                     )
                 )
             ).all()
-        granted = {key for key, _ in rows}
+        granted = {key for key, _scope, _slug in rows if key is not None}
+        administrator_global = any(
+            slug == "administrator" and scope == "global" for _key, scope, slug in rows
+        )
+        if administrator_global and self._permissions is not None:
+            granted.update(self._permissions.keys())
         if permission_key not in granted:
             return AuthorizationDecision(allowed=False, reason="deny.no_grant")
-        scopes = {grant_scope for key, grant_scope in rows if key == permission_key}
+        scopes = {grant_scope for key, grant_scope, _slug in rows if key == permission_key}
+        if administrator_global and self._permissions is not None:
+            scopes.add("global")
         if scope == "global":
             if "global" in scopes:
                 return AuthorizationDecision(allowed=True, reason="allow.global")
@@ -80,22 +102,30 @@ class AuthorizeService:
         now = self._clock.utc_now()
         async with self._uow_factory() as uow:
             rows = (
-                (
-                    await uow.session.execute(
-                        select(AccessRoleCapability.capability_key)
-                        .join(AccessRole, AccessRole.id == AccessRoleCapability.role_id)
-                        .join(AccessSubjectRole, AccessSubjectRole.role_id == AccessRole.id)
-                        .where(
-                            AccessSubjectRole.subject_type == "identity",
-                            AccessSubjectRole.subject_id == principal.subject_id,
-                            (AccessSubjectRole.valid_from.is_(None))
-                            | (AccessSubjectRole.valid_from <= now),
-                            (AccessSubjectRole.valid_until.is_(None))
-                            | (AccessSubjectRole.valid_until >= now),
-                        )
+                await uow.session.execute(
+                    select(
+                        AccessRoleCapability.capability_key,
+                        AccessSubjectRole.scope,
+                        AccessRole.slug,
+                    )
+                    .select_from(AccessSubjectRole)
+                    .join(AccessRole, AccessRole.id == AccessSubjectRole.role_id)
+                    .outerjoin(
+                        AccessRoleCapability,
+                        AccessRoleCapability.role_id == AccessSubjectRole.role_id,
+                    )
+                    .where(
+                        AccessSubjectRole.subject_type == "identity",
+                        AccessSubjectRole.subject_id == principal.subject_id,
+                        (AccessSubjectRole.valid_from.is_(None))
+                        | (AccessSubjectRole.valid_from <= now),
+                        (AccessSubjectRole.valid_until.is_(None))
+                        | (AccessSubjectRole.valid_until >= now),
                     )
                 )
-                .scalars()
-                .all()
-            )
-        return set(rows)
+            ).all()
+        granted = {key for key, _scope, _slug in rows if key is not None}
+        if any(slug == "administrator" and scope == "global" for _key, scope, slug in rows):
+            if self._permissions is not None:
+                granted.update(self._permissions.keys())
+        return granted

@@ -19,12 +19,16 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 WORKDIR /app
 
-RUN addgroup --system aiya && adduser --system --ingroup aiya aiya
+RUN addgroup --system aiya \
+    && adduser --system --ingroup aiya aiya \
+    && mkdir -p /var/lib/aiya/oidc-keys \
+    && chown -R aiya:aiya /var/lib/aiya
 COPY --from=build /opt/venv /opt/venv
 COPY --chown=aiya:aiya inc ./inc
 COPY --chown=aiya:aiya tests ./tests
 COPY --chown=aiya:aiya alembic ./alembic
-COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md openapi.json openapi.sha256 ./
+COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md \
+    openapi.json openapi.sha256 openapi.user.json openapi.user.sha256 ./
 RUN chown -R aiya:aiya /app
 USER aiya
 EXPOSE 8000

@@ -53,10 +53,39 @@ class ContentQueries:
         self._uow_factory = uow_factory
         self._types = types
 
-    async def get(self, content_id: Any) -> ContentDTO | None:  # type: ignore[return]
+    async def get(self, content_id: Any) -> ContentDTO | None:
+        return await self.get_for_owner(content_id)
+
+    async def get_for_owner(
+        self, content_id: Any, *, owner_id: uuid.UUID | str | None = None
+    ) -> ContentDTO | None:
         async with self._uow_factory() as uow:
             row: Content | None = await uow.session.get(Content, content_id)
+            if owner_id is not None and (row is None or str(row.owner_id) != str(owner_id)):
+                return None
             return self._to_dto(row) if row is not None else None
+        raise RuntimeError("content owner query did not execute")
+
+    async def get_published_by_slug(self, *, type_name: str, slug: str) -> ContentDTO | None:
+        """Read one published item by its stable public route key."""
+
+        self._types.require(type_name)
+        async with self._uow_factory() as uow:
+            row = (
+                (
+                    await uow.session.execute(
+                        select(Content).where(
+                            Content.type_name == type_name,
+                            Content.slug == slug,
+                            Content.status == "published",
+                        )
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+            return self._to_dto(row) if row is not None else None
+        raise RuntimeError("content slug query did not execute")
 
     async def get_many(self, content_ids: list[Any]) -> dict[str, ContentDTO]:
         """Hydrate an ordered projection page without exposing ORM rows."""
@@ -81,6 +110,7 @@ class ContentQueries:
         status: str | None = None,
         public_only: bool = False,
         sort: str | None = None,
+        owner_id: uuid.UUID | str | None = None,
     ) -> ContentPageDTO:
         async with self._uow_factory() as uow:
             statement = select(Content)
@@ -90,6 +120,8 @@ class ContentQueries:
                 statement = statement.where(Content.status == status)
             if type_name is not None:
                 statement = statement.where(Content.type_name == type_name)
+            if owner_id is not None:
+                statement = statement.where(Content.owner_id == uuid.UUID(str(owner_id)))
             orderings = self._resolve_sort(sort=sort, type_name=type_name)
             if orderings is None:
                 statement = statement.order_by(

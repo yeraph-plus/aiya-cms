@@ -27,7 +27,12 @@ async function submit() {
     error.value = null;
     submitting.value = true;
     try {
-        await register({ username: username.value.trim(), email: email.value.trim(), password: password.value, display_name: displayName.value.trim() || null });
+        await register({
+            username: username.value.trim(),
+            email: email.value.trim(),
+            password: password.value,
+            display_name: displayName.value.trim() || null
+        });
         completed.value = true;
     } catch (caught) {
         error.value = caught;
@@ -52,7 +57,9 @@ async function submit() {
                 <InputText id="register-email" v-model="email" type="email" class="w-full" autocomplete="email" required />
             </div>
             <div>
-                <label for="register-display-name" class="mb-2 block font-medium">{{ t('auth.displayName') }} <span class="text-muted-color text-sm">({{ t('auth.optional') }})</span></label>
+                <label for="register-display-name" class="mb-2 block font-medium"
+                    >{{ t('auth.displayName') }} <span class="text-muted-color text-sm">({{ t('auth.optional') }})</span></label
+                >
                 <InputText id="register-display-name" v-model="displayName" class="w-full" autocomplete="name" />
             </div>
             <div>

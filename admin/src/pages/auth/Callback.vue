@@ -23,7 +23,10 @@ onMounted(async () => {
         await completeAuthentication();
         await router.replace(resolveRedirect(route.query.redirect as string | null));
     } catch {
-        await router.replace({ name: 'error', query: { message: t('pages.signInFailed') } });
+        await router.replace({
+            name: 'error',
+            query: { message: t('pages.signInFailed') }
+        });
     }
 });
 </script>
@@ -34,7 +37,9 @@ onMounted(async () => {
         <div class="flex flex-col items-center justify-center">
             <div class="w-full bg-surface-0 dark:bg-surface-900 py-20 px-8 sm:px-20 flex flex-col items-center" style="border-radius: 53px">
                 <ProgressSpinner class="mb-6" />
-                <h1 class="text-surface-900 dark:text-surface-0 font-bold text-3xl mb-2">{{ t('pages.callbackTitle') }}</h1>
+                <h1 class="text-surface-900 dark:text-surface-0 font-bold text-3xl mb-2">
+                    {{ t('pages.callbackTitle') }}
+                </h1>
                 <span class="text-muted-color">{{ t('pages.callbackDescription', { app: APP_NAME }) }}</span>
             </div>
         </div>

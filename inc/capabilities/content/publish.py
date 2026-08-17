@@ -13,12 +13,16 @@ the schedule version so in-flight tasks become no-ops.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import and_, or_, select, update
 
 from inc.capabilities.content.models import Content
+from inc.capabilities.content.ports import ContentPublicationPolicy
+from inc.capabilities.content.publication import validate_publication
+from inc.capabilities.content.types import ContentTypeRegistry
 from inc.kernel.db import UnitOfWork, UoWFactory
 from inc.kernel.errors import ErrorCategory, KernelError, RetryCategory
 from inc.kernel.events import EventEnvelope, OutboxWriter
@@ -47,9 +51,19 @@ class ScheduledPublishActivity:
     audit envelope commit together; replays are no-ops.
     """
 
-    def __init__(self, *, clock: Clock, outbox: OutboxWriter, actor_id: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        clock: Clock,
+        outbox: OutboxWriter,
+        types: ContentTypeRegistry,
+        publication_policies: Mapping[str, ContentPublicationPolicy],
+        actor_id: str | None = None,
+    ) -> None:
         self._clock = clock
         self._outbox = outbox
+        self._types = types
+        self._publication_policies = publication_policies
         self._actor_id = actor_id
 
     async def __call__(
@@ -67,6 +81,12 @@ class ScheduledPublishActivity:
         row: Content | None = await uow.session.get(Content, uuid.UUID(str(content_id)))
         if row is None or row.status != "scheduled" or row.schedule_version != expected_version:
             return {"skipped": True, "reason": "not_scheduled_anymore"}
+        await validate_publication(
+            spec=self._types.require(row.type_name),
+            body=row.body,
+            excerpt=row.excerpt,
+            policies=self._publication_policies,
+        )
         now = self._clock.utc_now()
         result = await uow.session.execute(
             update(Content)

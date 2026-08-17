@@ -4,7 +4,7 @@
 
 content 提供通用内容实体、类型声明、状态转换、发布调度、置顶排序和内容间单向引用。它不知道 post/page 的具体业务含义；实际 content type 由 feature 注册。
 
-不包含 taxonomy、comments、修订、媒体库、父子页面、前端路由、SEO 渲染、点赞/浏览统计或隐式插件钩子。
+不包含 taxonomy、comments、修订、媒体库、父子页面、前端路由、SEO 文档/标签渲染、点赞/浏览统计或隐式插件钩子。post/page feature 可以在各自 Pydantic `data` schema 中声明类型化 SEO 编辑输入，但 content 不解释或渲染这些字段。community discussion/post 明确不注册为 content type；其表、模板、状态机和搜索归 [`community.md`](community.md)。
 
 ## 2. ContentTypeSpec
 
@@ -15,10 +15,71 @@ feature 注册不可变类型声明，至少包含：
 - 允许状态、默认状态和 transition map。
 - 是否允许 schedule、pin、owner 和 references。
 - slug 策略、标题/正文/摘要约束。
+- 正文格式、版本化 profile、UTF-8 byte 上限和发布校验策略。
 - 所需 access capability keys。
 - 可公开查询字段和排序选项。
 
 ContentTypeSpec 是代码规格，不保存可执行脚本。重复 type、未知状态、无起点/终点的 transition、未登记权限或 schema 冲突必须启动失败。
+
+### 2.1 Slug 公开路由基线
+
+`post` 与 `page` 固定声明 `slug_policy = "generated_title_suffix_v1"`。slug 是创建后不可变的公开定位键，不是 UUID 的可逆编码，也不是授权或保密边界。
+
+- `CreateContent` 的产品/API 输入不接收 slug；服务端从创建时的 title 自动生成。管理端只在创建成功后显示只读、可复制的 slug；`UpdateContent` 不得修改 slug，标题修改也不重算 slug。
+- 生成器是版本化纯函数：对 title 采用锁定版本的 Unicode 到 ASCII 转写与 slugify 规则，输出小写 `a-z0-9-` stem；连续连字符折叠、首尾连字符移除，stem 截断至 64 个 ASCII 字符。CJK 标题必须有确定的 ASCII 转写 fixture；若结果为空，按类型使用 `post` 或 `page` 作为 stem。
+- 最终值为 `<stem>-<suffix>`，其中 suffix 是由 CSPRNG 生成的 8 位小写 base32 字符 `[a-z2-7]`。因此公开 URL 保持可读，同时不暴露 UUID 或递增数据库编号；整个 slug 不超过 73 个 ASCII 字符。
+- `(type_name, slug)` 唯一约束仍是并发下唯一事实来源。生成器不得以预查询代替约束；发生冲突时重新生成 suffix 并重试有限次数，耗尽后返回稳定 `content.slug_generation_failed`，不以随机覆盖或修改既有内容处理。
+- 通过 slug 定位内容时只按 `(type_name, slug)` 查询。不得从 suffix 解码 content ID、建立数值主键，或把可逆/混淆编码当作访问控制。发布状态和权限仍由正常公开 Query 决定。
+
+已发布 slug 首版没有改名、别名或重定向机制。若发布后业务确实需要迁移 URL，必须先新增版本化 route-history/redirect capability 合同；不得在更新标题时静默更换 canonical URL。
+
+### 2.2 Markdown 正文基线
+
+首个产品 manifest 中的 `post` 与 `page` 固定声明：
+
+- `body_format = "markdown"`；
+- `body_profile = "gfm-v1"`；
+- `body_max_bytes = 524288`，按规范化后的 UTF-8 byte 数计算，而不是按 Unicode code point 或前端字符数计算；
+- format/profile 来自已注册的 ContentTypeSpec，是服务端派生的只读事实。客户端只提交 `body`，不得选择或覆盖 format/profile。
+
+`gfm-v1` 允许标题、段落、强调/加粗/删除线、有序/无序/任务列表、引用、分隔线、行内/围栏代码、表格、链接、图片、自动链接和软/硬换行。首版明确禁止：
+
+- raw HTML；
+- MDX/JSX、`import`/`export`、表达式和可执行代码；
+- YAML/TOML frontmatter；
+- 任意 directive、iframe、script、style 和未经登记的扩展插件；
+- `data:` URI 或把 HTML 字符串作为正文的兼容输入。
+
+profile 是持久化合同。未来允许新语法、改变 heading ID、链接或清洗语义时必须新增 profile（如 `gfm-v2`），不得静默改变已发布正文的含义。`schema_version` 标识该 content type 的数据合同；每种类型固定 profile 时不要求给 `contents` 增加逐行 format/profile 列。
+
+### 2.3 规范化、链接与资源引用
+
+正文写入前由 content 的纯校验策略执行以下确定性处理：
+
+- CRLF/CR 统一为 LF；拒绝 NUL 和除 tab/newline 外不允许的 C0 控制字符；
+- 不自动 Unicode normalization、不 trim 全文，也不改写围栏代码内容；
+- 解析并验证 Markdown，拒绝 profile 外语法；保存和返回的仍是规范化 Markdown 原文；
+- 链接目标只允许 `https:`、`mailto:`、`tel:`、站内 root-relative `/...` 和 fragment `#...`；拒绝 `javascript:`、`vbscript:`、`data:`、`file:`、scheme-relative `//...` 以及带 username/password 的 URL；
+- 不在保存、发布或 SSR 渲染期间抓取外部 URL，不以网络可达性作为链接合法条件。
+
+首版 Markdown 图片只允许 `asset:<uuid>` 目标，不允许远程图片 URL、provider URL 或 signed URL。`asset:<uuid>` 是正文内的稳定 opaque reference，不建立 content 到 assets 的 ORM relationship/外键，也不由 content capability 导入 assets。
+
+### 2.4 校验阶段与错误合同
+
+`CreateContent`/`UpdateContent` 必须执行规范化、byte 上限、Markdown profile、链接 scheme 和 asset reference 形状校验，使 draft 也不能保存不可解析或可执行输入。`SubmitContent`、`ScheduleContent`、`PublishContent` 还必须调用由消费 feature 绑定的 `ContentPublicationPolicy` Port；该 Port 可通过 assets 的公开 Query/`AssetExists` Port 验证正文中的 asset 均存在且为 `ready`，但不得让 content 反向依赖 feature 或 assets。
+
+post/page 进入 pending、scheduled 或 published 前必须具有非空 `body` 和非空基础列 `excerpt`。`excerpt` 是列表摘要和 SEO description fallback 的唯一正文摘要事实；`PostData.summary` 不进入目标 schema，不建立双写或兼容优先级。
+
+稳定错误 code 至少包括：
+
+- `content.body_too_large`；
+- `content.markdown_invalid`；
+- `content.markdown_feature_not_allowed`；
+- `content.markdown_link_not_allowed`；
+- `content.markdown_asset_invalid`；
+- `content.excerpt_required`。
+
+错误可携带安全的字段位置/规则标识和 request ID，但不得回显正文片段、credential、provider URL 或 parser stack。
 
 ## 3. 表所有权
 
@@ -85,7 +146,7 @@ archived -> draft
 - `ReplaceContentReferences`
 - 运维 `PurgeArchivedContent`
 
-Command 必须校验类型、Pydantic data、transition、权限、owner、乐观版本和幂等键。Content capability 不因发布自动发通知、过滤关键词或奖励积分。
+Command 必须校验类型、Pydantic data、slug 生成/不可变合同、正文合同、transition、权限、owner、乐观版本和幂等键。Content capability 不因发布自动发通知、过滤关键词或奖励积分。
 
 ## 6. 定时发布
 
@@ -139,17 +200,18 @@ id DESC
 - `content.archived.v1`
 - `content.pin_changed.v1`
 
-事件只包含稳定基础字段和必要变更摘要；完整 body/data 由有权限 Query 获取。GET 不产生 `content.viewed` 或任何写副作用。
+事件只包含稳定基础字段和必要变更摘要；完整 body/data、渲染 HTML 和外链清单均不得进入事件，由有权限 Query 获取正文事实。GET 不产生 `content.viewed` 或任何写副作用。
 
 ## 10. 初始类型
 
-- post feature 注册 `post`，可以声明 taxonomy 维度，但关联由 feature/taxonomy 管理。
-- page feature 注册 `page`，不声明 taxonomy，不支持父子关系。
+- post feature 注册 `post`，声明 `generated_title_suffix_v1` slug、`gfm-v1` 正文和 taxonomy 维度，但关联由 feature/taxonomy 管理。
+- page feature 注册 `page`，声明 `generated_title_suffix_v1` slug、`gfm-v1` 正文，不声明 taxonomy，不支持父子关系。
 - 两者都复用 content 表、Command 和查询，不复制 ORM/Service。
+- content 只保存 Markdown 原文，不保存或返回预渲染 HTML。纯文本、目录、搜索文本和渲染缓存均为可重建投影，不是写入事实源。
 
 ## 11. Diagnostics 与验收
 
-diagnostics 检查未知 type/schema version、非法状态组合、过期 scheduled 积压、published 缺时间、孤儿 reference 和 data schema 不匹配，且不得修复。
+diagnostics 检查未知 type/schema/profile version、非法状态组合、过期 scheduled 积压、published 缺时间、孤儿 reference、已发布正文不再满足 profile/asset 发布策略和 data schema 不匹配，且不得修复。
 
 验收必须覆盖：
 
@@ -159,3 +221,7 @@ diagnostics 检查未知 type/schema version、非法状态组合、过期 sched
 - 取消后旧 schedule task 不发布。
 - 置顶分页 total、页容量和稳定顺序符合本规格。
 - incoming reference 阻止 purge，archive 不受影响。
+- CRLF 规范化、UTF-8 byte 边界、禁止语法、危险链接和非法 asset reference 返回稳定错误。
+- draft 允许保存通过基础 Markdown 校验的未完成内容，但 submit/schedule/publish 会拒绝空正文、空 excerpt 或未 ready asset。
+- API、事件和数据库均不出现派生 HTML；renderer/profile 升级不会覆盖 Markdown 原文。
+- slug generator 对 CJK/空标题 stem、长度边界和并发重名有 fixture；title 更新不会改变已创建 slug，公开 slug 查询不依赖 UUID 或可逆解码。

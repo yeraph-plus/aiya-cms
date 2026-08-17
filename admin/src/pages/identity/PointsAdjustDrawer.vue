@@ -81,7 +81,15 @@ async function submit(): Promise<void> {
         const entry = await adjustPoints(body);
         result.value = entry;
         await loadLedger(true);
-        toast.add({ severity: 'success', summary: t('workbenches.points.success'), detail: t('workbenches.points.successDetail', { action: t(entry.amount > 0 ? 'workbenches.points.increase' : 'workbenches.points.deduct'), amount: Math.abs(entry.amount) }), life: 4000 });
+        toast.add({
+            severity: 'success',
+            summary: t('workbenches.points.success'),
+            detail: t('workbenches.points.successDetail', {
+                action: t(entry.amount > 0 ? 'workbenches.points.increase' : 'workbenches.points.deduct'),
+                amount: Math.abs(entry.amount)
+            }),
+            life: 4000
+        });
         emit('completed', entry);
         amount.value = null;
         reason.value = '';
@@ -105,7 +113,12 @@ function onLedgerSize(value: number): void {
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : t('workbenches.never');
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : t('workbenches.never');
 }
 
 watch(
@@ -146,7 +159,9 @@ watch(
             <Message v-if="!pointsView.balance" severity="info" :closable="false">{{ t('workbenches.points.unopened') }}</Message>
 
             <div>
-                <div class="mb-3 font-semibold">{{ t('workbenches.points.buckets') }}</div>
+                <div class="mb-3 font-semibold">
+                    {{ t('workbenches.points.buckets') }}
+                </div>
                 <DataTable :value="pointsView.buckets ?? []" size="small" responsive-layout="scroll">
                     <Column field="bucket_type" :header="t('workbenches.points.type')" />
                     <Column field="expiration_identity" :header="t('workbenches.points.source')" />
@@ -158,7 +173,9 @@ watch(
             </div>
 
             <div>
-                <div class="mb-3 font-semibold">{{ t('workbenches.points.ledger') }}</div>
+                <div class="mb-3 font-semibold">
+                    {{ t('workbenches.points.ledger') }}
+                </div>
                 <PagedTable :value="pointsView.ledger.items" :loading="ledgerLoading" :total-records="pointsView.ledger.total" :page="pointsView.ledger.page" :size="pointsView.ledger.size" @update:page="onLedgerPage" @update:size="onLedgerSize">
                     <Column field="created_at" :header="t('workbenches.points.time')" style="min-width: 10rem">
                         <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
@@ -171,7 +188,9 @@ watch(
         </template>
 
         <div class="border-t border-surface-200 dark:border-surface-700 pt-6 flex flex-col gap-4">
-            <div class="font-semibold">{{ t('workbenches.points.adjustAccount') }}</div>
+            <div class="font-semibold">
+                {{ t('workbenches.points.adjustAccount') }}
+            </div>
             <div class="flex flex-col gap-2">
                 <label for="points-amount" class="font-medium">{{ t('workbenches.points.adjustAmount') }}</label>
                 <InputNumber id="points-amount" v-model="amount" :use-grouping="false" show-buttons :disabled="submitting" />
@@ -183,7 +202,12 @@ watch(
             </div>
             <Message v-if="validationError" severity="warn" :closable="false">{{ validationError }}</Message>
             <ApiErrorMessage v-if="error" :error="error" />
-            <Message v-if="result" severity="success" :closable="false">{{ t('workbenches.points.createdEntry', { id: result.id, amount: result.amount }) }}</Message>
+            <Message v-if="result" severity="success" :closable="false">{{
+                t('workbenches.points.createdEntry', {
+                    id: result.id,
+                    amount: result.amount
+                })
+            }}</Message>
             <div class="flex justify-end">
                 <Button :label="t('workbenches.points.submitAdjust')" icon="pi pi-check" :loading="submitting" @click="submit" />
             </div>

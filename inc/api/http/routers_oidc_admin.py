@@ -61,7 +61,7 @@ def _ctx(ctx: AppContext, services: Services) -> ClientCommandContext:
 
 def _map_error(error: OidcError) -> KernelError:
     return KernelError(
-        code=f"oidc_provider.{error.code}",
+        code=f"oidc.client.{error.code}",
         category=ErrorCategory.VALIDATION,
         message=error.description or error.code,
     )

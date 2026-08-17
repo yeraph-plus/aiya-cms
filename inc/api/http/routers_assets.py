@@ -112,7 +112,12 @@ def build_router(
         body: CreateUploadIntentInput,
         ctx: AppContext = Depends(require_capability("assets.upload")),
     ) -> CreateUploadIntentResult:
-        return await CreateUploadIntent(_ctx(ctx, services))(body)
+        if body.provider_key not in services.asset_providers:
+            return await CreateUploadIntent(_ctx(ctx, services))(body)
+        provider_key = await services.selected_provider_key("assets.object_storage")
+        return await CreateUploadIntent(_ctx(ctx, services))(
+            body.model_copy(update={"provider_key": provider_key})
+        )
 
     @router.post("/assets/upload-intents/{intent_id}/finalize", response_model=FinalizeResultDTO)
     async def finalize_upload(
@@ -126,7 +131,12 @@ def build_router(
         body: RegisterExternalAssetInput,
         ctx: AppContext = Depends(require_capability("assets.manage")),
     ) -> AssetRefDTO:
-        return await RegisterExternalAsset(_ctx(ctx, services))(body)
+        if body.provider_key not in services.asset_providers:
+            return await RegisterExternalAsset(_ctx(ctx, services))(body)
+        provider_key = await services.selected_provider_key("assets.object_storage")
+        return await RegisterExternalAsset(_ctx(ctx, services))(
+            body.model_copy(update={"provider_key": provider_key})
+        )
 
     @router.get("/assets/{asset_id}", response_model=AssetRefDTO)
     async def get_asset(

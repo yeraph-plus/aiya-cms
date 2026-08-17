@@ -24,6 +24,8 @@ class ContentDTO(BaseModel):
     title: str
     slug: str
     body: str | None = None
+    body_format: str = "markdown"
+    body_profile: str = "gfm-v1"
     excerpt: str | None = None
     status: str
     owner_type: str | None = None
@@ -65,7 +67,6 @@ class CreateContentInput(BaseModel):
 
     type_name: str
     title: str
-    slug: str
     body: str | None = None
     excerpt: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
@@ -78,7 +79,6 @@ class UpdateContentInput(BaseModel):
 
     expected_version: int
     title: str | None = None
-    slug: str | None = None
     body: str | None = None
     excerpt: str | None = None
     data: dict[str, Any] | None = None

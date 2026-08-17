@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import SensitiveActionDialog from '@/components/shell/SensitiveActionDialog.vue';
 
-const props = withDefaults(
+withDefaults(
     defineProps<{
         label: string;
         message: string;

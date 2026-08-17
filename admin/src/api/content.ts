@@ -31,48 +31,114 @@ export async function updateContent(contentId: string, body: UpdateContentInput,
 }
 
 export async function submitContent(contentId: string, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/submit', { content_id: contentId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/submit', {
+            content_id: contentId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function rejectContent(contentId: string, reason: string | null, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/reject', { content_id: contentId }), { reason }, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/reject', {
+            content_id: contentId
+        }),
+        { reason },
+        { signal }
+    );
 }
 
 export async function scheduleContent(contentId: string, body: ScheduleContentInput, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/schedule', { content_id: contentId }), body, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/schedule', {
+            content_id: contentId
+        }),
+        body,
+        { signal }
+    );
 }
 
 export async function unscheduleContent(contentId: string, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/unschedule', { content_id: contentId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/unschedule', {
+            content_id: contentId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function publishContent(contentId: string, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/publish', { content_id: contentId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/publish', {
+            content_id: contentId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function archiveContent(contentId: string, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/archive', { content_id: contentId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/archive', {
+            content_id: contentId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function restoreContent(contentId: string, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/restore', { content_id: contentId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/restore', {
+            content_id: contentId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function setContentPin(contentId: string, body: SetContentPinInput, signal?: AbortSignal): Promise<ContentDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/pin', { content_id: contentId }), body, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/pin', {
+            content_id: contentId
+        }),
+        body,
+        { signal }
+    );
 }
 
 export async function purgeContent(contentId: string, dryRun = false, signal?: AbortSignal): Promise<PurgeResultDTO> {
-    return getApi().post(apiPath('/api/v1/admin/content/{content_id}/purge', { content_id: contentId }), undefined, {
-        query: { dry_run: dryRun },
-        signal
-    });
+    return getApi().post(
+        apiPath('/api/v1/admin/content/{content_id}/purge', {
+            content_id: contentId
+        }),
+        undefined,
+        {
+            query: { dry_run: dryRun },
+            signal
+        }
+    );
 }
 
 export async function fetchReferences(contentId: string, signal?: AbortSignal): Promise<ReferenceDTO[]> {
-    return getApi().get(apiPath('/api/v1/admin/content/{content_id}/references', { content_id: contentId }), undefined, signal);
+    return getApi().get(
+        apiPath('/api/v1/admin/content/{content_id}/references', {
+            content_id: contentId
+        }),
+        undefined,
+        signal
+    );
 }
 
 export async function replaceReferences(contentId: string, body: ReplaceReferencesInput, signal?: AbortSignal): Promise<void> {
-    return getApi().put(apiPath('/api/v1/admin/content/{content_id}/references', { content_id: contentId }), body, { signal });
+    return getApi().put(
+        apiPath('/api/v1/admin/content/{content_id}/references', {
+            content_id: contentId
+        }),
+        body,
+        { signal }
+    );
 }

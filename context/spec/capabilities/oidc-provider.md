@@ -97,7 +97,7 @@ OIDC 自己声明并消费：
 ## 9. Client 管理和 consent
 
 - 首版只允许管理员 API/ops Command 管理 client；不暴露 Dynamic Client Registration 协议。
-- 管理员 HTTP 面固定为 `/api/v1/admin/oidc/clients`：列表/单项读取调用 `ClientQueries`，注册、更新 redirect/scope、启用、禁用与 confidential secret rotation 分别调用具名 Command；不允许通用 PATCH 任意协议状态，也不回显历史 secret。
+- 管理员 HTTP 面固定为 `/api/v1/admin/oidc/clients`：列表/单项读取调用 `ClientQueries`，注册、更新 redirect/scope、启用、禁用与 confidential secret rotation 分别调用具名 Command；不允许通用 PATCH 任意协议状态，也不回显历史 secret。系统管理员客户端 `client_id=admin` 是受保护客户端，管理员端不展示禁用操作，后端也必须拒绝禁用请求；启用操作仍可用于恢复历史误禁用数据。
 - redirect URI、post logout URI 以完整字符串集合保存，不支持通配符。
 - public client auth method 为 `none`；confidential client 首版支持 `client_secret_basic`。
 - trusted first-party client 可以配置跳过重复 consent，但 scope 仍受注册和 access 决策约束。
@@ -115,6 +115,7 @@ OIDC 自己声明并消费：
 - 新 key 在签发前先发布到 JWKS；旧 key 至少保留到所有已签 token 最大寿命和时钟偏移之后。
 - `kid` 全局唯一，不复用；算法 allowlist，不接受 token 自报未知算法。
 - KeyRef 指向环境 secret、文件或 KMS；日志/诊断只显示 kid 和生命周期。
+- 当前生产 `management_plane` 使用 `oidc.filesystem_keys` KeyRef adapter；`AIYA_OIDC_SIGNING_KEY_DIR` 指向只由 backend 非 root 用户读写的持久卷。进程/容器替换后必须仍能按数据库 KeyRef 读取同一私钥；`oidc.in_memory_keys` 只允许开发/测试 profile，生产绑定启动失败。
 
 ## 11. 管理员 SPA
 
@@ -122,6 +123,14 @@ OIDC 自己声明并消费：
 - access token 仅保存在内存，不落 localStorage/sessionStorage。
 - 首版若需要跨刷新长期会话，优先增加 BFF/httpOnly session adapter；不得把 provider 的 refresh token 写入浏览器持久存储。
 - OIDC session cookie 为 `Secure`、`HttpOnly`、合适的 `SameSite`，并具备 CSRF 和 session fixation 防护。
+
+### 11.1 Astro 用户站 BFF
+
+- 用户站是静态登记的 first-party confidential client，使用 Authorization Code + PKCE S256；client secret 只存在 Astro server 环境配置。
+- callback 由 Astro server 消费；access/refresh token、code verifier 和 client secret 不进入 HTML、Vue props、浏览器持久存储或客户端 bundle。
+- Astro 使用 Redis-backed server session，浏览器只保存用户站 origin 的 host-only HttpOnly session ID cookie；FastAPI 资源 API 只接受 Astro BFF 转发的 Bearer，不接受该 application session cookie。
+- refresh rotation/reuse detection、revocation和 RP-Initiated Logout 继续由本 capability 执行；BFF 必须单飞刷新并在失败、reuse 或 logout 后销毁本地 session。
+- 用户站与 issuer 可以位于同一 registrable domain 的不同二级域名，但 redirect/post-logout URI 仍完整字符串精确匹配；不得依赖跨子域共享 application cookie。
 
 ## 12. 审计、诊断和限流
 

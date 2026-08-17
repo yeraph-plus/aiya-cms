@@ -19,7 +19,9 @@ const visible = defineModel<boolean>({ required: true });
         <template #header>
             <div>
                 <h2 class="m-0 text-lg font-semibold">{{ title }}</h2>
-                <p v-if="description" class="text-muted-color mb-0 mt-1 text-sm">{{ description }}</p>
+                <p v-if="description" class="text-muted-color mb-0 mt-1 text-sm">
+                    {{ description }}
+                </p>
             </div>
         </template>
         <slot />

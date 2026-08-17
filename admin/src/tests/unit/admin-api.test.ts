@@ -17,17 +17,26 @@ import { fetchAuditEntries } from '@/api/audit';
 import { fetchSettingGroup, fetchSettingGroups, resetSettingGroup, updateSettingGroup } from '@/api/settings';
 import { banUser, deleteUser, fetchUser, fetchUsers, unbanUser } from '@/api/identity';
 import { adjustPoints, fetchAdminPointsLedger } from '@/api/points';
+import { isProtectedOidcClient } from '@/api/oidc-admin';
 
 describe('admin domain adapters', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        getApiMock.mockReturnValue({ get: getMock, put: putMock, post: postMock, delete: deleteMock });
+        getApiMock.mockReturnValue({
+            get: getMock,
+            put: putMock,
+            post: postMock,
+            delete: deleteMock
+        });
     });
 
     it('binds all settings operations to the generated endpoint group', async () => {
         await fetchSettingGroups();
         await fetchSettingGroup('object storage');
-        await updateSettingGroup('general', { expected_version: 3, values: { maintenance_mode: true } });
+        await updateSettingGroup('general', {
+            expected_version: 3,
+            values: { maintenance_mode: true }
+        });
         await resetSettingGroup('general');
 
         expect(getMock).toHaveBeenNthCalledWith(1, '/api/v1/admin/settings/groups', undefined, undefined);
@@ -78,16 +87,30 @@ describe('admin domain adapters', () => {
 
         await adjustPoints(body);
 
-        expect(postMock).toHaveBeenCalledWith('/api/v1/admin/points/adjust', body, { signal: undefined });
+        expect(postMock).toHaveBeenCalledWith('/api/v1/admin/points/adjust', body, {
+            signal: undefined
+        });
         expect(body).not.toHaveProperty('program_key');
         expect(body).not.toHaveProperty('bucket_id');
     });
 
     it('binds points ledger reads only to the admin endpoint group', async () => {
         await fetchAdminPointsLedger({ subject_id: 'user-1', page: 1, size: 20 });
-        await fetchAdminPointsLedger({ subject_id: 'user-1', program_key: 'credit', page: 1, size: 20 });
+        await fetchAdminPointsLedger({
+            subject_id: 'user-1',
+            program_key: 'credit',
+            page: 1,
+            size: 20
+        });
 
         expect(getMock).toHaveBeenNthCalledWith(1, '/api/v1/admin/points/ledger', { subject_id: 'user-1', page: 1, size: 20 }, undefined);
         expect(getMock).toHaveBeenNthCalledWith(2, '/api/v1/admin/points/ledger', { subject_id: 'user-1', program_key: 'credit', page: 1, size: 20 }, undefined);
+    });
+});
+
+describe('OIDC client safety', () => {
+    it('protects the administrator client from the disable action', () => {
+        expect(isProtectedOidcClient({ client_id: 'admin' })).toBe(true);
+        expect(isProtectedOidcClient({ client_id: 'client-public' })).toBe(false);
     });
 });

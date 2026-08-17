@@ -27,6 +27,7 @@ from inc.capabilities.notification.models import (
 )
 from inc.capabilities.notification.ports import (
     NotificationProvider,
+    ProviderChainResolver,
     ProviderError,
     ProviderResult,
     RecipientResolver,
@@ -36,6 +37,8 @@ from inc.capabilities.notification.specs import DeliveryPolicy, NotificationSpec
 from inc.kernel.db import UnitOfWork
 from inc.kernel.errors import ErrorCategory, KernelError, RetryCategory
 from inc.kernel.events import EventEnvelope, OutboxWriter
+from inc.kernel.observability import MetricRegistry
+from inc.kernel.security import SensitiveValueProtector
 from inc.kernel.time import Clock
 from inc.kernel.workflow import ActivityContext
 
@@ -66,13 +69,21 @@ class DeliverActivity:
         outbox: OutboxWriter,
         specs: NotificationSpecRegistry,
         resolver: RecipientResolver,
-        providers: dict[str, tuple[NotificationProvider, ...]],
+        providers: dict[str, tuple[NotificationProvider, ...] | ProviderChainResolver],
+        sensitive_value_protector: SensitiveValueProtector | None = None,
+        metrics: MetricRegistry | None = None,
     ) -> None:
         self._clock = clock
         self._outbox = outbox
         self._specs = specs
         self._resolver = resolver
         self._providers = providers
+        self._sensitive_value_protector = sensitive_value_protector
+        self._attempts = (
+            metrics.counter("notification.delivery.started", label_names=("channel",))
+            if metrics
+            else None
+        )
 
     async def __call__(
         self, uow: UnitOfWork, data: dict[str, Any], ctx: ActivityContext
@@ -121,6 +132,8 @@ class DeliverActivity:
         now = self._clock.utc_now()
         delivery.status = "sending"
         delivery.attempt += 1
+        if self._attempts is not None:
+            self._attempts.inc(channel=delivery.channel)
         delivery.lease_owner = f"workflow:{ctx.trace_id or 'runner'}"
         delivery.lease_expires_at = now
 
@@ -149,6 +162,8 @@ class DeliverActivity:
             return {"skipped": False, "status": "failed", "reason": "unresolvable"}
 
         providers = self._providers.get(delivery.channel, ())
+        if hasattr(providers, "resolve_many"):
+            providers = await providers.resolve_many()  # type: ignore[union-attr]
         if not providers:
             await self._fail_permanently(
                 uow,
@@ -158,9 +173,29 @@ class DeliverActivity:
                 reason=f"no provider bound for channel {delivery.channel!r}",
             )
             return {"skipped": False, "status": "failed", "reason": "channel_unbound"}
-        subject, body = render_template(
-            template.subject, template.body, dict(intent.variables.values)
-        )
+        variables = dict(intent.variables.values)
+        if spec.sensitivity == "sensitive":
+            if self._sensitive_value_protector is None:
+                await self._fail_permanently(
+                    uow,
+                    ctx,
+                    delivery=delivery,
+                    intent=intent,
+                    reason="sensitive storage is not configured",
+                )
+                return {"skipped": False, "status": "failed", "reason": "secret_unconfigured"}
+            try:
+                variables = self._sensitive_value_protector.reveal_mapping(variables)
+            except ValueError:
+                await self._fail_permanently(
+                    uow,
+                    ctx,
+                    delivery=delivery,
+                    intent=intent,
+                    reason="sensitive variables could not be decrypted",
+                )
+                return {"skipped": False, "status": "failed", "reason": "secret_invalid"}
+        subject, body = render_template(template.subject, template.body, variables)
         result = await self._send_chain(
             uow,
             providers,
@@ -177,6 +212,7 @@ class DeliverActivity:
             delivery.provider_ref = result.provider_ref
             delivery.delivered_at = now
             intent.state = "delivered"
+            self._scrub_sensitive_variables(intent, spec.sensitivity)
             await self._emit(
                 uow,
                 ctx,
@@ -216,6 +252,7 @@ class DeliverActivity:
         delivery.error_summary = result.error_summary
         if permanent or delivery.attempt >= spec.delivery_policy.max_attempts:
             delivery.status = "dead" if not permanent else "failed"
+            self._scrub_sensitive_variables(intent, spec.sensitivity)
             delivery.next_retry_at = None
             await self._emit(
                 uow,
@@ -262,6 +299,12 @@ class DeliverActivity:
         delivery.lease_owner = None
         delivery.lease_expires_at = None
         delivery.next_retry_at = None
+        try:
+            spec = self._specs.require(intent.spec_key)
+        except KernelError:
+            spec = None
+        if spec is not None:
+            self._scrub_sensitive_variables(intent, spec.sensitivity)
         await self._emit(
             uow,
             ctx,
@@ -270,6 +313,14 @@ class DeliverActivity:
             key="notification.delivery_failed.v1",
             error_category="permanent",
             attempt=delivery.attempt,
+        )
+
+    def _scrub_sensitive_variables(self, intent: NotificationIntent, sensitivity: str) -> None:
+        if sensitivity != "sensitive" or self._sensitive_value_protector is None:
+            return
+        intent.variables = type(intent.variables)(
+            schema_version=intent.variables.schema_version,
+            values=self._sensitive_value_protector.scrub_mapping(dict(intent.variables.values)),
         )
 
     async def _send(

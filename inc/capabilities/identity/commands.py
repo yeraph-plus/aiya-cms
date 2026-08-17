@@ -196,77 +196,102 @@ class RegisterLocalUser:
         display_name: str | None = None,
         issue_email_challenge: bool = False,
     ) -> RegistrationResult:
+        async with self._ctx.uow_factory() as uow:
+            result = await self.register_in_uow(
+                uow,
+                username=username,
+                email=email,
+                password=password,
+                display_name=display_name,
+                issue_email_challenge=issue_email_challenge,
+            )
+            await uow.commit()
+            return result
+
+    async def register_in_uow(
+        self,
+        uow: UnitOfWork,
+        *,
+        username: str,
+        email: str,
+        password: str,
+        display_name: str | None = None,
+        issue_email_challenge: bool = False,
+    ) -> RegistrationResult:
+        """Register without committing, for composition-root transactions.
+
+        The caller owns the surrounding transaction and may append a
+        consumer-owned projection (for example the baseline access role)
+        before committing identity and projection state together.
+        """
+
         validate_password(self._ctx.password_policy, password)
         username_normalized = normalize_username(username)
         email_normalized = normalize_email(email)
 
-        async with self._ctx.uow_factory() as uow:
-            user = IdentityUser(
-                username=username,
-                username_normalized=username_normalized,
-                email_display=email,
-                email_normalized=email_normalized,
-                display_name=display_name,
-                status="active",
+        user = IdentityUser(
+            username=username,
+            username_normalized=username_normalized,
+            email_display=email,
+            email_normalized=email_normalized,
+            display_name=display_name,
+            status="active",
+        )
+        uow.session.add(user)
+        try:
+            await uow.session.flush()  # assigns user.id; unique violations surface here
+        except IntegrityError as exc:
+            raise _conflict("username or email is already registered") from exc
+        uow.session.add(
+            IdentityLoginIdentity(
+                user_id=user.id, provider=LOCAL_PROVIDER, provider_subject=username_normalized
             )
-            uow.session.add(user)
-            try:
-                await uow.session.flush()  # assigns user.id; unique violations surface here
-            except IntegrityError as exc:
-                await uow.rollback()
-                raise _conflict("username or email is already registered") from exc
-            uow.session.add(
-                IdentityLoginIdentity(
-                    user_id=user.id, provider=LOCAL_PROVIDER, provider_subject=username_normalized
-                )
+        )
+        uow.session.add(
+            IdentityPasswordCredential(
+                user_id=user.id,
+                password_hash=self._ctx.hasher.hash(password),
+                hash_version=HASH_VERSION,
+                changed_at=self._ctx.clock.utc_now(),
             )
+        )
+
+        challenge: ChallengeDTO | None = None
+        if issue_email_challenge:
+            token = random_token()
             uow.session.add(
-                IdentityPasswordCredential(
+                IdentityChallenge(
                     user_id=user.id,
-                    password_hash=self._ctx.hasher.hash(password),
-                    hash_version=HASH_VERSION,
-                    changed_at=self._ctx.clock.utc_now(),
-                )
-            )
-
-            challenge: ChallengeDTO | None = None
-            if issue_email_challenge:
-                token = random_token()
-                uow.session.add(
-                    IdentityChallenge(
-                        user_id=user.id,
-                        purpose="email_verification",
-                        token_digest=_digest(token),
-                        expires_at=self._ctx.clock.utc_now()
-                        + timedelta(seconds=CHALLENGE_TTL_SECONDS),
-                        attempts=0,
-                        max_attempts=CHALLENGE_MAX_ATTEMPTS,
-                    )
-                )
-                challenge = ChallengeDTO(
-                    id=str(user.id),
                     purpose="email_verification",
+                    token_digest=_digest(token),
                     expires_at=self._ctx.clock.utc_now() + timedelta(seconds=CHALLENGE_TTL_SECONDS),
+                    attempts=0,
                     max_attempts=CHALLENGE_MAX_ATTEMPTS,
-                    token=token,
                 )
+            )
+            challenge = ChallengeDTO(
+                id=str(user.id),
+                purpose="email_verification",
+                expires_at=self._ctx.clock.utc_now() + timedelta(seconds=CHALLENGE_TTL_SECONDS),
+                max_attempts=CHALLENGE_MAX_ATTEMPTS,
+                token=token,
+            )
 
-            await _append_event(
-                uow,
-                self._ctx,
-                event_key="identity.user_registered.v1",
-                payload={"subject_id": str(user.id), "username": username},
-                aggregate_id=str(user.id),
-            )
-            await _append_audit(
-                uow,
-                self._ctx,
-                action="identity.user.register",
-                target_type="user",
-                target_id=str(user.id),
-            )
-            await uow.commit()
-            return RegistrationResult(subject=to_subject(user), challenge=challenge)
+        await _append_event(
+            uow,
+            self._ctx,
+            event_key="identity.user_registered.v1",
+            payload={"subject_id": str(user.id), "username": username},
+            aggregate_id=str(user.id),
+        )
+        await _append_audit(
+            uow,
+            self._ctx,
+            action="identity.user.register",
+            target_type="user",
+            target_id=str(user.id),
+        )
+        return RegistrationResult(subject=to_subject(user), challenge=challenge)
 
 
 class VerifyEmail:
@@ -322,8 +347,9 @@ class RequestPasswordReset:
     ``None`` — the same external result as a successful request.
     Outstanding unconsumed reset challenges are superseded, so only the
     newest token stays valid. The token is returned to the in-process
-    caller exactly once; out-of-band delivery is orchestrated by
-    feature/notification workflows (identity never imports them), and
+    caller exactly once; out-of-band delivery is triggered by the API
+    composition root through notification's public challenge notifier
+    (identity never imports notification), and
     events/audits never carry the token.
     """
 

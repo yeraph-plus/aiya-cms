@@ -62,6 +62,7 @@ class PointsProgram(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     unit: Mapped[str] = mapped_column(String(32), nullable=False, default="points")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     allow_admin_reversal: Mapped[bool] = mapped_column(nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 @TableOwnership.owned_by("capability:points")

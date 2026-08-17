@@ -12,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from inc.api.app import create_app
 from inc.api.config import ApiSettings
-from inc.api.manifest import cms
+from inc.api.manifest import cms_dev
 from inc.capabilities.access.commands import (
     BootstrapAdministrator,
+    EnsureBaseRoles,
 )
 from inc.capabilities.access.commands import (
     CommandContext as AccessCommandContext,
@@ -52,12 +53,24 @@ async def client(
     api_settings: ApiSettings,
 ) -> Any:
     app = create_app(
-        manifest=cms,
+        manifest=cms_dev,
         uow_factory=uow_factory,
         clock=clock,
         settings=api_settings,
         start_workers=False,
     )
+    services = app.state.services
+    await EnsureBaseRoles(
+        AccessCommandContext(
+            uow_factory=uow_factory,
+            clock=clock,
+            outbox=services.outbox,
+            permissions=services.permission_registry,
+            subject_exists=_always_exists(),
+            audit_actor_id="test",
+            audit_trace_id="test",
+        )
+    )()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as async_client:
         async_client.app = app  # type: ignore[attr-defined]
@@ -115,7 +128,7 @@ async def _mint_token(services: Any, subject_id: str) -> str:
         "exp": int((now + timedelta(minutes=5)).timestamp()),
         "iat": int(now.timestamp()),
         "scope": "openid profile email admin",
-        "client_id": "admin-spa",
+        "client_id": "admin",
     }
     return jwt.encode(claims, key.private_key, algorithm="RS256", headers={"kid": key.kid})
 

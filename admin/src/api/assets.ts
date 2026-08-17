@@ -30,7 +30,13 @@ export async function createUploadIntent(body: CreateUploadIntentInput, signal?:
 }
 
 export async function finalizeUpload(intentId: string, signal?: AbortSignal): Promise<FinalizeResultDTO> {
-    return getApi().post(apiPath('/api/v1/admin/assets/upload-intents/{intent_id}/finalize', { intent_id: intentId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/assets/upload-intents/{intent_id}/finalize', {
+            intent_id: intentId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function uploadToProvider(intent: CreateUploadIntentResult, file: File, signal?: AbortSignal): Promise<void> {

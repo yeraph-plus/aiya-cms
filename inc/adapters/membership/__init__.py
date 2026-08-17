@@ -14,14 +14,14 @@ from __future__ import annotations
 from typing import Any
 
 from inc.capabilities.identity import IdentityQueries
-from inc.capabilities.membership.ports import PointsLedgerPort
+from inc.capabilities.membership.ports import GrantPointsResult, PointsLedgerPort
 from inc.capabilities.points import PointBehaviorRegistry
 from inc.capabilities.points.commands import (
     CommandContext as PointsCommandContext,
 )
 from inc.capabilities.points.commands import CreditPoints
 from inc.capabilities.points.schemas import CreditDebitInput
-from inc.kernel.db import UoWFactory
+from inc.kernel.db import UnitOfWork, UoWFactory
 from inc.kernel.events import OutboxWriter
 from inc.kernel.time import Clock
 
@@ -73,8 +73,34 @@ class PointsGrantLedger(PointsLedgerPort):
         expires_at: Any,
         idempotency_key: str,
         source_ref: str,
-    ) -> dict[str, Any]:
-        entry = await CreditPoints(self._ctx)(
+    ) -> GrantPointsResult:
+        result: GrantPointsResult
+        async with self._ctx.uow_factory() as uow:
+            result = await self.grant_points_in_uow(
+                uow,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                amount=amount,
+                expires_at=expires_at,
+                idempotency_key=idempotency_key,
+                source_ref=source_ref,
+            )
+            await uow.commit()
+        return result
+
+    async def grant_points_in_uow(
+        self,
+        uow: UnitOfWork,
+        *,
+        subject_type: str,
+        subject_id: str,
+        amount: int,
+        expires_at: Any,
+        idempotency_key: str,
+        source_ref: str,
+    ) -> GrantPointsResult:
+        entry = await CreditPoints(self._ctx).credit_in_uow(
+            uow,
             GRANT_BEHAVIOR,
             CreditDebitInput(
                 subject_type=subject_type,
@@ -88,4 +114,4 @@ class PointsGrantLedger(PointsLedgerPort):
                 expires_at=expires_at,
             ),
         )
-        return {"entry_id": entry.id}
+        return {"entry_id": str(entry.id)}

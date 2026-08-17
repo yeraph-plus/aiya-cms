@@ -11,6 +11,7 @@ capability 是拥有业务模型、表、命令、查询、事件、诊断和迁
 - [`oidc-provider.md`](oidc-provider.md)：作为 OpenID Provider 对外提供单点登录。
 - [`audit.md`](audit.md)：跨能力安全审计事实的不可变持久化和查询。
 - [`content.md`](content.md)：通用内容、类型声明、状态、定时发布、置顶和引用。
+- [`community.md`](community.md)：独立社区 discussion/post/tag 模型、审核流、领域搜索和 latest/top/newest 排序。
 - [`comments.md`](comments.md)：面向 opaque target 的评论提交、层级回复和审核状态机。
 - [`engagement.md`](engagement.md)：内容浏览、点赞/收藏、评分事实及聚合快照。
 - [`taxonomy.md`](taxonomy.md)：平面多维标签。

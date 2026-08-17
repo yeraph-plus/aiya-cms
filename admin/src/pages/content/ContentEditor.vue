@@ -26,11 +26,15 @@ import { hasCapability } from '@/auth/session';
 import ConfirmAction from '@/components/feedback/ConfirmAction.vue';
 import PageState from '@/components/feedback/PageState.vue';
 import PageShell from '@/components/shell/PageShell.vue';
+import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t, locale } = useI18n();
 const route = useRoute();
 const props = withDefaults(defineProps<{ contentId?: string | null; embedded?: boolean }>(), { contentId: null, embedded: false });
-const emit = defineEmits<{ saved: [content: ContentDTO]; purged: [contentId: string] }>();
+const emit = defineEmits<{
+    saved: [content: ContentDTO];
+    purged: [contentId: string];
+}>();
 const typeOptions = computed(() => [
     { label: t('workbenches.content.post'), value: 'post' },
     { label: t('workbenches.content.page'), value: 'page' }
@@ -61,8 +65,8 @@ const form = reactive({
 });
 
 const activeContentId = ref<string | null>(props.contentId);
-const contentId = computed(() => activeContentId.value);
-const isNew = computed(() => contentId.value === null);
+const activeId = computed(() => activeContentId.value);
+const isNew = computed(() => activeId.value === null);
 const isPost = computed(() => form.typeName === 'post');
 const canWrite = computed(() => hasCapability('content.write'));
 const canReadTaxonomy = computed(() => hasCapability('taxonomy.read'));
@@ -111,8 +115,8 @@ async function loadTaxonomy(): Promise<void> {
                 assignments[dimension.dimension_key] = [];
             })
         );
-        if (contentId.value) {
-            const current = await fetchTargetTerms('post', contentId.value);
+        if (activeId.value) {
+            const current = await fetchTargetTerms('post', activeId.value);
             for (const dimension of dimensions.value) {
                 assignments[dimension.dimension_key] = (current[dimension.dimension_key] ?? []).map((term) => term.id);
             }
@@ -128,9 +132,9 @@ async function loadReferences(): Promise<void> {
     references.value = [];
     referenceTargets.value = '';
     for (const key of Object.keys(referenceTargetsByKind)) delete referenceTargetsByKind[key];
-    if (!contentId.value) return;
+    if (!activeId.value) return;
     try {
-        references.value = await fetchReferences(contentId.value);
+        references.value = await fetchReferences(activeId.value);
         for (const item of references.value) {
             const targets = referenceTargetsByKind[item.kind] ? `${referenceTargetsByKind[item.kind]}\n` : '';
             referenceTargetsByKind[item.kind] = `${targets}${item.target_content_id}`;
@@ -156,7 +160,7 @@ async function load(): Promise<void> {
 
     loading.value = true;
     try {
-        const item = await fetchContentItem(contentId.value as string);
+        const item = await fetchContentItem(activeId.value as string);
         content.value = item;
         fillForm(item);
         await Promise.all([loadTaxonomy(), loadReferences()]);
@@ -195,7 +199,6 @@ async function save(): Promise<void> {
             const updated = await updateContent(content.value.id, {
                 expected_version: content.value.version,
                 title: form.title,
-                slug: form.slug,
                 body: form.body || null,
                 excerpt: form.excerpt || null
             });
@@ -249,7 +252,10 @@ async function saveReferences(): Promise<void> {
             .split(/[\n,]/u)
             .map((value) => value.trim())
             .filter((value) => value.length > 0);
-        await replaceReferences(content.value.id, { kind: referenceKind.value, targets });
+        await replaceReferences(content.value.id, {
+            kind: referenceKind.value,
+            targets
+        });
         referenceTargetsByKind[referenceKind.value] = targets.join('\n');
         content.value = await fetchContentItem(content.value.id);
         fillForm(content.value);
@@ -287,7 +293,13 @@ async function reject(): Promise<void> {
 
 async function schedule(): Promise<void> {
     if (!scheduleAt.value) return;
-    await runAction(() => scheduleContent(content.value?.id ?? '', { publish_at: new Date(scheduleAt.value).toISOString() }), t('workbenches.content.scheduled'));
+    await runAction(
+        () =>
+            scheduleContent(content.value?.id ?? '', {
+                publish_at: new Date(scheduleAt.value).toISOString()
+            }),
+        t('workbenches.content.scheduled')
+    );
 }
 
 async function unschedule(): Promise<void> {
@@ -308,7 +320,14 @@ async function restore(): Promise<void> {
 
 async function togglePin(): Promise<void> {
     if (!content.value) return;
-    await runAction(() => setContentPin(content.value?.id ?? '', { is_pinned: !content.value?.is_pinned, pin_rank: content.value?.pin_rank ?? 0 }), content.value.is_pinned ? t('workbenches.content.unpinnedNotice') : t('workbenches.content.pinnedNotice'));
+    await runAction(
+        () =>
+            setContentPin(content.value?.id ?? '', {
+                is_pinned: !content.value?.is_pinned,
+                pin_rank: content.value?.pin_rank ?? 0
+            }),
+        content.value.is_pinned ? t('workbenches.content.unpinnedNotice') : t('workbenches.content.pinnedNotice')
+    );
 }
 
 async function purge(): Promise<void> {
@@ -334,7 +353,12 @@ function canAction(capability: string): boolean {
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 watch(
@@ -394,8 +418,12 @@ watch(
                     <div v-if="!isNew && content && content.type_name === 'post' && canReadTaxonomy" class="card flex flex-col gap-4">
                         <div class="flex items-center justify-between gap-3">
                             <div>
-                                <h2 class="text-lg font-semibold">{{ t('workbenches.content.taxonomy') }}</h2>
-                                <p class="text-sm text-muted-color">{{ t('workbenches.content.taxonomyHint') }}</p>
+                                <h2 class="text-lg font-semibold">
+                                    {{ t('workbenches.content.taxonomy') }}
+                                </h2>
+                                <p class="text-sm text-muted-color">
+                                    {{ t('workbenches.content.taxonomyHint') }}
+                                </p>
                             </div>
                             <Button v-if="canManageTaxonomy" :label="t('workbenches.content.saveAssignments')" icon="pi pi-check" :loading="actionLoading" @click="saveTaxonomy" />
                         </div>
@@ -432,8 +460,12 @@ watch(
 
                     <div v-if="!isNew && content" class="card flex flex-col gap-4">
                         <div>
-                            <h2 class="text-lg font-semibold">{{ t('workbenches.content.references') }}</h2>
-                            <p class="text-sm text-muted-color">{{ t('workbenches.content.referencesHint') }}</p>
+                            <h2 class="text-lg font-semibold">
+                                {{ t('workbenches.content.references') }}
+                            </h2>
+                            <p class="text-sm text-muted-color">
+                                {{ t('workbenches.content.referencesHint') }}
+                            </p>
                         </div>
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                             <div class="flex flex-col gap-2">
@@ -456,15 +488,24 @@ watch(
                 </div>
 
                 <div v-if="!isNew && content" class="flex flex-col gap-4">
-                    <div class="card flex flex-col gap-3">
-                        <h2 class="text-lg font-semibold">{{ t('workbenches.content.status') }}</h2>
+                    <SurfaceCard>
+                        <h2 class="text-lg font-semibold">
+                            {{ t('workbenches.content.status') }}
+                        </h2>
                         <div class="flex items-center gap-2">
-                            <Tag :value="content.status" /><span class="text-sm text-muted-color">{{ t('workbenches.content.updated') }} {{ formatDate(content.updated_at) }}</span>
+                            <StatusTag :value="content.status" /><span class="text-sm text-muted-color">{{ t('workbenches.content.updated') }} {{ formatDate(content.updated_at) }}</span>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             <Button v-if="content.status === 'draft' || content.status === 'rejected'" :label="t('workbenches.content.submit')" :disabled="!canAction('content.write')" :loading="actionLoading" @click="submit" />
                             <Button v-if="content.status === 'pending'" :label="t('workbenches.content.reject')" severity="warn" :disabled="!canAction('content.write')" :loading="actionLoading" @click="reject" />
-                            <Button v-if="content.status === 'draft' || content.status === 'pending'" :label="t('workbenches.content.schedule')" severity="secondary" :disabled="!canAction('content.schedule')" :loading="actionLoading" @click="schedule" />
+                            <Button
+                                v-if="content.status === 'draft' || content.status === 'pending'"
+                                :label="t('workbenches.content.schedule')"
+                                severity="secondary"
+                                :disabled="!canAction('content.schedule')"
+                                :loading="actionLoading"
+                                @click="schedule"
+                            />
                             <Button v-if="content.status === 'scheduled'" :label="t('workbenches.content.unschedule')" severity="secondary" :disabled="!canAction('content.schedule')" :loading="actionLoading" @click="unschedule" />
                             <Button
                                 v-if="content.status === 'draft' || content.status === 'pending' || content.status === 'scheduled'"
@@ -481,20 +522,37 @@ watch(
                             <label for="publish-at" class="font-medium">{{ t('workbenches.content.scheduleAt') }}</label>
                             <InputText id="publish-at" v-model="scheduleAt" type="datetime-local" :disabled="!canAction('content.schedule')" />
                         </div>
-                    </div>
+                    </SurfaceCard>
 
-                    <div class="card flex flex-col gap-3">
-                        <h2 class="text-lg font-semibold">{{ t('workbenches.content.pinning') }}</h2>
+                    <SurfaceCard>
+                        <h2 class="text-lg font-semibold">
+                            {{ t('workbenches.content.pinning') }}
+                        </h2>
                         <div class="flex items-center justify-between gap-3">
-                            <span>{{ content.is_pinned ? t('workbenches.content.pinnedAtRank', { rank: content.pin_rank }) : t('workbenches.content.notPinned') }}</span>
+                            <span>{{
+                                content.is_pinned
+                                    ? t('workbenches.content.pinnedAtRank', {
+                                          rank: content.pin_rank
+                                      })
+                                    : t('workbenches.content.notPinned')
+                            }}</span>
                             <Button v-if="canAction('content.pin')" :label="content.is_pinned ? t('workbenches.content.unpin') : t('workbenches.content.pin')" icon="pi pi-star" severity="secondary" @click="togglePin" />
                         </div>
-                    </div>
+                    </SurfaceCard>
 
-                    <div v-if="content.status === 'archived'" class="card flex flex-col gap-3">
-                        <h2 class="text-lg font-semibold">{{ t('workbenches.content.dangerZone') }}</h2>
-                        <ConfirmAction v-if="hasCapability('content.purge')" :label="t('workbenches.content.purge')" :message="t('workbenches.content.purgeConfirm')" :header="t('workbenches.content.purge')" :disabled="actionLoading" @confirmed="purge" />
-                    </div>
+                    <SurfaceCard v-if="content.status === 'archived'">
+                        <h2 class="text-lg font-semibold">
+                            {{ t('workbenches.content.dangerZone') }}
+                        </h2>
+                        <ConfirmAction
+                            v-if="hasCapability('content.purge')"
+                            :label="t('workbenches.content.purge')"
+                            :message="t('workbenches.content.purgeConfirm')"
+                            :header="t('workbenches.content.purge')"
+                            :disabled="actionLoading"
+                            @confirmed="purge"
+                        />
+                    </SurfaceCard>
                 </div>
             </div>
         </template>

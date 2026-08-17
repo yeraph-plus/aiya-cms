@@ -7,6 +7,7 @@ import { hasCapability } from '@/auth/session';
 import PageState from '@/components/feedback/PageState.vue';
 import EntityDrawerShell from '@/components/shell/EntityDrawerShell.vue';
 import PageShell from '@/components/shell/PageShell.vue';
+import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 import PagedTable from '@/components/data/PagedTable.vue';
 import ContentEditor from './ContentEditor.vue';
 
@@ -19,7 +20,10 @@ const typeOptions = computed(() => [
     { label: t('workbenches.content.post'), value: 'post' },
     { label: t('workbenches.content.page'), value: 'page' }
 ]);
-const filters = reactive({ status: null as string | null, typeName: null as string | null });
+const filters = reactive({
+    status: null as string | null,
+    typeName: null as string | null
+});
 const result = ref<ContentPageDTO | null>(null);
 const loading = ref(false);
 const error = ref<unknown>(null);
@@ -49,7 +53,10 @@ function restoreFromRoute(): void {
 }
 
 async function syncRoute(): Promise<void> {
-    const query: LocationQueryRaw = { page: String(page.value), size: String(size.value) };
+    const query: LocationQueryRaw = {
+        page: String(page.value),
+        size: String(size.value)
+    };
     if (filters.status) query.status = filters.status;
     if (filters.typeName) query.type_name = filters.typeName;
     await router.replace({ query });
@@ -114,15 +121,13 @@ function contentPurged(): void {
     void load();
 }
 
-function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'secondary' | 'info' {
-    if (status === 'published') return 'success';
-    if (status === 'scheduled' || status === 'pending') return 'info';
-    if (status === 'archived' || status === 'rejected') return 'warn';
-    return 'secondary';
-}
-
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 function contentTypeLabel(item: ContentDTO): string {
@@ -141,8 +146,8 @@ onMounted(() => {
             <Button v-if="canWrite" icon="pi pi-plus" :label="t('workbenches.content.new')" @click="openNew" />
         </template>
 
-        <div class="card">
-            <form class="flex flex-wrap items-end gap-4" @submit.prevent="applyFilters">
+        <SurfaceCard>
+            <FilterBar :label="t('common.applyFilters')" @submit="applyFilters">
                 <div class="flex min-w-52 flex-col gap-2">
                     <label for="content-type" class="font-medium">{{ t('workbenches.content.type') }}</label>
                     <Select id="content-type" v-model="filters.typeName" :options="typeOptions" option-label="label" option-value="value" fluid />
@@ -151,9 +156,8 @@ onMounted(() => {
                     <label for="content-status" class="font-medium">{{ t('workbenches.status') }}</label>
                     <Select id="content-status" v-model="filters.status" :options="statusOptions" show-clear :placeholder="t('common.all')" fluid />
                 </div>
-                <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" />
-            </form>
-        </div>
+            </FilterBar>
+        </SurfaceCard>
 
         <PageState v-if="loading && !result" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" description="The content list could not be loaded." />
@@ -165,7 +169,7 @@ onMounted(() => {
             </Column>
             <Column field="slug" :header="t('workbenches.content.slug')" style="min-width: 14rem" />
             <Column field="status" :header="t('workbenches.status')" style="min-width: 9rem">
-                <template #body="{ data }"><Tag :value="data.status" :severity="statusSeverity(data.status)" /></template>
+                <template #body="{ data }"><StatusTag :value="data.status" /></template>
             </Column>
             <Column field="is_pinned" :header="t('workbenches.content.pinned')" style="min-width: 7rem">
                 <template #body="{ data }"><i class="pi" :class="data.is_pinned ? 'pi-star-fill text-yellow-500' : 'pi-minus text-muted-color'" /></template>

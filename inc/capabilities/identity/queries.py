@@ -9,6 +9,7 @@ Credential hashes and challenge digests never leave the capability.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import select
@@ -23,10 +24,34 @@ class IdentityQueries:
     def __init__(self, *, uow_factory: UoWFactory) -> None:
         self._uow_factory = uow_factory
 
-    async def get_subject(self, user_id: str) -> SubjectDTO | None:  # type: ignore[return]
+    async def get_subject(self, user_id: str) -> SubjectDTO | None:
         async with self._uow_factory() as uow:
             user = await uow.session.get(IdentityUser, uuid.UUID(user_id))
             return to_subject(user) if user is not None else None
+        raise RuntimeError("identity subject query did not execute")
+
+    async def get_subjects(self, user_ids: Iterable[str]) -> dict[str, SubjectDTO]:
+        """Read a set of subject labels in one query for admin projections."""
+
+        ids: list[uuid.UUID] = []
+        for raw in user_ids:
+            try:
+                value = uuid.UUID(str(raw))
+            except (ValueError, AttributeError, TypeError) as _exc:
+                del _exc
+                continue
+            if value not in ids:
+                ids.append(value)
+        if not ids:
+            return {}
+        async with self._uow_factory() as uow:
+            rows = (
+                (await uow.session.execute(select(IdentityUser).where(IdentityUser.id.in_(ids))))
+                .scalars()
+                .all()
+            )
+            return {str(row.id): to_subject(row) for row in rows}
+        raise RuntimeError("identity subjects query did not execute")
 
     async def find_by_login_identifier(self, identifier: str) -> SubjectDTO | None:  # type: ignore[return]
         """Look up by normalized username or email (case-insensitive)."""

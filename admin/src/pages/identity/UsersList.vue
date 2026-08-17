@@ -6,6 +6,8 @@ import { fetchUsers, type SubjectDTO, type SubjectPageDTO, type UserListQuery } 
 import PageState from '@/components/feedback/PageState.vue';
 import PageShell from '@/components/shell/PageShell.vue';
 import PagedTable from '@/components/data/PagedTable.vue';
+import FilterBar from '@/components/data/FilterBar.vue';
+import ListPanel from '@/components/data/ListPanel.vue';
 import UserWorkspaceDrawer from './UserWorkspaceDrawer.vue';
 import { hasCapability } from '@/auth/session';
 
@@ -26,7 +28,7 @@ const workspaceVisible = computed({
         if (!visible) selectedUserId.value = null;
     }
 });
-const workspaceTab = ref<'account' | 'points'>('account');
+const workspaceTab = ref<'account' | 'roles' | 'points'>('account');
 const canAdjustPoints = computed(() => hasCapability('points.adjust'));
 
 function routeString(key: string): string | undefined {
@@ -43,7 +45,10 @@ function restoreFromRoute(): void {
 }
 
 async function syncRoute(): Promise<void> {
-    const query: LocationQueryRaw = { page: String(page.value), size: String(size.value) };
+    const query: LocationQueryRaw = {
+        page: String(page.value),
+        size: String(size.value)
+    };
     if (filters.status) query.status = filters.status;
     await router.replace({ query });
 }
@@ -89,15 +94,13 @@ function onSize(value: number): void {
     void load(true);
 }
 
-function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'secondary' {
-    if (status === 'active') return 'success';
-    if (status === 'banned') return 'warn';
-    if (status === 'deleted') return 'danger';
-    return 'secondary';
-}
-
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 function openUser(userId: string): void {
@@ -107,6 +110,11 @@ function openUser(userId: string): void {
 
 function openPoints(userId: string): void {
     workspaceTab.value = 'points';
+    selectedUserId.value = userId;
+}
+
+function openRoles(userId: string): void {
+    workspaceTab.value = 'roles';
     selectedUserId.value = userId;
 }
 
@@ -137,16 +145,15 @@ onMounted(() => {
 
 <template>
     <PageShell :title="t('routes.users.list')" :description="t('users.description')" :loading="loading" @refresh="refresh">
-
-        <div class="card">
-            <form class="flex flex-wrap items-end gap-4" @submit.prevent="applyFilters">
+        <ListPanel>
+            <FilterBar :label="t('common.applyFilters')" @submit="applyFilters">
                 <div class="flex min-w-56 flex-col gap-2">
                     <label for="user-status" class="font-medium">{{ t('workbenches.status') }}</label>
                     <Select id="user-status" v-model="filters.status" :options="statusOptions" show-clear :placeholder="t('common.all')" fluid />
                 </div>
-                <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" />
-            </form>
-        </div>
+                <template #actions />
+            </FilterBar>
+        </ListPanel>
 
         <PageState v-if="loading && !result" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" />
@@ -158,7 +165,7 @@ onMounted(() => {
             </Column>
             <Column field="email" :header="t('users.email')" style="min-width: 16rem" />
             <Column field="status" :header="t('workbenches.status')" style="min-width: 8rem">
-                <template #body="{ data }"><Tag :value="data.status" :severity="statusSeverity(data.status)" /></template>
+                <template #body="{ data }"><StatusTag :value="data.status" /></template>
             </Column>
             <Column field="email_verified" :header="t('users.emailVerified')" style="min-width: 10rem">
                 <template #body="{ data }"><i class="pi" :class="data.email_verified ? 'pi-check-circle text-green-500' : 'pi-times-circle text-red-500'" /></template>
@@ -170,6 +177,7 @@ onMounted(() => {
                 <template #body="{ data }">
                     <div class="flex flex-wrap gap-1">
                         <Button :label="t('users.view')" text @click="openUser(data.id)" />
+                        <Button v-if="hasCapability('access.roles.assign')" :label="t('users.manageRoles')" text icon="pi pi-shield" @click="openRoles(data.id)" />
                         <Button v-if="canAdjustPoints" :label="t('users.managePoints')" text icon="pi pi-star" @click="openPoints(data.id)" />
                     </div>
                 </template>

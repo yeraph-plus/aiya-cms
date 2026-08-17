@@ -23,7 +23,12 @@ async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        result.value = await fetchSubscriptions({ subject_type: 'identity', subject_id: props.subjectId, page: 1, size: 50 });
+        result.value = await fetchSubscriptions({
+            subject_type: 'identity',
+            subject_id: props.subjectId,
+            page: 1,
+            size: 50
+        });
     } catch (caught) {
         error.value = caught;
     } finally {
@@ -44,9 +49,16 @@ async function submit(): Promise<void> {
     saving.value = true;
     error.value = null;
     try {
-        const body = { subscription_id: selected.value.id, reason: reason.value.trim() };
+        const body = {
+            subscription_id: selected.value.id,
+            reason: reason.value.trim()
+        };
         const updated = action.value === 'cancel' ? await cancelSubscription(selected.value.id, body) : await terminateSubscription(selected.value.id, body);
-        if (result.value) result.value = { ...result.value, items: result.value.items.map((item) => (item.id === updated.id ? updated : item)) };
+        if (result.value)
+            result.value = {
+                ...result.value,
+                items: result.value.items.map((item) => (item.id === updated.id ? updated : item))
+            };
         dialogVisible.value = false;
     } catch (caught) {
         error.value = caught;
@@ -59,7 +71,11 @@ function formatDate(value: string): string {
     return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium' }).format(new Date(value));
 }
 
-watch(() => props.subjectId, () => void load(), { immediate: true });
+watch(
+    () => props.subjectId,
+    () => void load(),
+    { immediate: true }
+);
 </script>
 
 <template>
@@ -68,9 +84,23 @@ watch(() => props.subjectId, () => void load(), { immediate: true });
     <PageState v-else-if="result?.total === 0" state="empty" :title="t('workbenches.membership.empty')" />
     <DataTable v-else :value="result?.items ?? []" size="small" responsive-layout="scroll">
         <Column field="level_key" :header="t('workbenches.membership.level')" />
-        <Column field="status" :header="t('workbenches.status')"><template #body="{ data }"><Tag :value="data.status" /></template></Column>
-        <Column field="cycle_end" :header="t('workbenches.membership.cycleEnd')"><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column>
-        <Column v-if="canManage"><template #body="{ data }"><div class="flex gap-1"><Button v-if="data.status === 'active'" :label="t('workbenches.membership.cancel')" text severity="warn" @click="openAction(data, 'cancel')" /><Button v-if="data.status !== 'terminated'" :label="t('workbenches.membership.terminate')" text severity="danger" @click="openAction(data, 'terminate')" /></div></template></Column>
+        <Column field="status" :header="t('workbenches.status')"
+            ><template #body="{ data }"><StatusTag :value="data.status" /></template
+        ></Column>
+        <Column field="cycle_end" :header="t('workbenches.membership.cycleEnd')"
+            ><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column
+        >
+        <Column v-if="canManage"
+            ><template #body="{ data }"
+                ><div class="flex gap-1">
+                    <Button v-if="data.status === 'active'" :label="t('workbenches.membership.cancel')" text severity="warn" @click="openAction(data, 'cancel')" /><Button
+                        v-if="data.status !== 'terminated'"
+                        :label="t('workbenches.membership.terminate')"
+                        text
+                        severity="danger"
+                        @click="openAction(data, 'terminate')"
+                    /></div></template
+        ></Column>
     </DataTable>
 
     <FormDialogShell v-model="dialogVisible" :title="t(`workbenches.membership.${action}`)">

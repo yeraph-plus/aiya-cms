@@ -62,23 +62,23 @@ async def test_role_lifecycle_and_grant_effect(
 
     created = await client.post(
         "/api/v1/admin/roles",
-        json={"name": "Editor", "slug": "editor"},
+        json={"name": "Custom editor", "slug": "custom-editor"},
         headers=headers,
     )
     assert created.status_code == 200, created.text
     role = created.json()
-    assert role["slug"] == "editor"
+    assert role["slug"] == "custom-editor"
 
     duplicate = await client.post(
         "/api/v1/admin/roles",
-        json={"name": "Editor 2", "slug": "editor"},
+        json={"name": "Custom editor 2", "slug": "custom-editor"},
         headers=headers,
     )
     assert duplicate.status_code == 409
 
     roles = await client.get("/api/v1/admin/roles", headers=headers)
     assert roles.status_code == 200
-    assert "editor" in {item["slug"] for item in roles.json()}
+    assert "custom-editor" in {item["slug"] for item in roles.json()}
 
     # bind content.write to the role (command layer; no HTTP surface)
     await ReplaceRoleCapabilities(_access_ctx(uow_factory, clock, services))(

@@ -9,6 +9,12 @@ queries and diagnostics.
 
 from __future__ import annotations
 
+from inc.capabilities.points.admin import (
+    PointsAdminService,
+    PointsProgramInput,
+    PointsProgramPatch,
+    PointsProgramStatusInput,
+)
 from inc.capabilities.points.behaviors import (
     PointBehaviorRegistry,
     PointBehaviorSpec,
@@ -27,6 +33,10 @@ __all__ = [
     "ExpireBuckets",
     "PointBehaviorRegistry",
     "PointBehaviorSpec",
+    "PointsAdminService",
+    "PointsProgramInput",
+    "PointsProgramPatch",
+    "PointsProgramStatusInput",
     "PointsDiagnostics",
     "PointsQueries",
 ]

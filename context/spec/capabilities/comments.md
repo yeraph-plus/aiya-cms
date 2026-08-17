@@ -45,10 +45,12 @@ Command 只写 comments 自有表与同事务 outbox；Query 不写库、不发�
 
 ## 5. HTTP
 
-用户侧通用端点：
+comments capability 不导出按任意 `target_type` 放开的用户通用 router。完整产品由 `post` feature 绑定目标策略并导出：
 
-- `GET /api/v1/content/{target_type}/{target_id}/comments`；
-- `POST /api/v1/content/{target_type}/{target_id}/comments`（需要登录）。
+- `GET /api/v1/posts/{post_id}/comments`；
+- `POST /api/v1/posts/{post_id}/comments`（需要登录和 `Idempotency-Key`）。
+
+这两个 router 只能调用 comments 的公开 Command/Query，并把 target 固定为 `post`；page 不因 comments capability 已启用而自动获得评论。未来其他目标需要评论时，由对应 feature 另行声明目标策略和 RouterSpec。
 
 管理侧只导出 `/api/v1/admin/**`：
 
@@ -62,4 +64,4 @@ Command 只写 comments 自有表与同事务 outbox；Query 不写库、不发�
 
 ## 6. 验收
 
-覆盖目标缺失、跨 target 父评论、超过一层回复、非法状态转换、重复审核幂等、软删除正文隐藏、权限、事件/审计同事务、确定性分页、公开端点只泄露 published 状态，以及未装配 comments 时路由为 404。
+覆盖目标缺失、跨 target 父评论、超过一层回复、非法状态转换、重复审核幂等、提交 Idempotency-Key 重放、软删除正文隐藏、权限、事件/审计同事务、确定性分页、公开端点只泄露 published 状态，以及未装配 post/comments 时用户路由为 404。

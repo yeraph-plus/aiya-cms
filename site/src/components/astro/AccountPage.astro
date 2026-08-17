@@ -1,0 +1,26 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+
+interface Props {
+    locale: Locale;
+}
+
+const { locale } = Astro.props;
+const user = Astro.locals.user;
+---
+
+<BaseLayout locale={locale} title={t(locale, 'account.title')} description={t(locale, 'account.description')}>
+    <section class="detail-page">
+        <header class="detail-header">
+            <p class="eyebrow">{t(locale, 'account.signedInAs')}</p>
+            <h1>{user?.displayName ?? user?.email ?? user?.subject}</h1>
+            <p class="lede">{t(locale, 'account.description')}</p>
+        </header>
+        <div class="placeholder-surface">
+            <span aria-hidden="true">01</span>
+            <p>{t(locale, 'account.placeholder')}</p>
+        </div>
+    </section>
+</BaseLayout>

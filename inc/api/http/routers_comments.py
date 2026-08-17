@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Path, Query
 
 from inc.api.container import Services
 from inc.api.http.context import AppContext, RequireCapability
+from inc.api.http.projections import AdminContentRefDTO, AdminSubjectRefDTO
 from inc.capabilities.comments.commands import (
     ApproveComment,
     CommandContext,
@@ -31,6 +32,65 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "comments.moderate",
     "comments.delete",
 )
+
+
+class AdminCommentDTO(CommentDTO):
+    """Comment response enriched for administrator moderation tables."""
+
+    author: AdminSubjectRefDTO | None = None
+    target: AdminContentRefDTO | None = None
+
+
+async def _decorate_admin_comments(
+    services: Services, page: Page[CommentDTO]
+) -> Page[AdminCommentDTO]:
+    author_ids = {item.author_id for item in page.items if item.author_type == "identity"}
+    authors = await services.identity_queries.get_subjects(author_ids)
+    content_ids: list[uuid.UUID] = []
+    for item in page.items:
+        try:
+            content_ids.append(uuid.UUID(item.target_id))
+        except (ValueError, AttributeError) as _exc:
+            del _exc
+            continue
+    contents = await services.content_queries.get_many(content_ids)
+    decorated: list[AdminCommentDTO] = []
+    for item in page.items:
+        subject = authors.get(item.author_id)
+        author = (
+            AdminSubjectRefDTO(
+                subject_type=item.author_type,
+                subject_id=item.author_id,
+                username=subject.username,
+                display_name=subject.display_name,
+                avatar_asset_id=subject.avatar_asset_id,
+            )
+            if subject is not None
+            else None
+        )
+        content = contents.get(item.target_id)
+        target = (
+            AdminContentRefDTO(
+                target_type=item.target_type,
+                target_id=item.target_id,
+                type_name=content.type_name,
+                title=content.title,
+                slug=content.slug,
+                status=content.status,
+            )
+            if content is not None
+            else None
+        )
+        decorated.append(AdminCommentDTO(**item.model_dump(), author=author, target=target))
+    return Page(items=decorated, total=page.total, page=page.page, size=page.size)
+
+
+async def _decorate_admin_comment(services: Services, item: CommentDTO) -> AdminCommentDTO:
+    page = await _decorate_admin_comments(
+        services,
+        Page(items=[item], total=1, page=1, size=1),
+    )
+    return page.items[0]
 
 
 def _ctx(
@@ -106,7 +166,7 @@ def build_router(
 
     @router.get(
         "/admin/comments",
-        response_model=Page[CommentDTO],
+        response_model=Page[AdminCommentDTO],
         tags=["admin", "admin-comments"],
     )
     async def list_admin(
@@ -117,8 +177,8 @@ def build_router(
         target_id: str | None = Query(default=None),
         author_id: str | None = Query(default=None),
         ctx: AppContext = Depends(require_capability("comments.read")),
-    ) -> Page[CommentDTO]:
-        return await queries.list_admin(
+    ) -> Page[AdminCommentDTO]:
+        result = await queries.list_admin(
             page=page,
             size=size,
             status=status,
@@ -126,54 +186,61 @@ def build_router(
             target_id=target_id,
             author_id=author_id,
         )
+        return await _decorate_admin_comments(services, result)
 
     @router.get(
         "/admin/comments/{comment_id}",
-        response_model=CommentDTO,
+        response_model=AdminCommentDTO,
         tags=["admin", "admin-comments"],
     )
     async def get_admin(
         comment_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("comments.read")),
-    ) -> CommentDTO:
+    ) -> AdminCommentDTO:
         found = await queries.get(comment_id)
         if found is None:
             raise _not_found(comment_id)
-        return found
+        return await _decorate_admin_comment(services, found)
 
     @router.post(
         "/admin/comments/{comment_id}/approve",
-        response_model=CommentDTO,
+        response_model=AdminCommentDTO,
         tags=["admin", "admin-comments"],
     )
     async def approve(
         comment_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("comments.moderate")),
-    ) -> CommentDTO:
-        return await ApproveComment(_ctx(services, ctx))(comment_id)
+    ) -> AdminCommentDTO:
+        return await _decorate_admin_comment(
+            services, await ApproveComment(_ctx(services, ctx))(comment_id)
+        )
 
     @router.post(
         "/admin/comments/{comment_id}/reject",
-        response_model=CommentDTO,
+        response_model=AdminCommentDTO,
         tags=["admin", "admin-comments"],
     )
     async def reject(
         body: RejectCommentInput,
         comment_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("comments.moderate")),
-    ) -> CommentDTO:
-        return await RejectComment(_ctx(services, ctx))(comment_id, body)
+    ) -> AdminCommentDTO:
+        return await _decorate_admin_comment(
+            services, await RejectComment(_ctx(services, ctx))(comment_id, body)
+        )
 
     @router.post(
         "/admin/comments/{comment_id}/delete",
-        response_model=CommentDTO,
+        response_model=AdminCommentDTO,
         tags=["admin", "admin-comments"],
     )
     async def delete(
         body: DeleteCommentInput,
         comment_id: uuid.UUID = Path(...),
         ctx: AppContext = Depends(require_capability("comments.delete")),
-    ) -> CommentDTO:
-        return await DeleteComment(_ctx(services, ctx))(comment_id, body)
+    ) -> AdminCommentDTO:
+        return await _decorate_admin_comment(
+            services, await DeleteComment(_ctx(services, ctx))(comment_id, body)
+        )
 
     return router

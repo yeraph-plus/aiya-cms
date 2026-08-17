@@ -287,3 +287,59 @@ async def test_adjust_requires_capability_and_auth(
     )
     assert read_denied.status_code == 403
     assert read_denied.json()["code"] == "api.forbidden"
+
+
+async def test_points_workbench_summary_accounts_and_account_id_freeze(
+    client: Any, admin_token: str, uow_factory: Any, clock: Any, program: None
+) -> None:
+    services = client.app.state.services
+    created = await _register(uow_factory, clock, services, "points-workbench")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created_program = await client.post(
+        "/api/v1/admin/points/programs",
+        json={
+            "program_key": "bonus",
+            "display_name": "Bonus",
+            "unit": "points",
+            "allow_admin_reversal": True,
+        },
+        headers=headers,
+    )
+    assert created_program.status_code == 200, created_program.text
+    assert created_program.json()["program_key"] == "bonus"
+    adjusted = await client.post(
+        "/api/v1/admin/points/adjust",
+        json=_adjust_body(subject_id=created.subject.id, amount=7, idempotency_key="workbench-1"),
+        headers=headers,
+    )
+    assert adjusted.status_code == 200, adjusted.text
+
+    summary = await client.get("/api/v1/admin/points/summary", headers=headers)
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["account_count"] >= 1
+
+    accounts = await client.get("/api/v1/admin/points/accounts", headers=headers)
+    assert accounts.status_code == 200, accounts.text
+    account = next(
+        item for item in accounts.json()["items"] if item["subject_id"] == created.subject.id
+    )
+    assert account["subject"]["username"] == "points-workbench"
+    frozen = await client.post(
+        f"/api/v1/admin/points/accounts/{account['account_id']}/freeze",
+        json={"reason": "manual review"},
+        headers=headers,
+    )
+    assert frozen.status_code == 200, frozen.text
+    assert frozen.json()["state"] == "frozen"
+
+
+async def test_points_program_patch_rejects_explicit_null(
+    client: Any, admin_token: str, program: None
+) -> None:
+    response = await client.patch(
+        "/api/v1/admin/points/programs/credit",
+        json={"expected_version": 1, "unit": None},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 422

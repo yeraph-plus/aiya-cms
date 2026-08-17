@@ -83,15 +83,13 @@ async function remove(): Promise<void> {
     }
 }
 
-function statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'secondary' {
-    if (status === 'active') return 'success';
-    if (status === 'banned') return 'warn';
-    if (status === 'deleted') return 'danger';
-    return 'secondary';
-}
-
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 watch(
@@ -121,7 +119,7 @@ watch(
                         </div>
                         <div class="col-span-12 flex flex-col gap-2">
                             <span class="text-sm text-muted-color">{{ t('workbenches.status') }}</span>
-                            <Tag :value="user.status" :severity="statusSeverity(user.status)" class="w-fit" />
+                            <StatusTag :value="user.status" class="w-fit" />
                         </div>
                         <div class="col-span-12 flex flex-col gap-2">
                             <span class="text-sm text-muted-color">{{ t('users.emailVerified') }}</span>

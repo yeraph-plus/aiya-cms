@@ -4,9 +4,10 @@ Contract source: context/spec/adapters.md §2/§4/§6.
 
 Adapters live under ``inc/adapters/<capability>/`` and are usable by both
 ``inc/api`` and ``inc/features``; planned integrations are side-effect-free
-placeholders that declare their target Port. Importing any adapter
-directory must not start connections, threads, routers or registries, and
-the planned ones must not import provider SDKs.
+placeholders that declare their target Port. Importing any adapter directory
+must not start connections, threads, routers or registries. Implemented
+providers may import their SDKs lazily, but must still be side-effect-free at
+module import time.
 """
 
 from __future__ import annotations
@@ -21,11 +22,12 @@ ADAPTER_DIRS = (
     ("content", ("openlist",)),
 )
 
-PLACEHOLDERS = ("inc.adapters.payments.paypal",)
+PLACEHOLDERS = ()
 
 IMPLEMENTED = (
     "inc.adapters.notification.email_smtp",
     "inc.adapters.notification.smtp2go",
+    "inc.adapters.payments.paypal",
     "inc.adapters.payments.epay",
     "inc.adapters.assets.s3",
     "inc.adapters.content.openlist",

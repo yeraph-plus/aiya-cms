@@ -1,0 +1,57 @@
+FROM python:3.14-slim-bookworm AS backend-build
+
+WORKDIR /build
+
+RUN /usr/local/bin/python -m venv /opt/venv
+COPY pyproject.toml README.md ./
+COPY inc ./inc
+RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip==25.3 \
+    && /opt/venv/bin/pip install --no-cache-dir .
+
+FROM python:3.14-slim-bookworm AS runtime
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        ca-certificates \
+        curl \
+        nginx \
+        supervisor \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system aiya \
+    && adduser --system --ingroup aiya aiya \
+    && mkdir -p /var/lib/aiya/oidc-keys /run/supervisor /var/log/supervisor \
+        /tmp/nginx/client_temp /tmp/nginx/proxy_temp /tmp/nginx/fastcgi_temp \
+        /tmp/nginx/uwsgi_temp /tmp/nginx/scgi_temp \
+    && chown -R aiya:aiya /var/lib/aiya /run/supervisor /var/log/supervisor /tmp/nginx
+
+COPY --from=backend-build /opt/venv /opt/venv
+COPY --chown=aiya:aiya inc ./inc
+COPY --chown=aiya:aiya alembic ./alembic
+COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md \
+    openapi.json openapi.sha256 openapi.user.json openapi.user.sha256 ./
+
+# The GitHub Actions job builds admin/dist before docker build.
+COPY admin/dist/ /usr/share/nginx/html/
+COPY deploy/nginx.conf /etc/nginx/nginx.conf
+COPY deploy/nginx.production.conf /etc/nginx/conf.d/default.conf
+COPY deploy/supervisord.production.conf /etc/supervisor/supervisord.conf
+COPY deploy/aiya-cms.supervisor.conf /etc/supervisor/conf.d/aiya-cms.conf
+COPY deploy/production-entrypoint.sh /usr/local/bin/aiya-production-entrypoint
+
+RUN rm -f /etc/nginx/sites-enabled/default \
+    && chown -R aiya:aiya /app /var/lib/aiya \
+    && chmod -R a+rX /usr/share/nginx/html \
+    && chmod 0555 /usr/local/bin/aiya-production-entrypoint
+
+USER aiya
+
+ENTRYPOINT ["/usr/local/bin/aiya-production-entrypoint"]
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=10 \
+    CMD curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null || exit 1
+
+CMD ["supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]

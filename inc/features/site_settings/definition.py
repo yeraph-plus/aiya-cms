@@ -3,8 +3,8 @@
 Contract source: context/spec/features.md §4.5, context/spec/capabilities/settings.md §2/§5.
 
 The site_settings feature owns the site-level settings group
-declarations (general, seo, notification, object_storage, entitlements and
-operations). settings itself stays a
+declarations (general, seo, notification, object_storage, entitlements,
+operations and payments). settings itself stays a
 passive host: it persists, validates, gates by permission and serves
 groups that downstream code declares. SMTP connection credentials
 (host/port/username/password/from_address, use_tls/starttls) are filled
@@ -35,6 +35,7 @@ NOTIFICATION_GROUP_KEY = "notification"
 ENTITLEMENTS_GROUP_KEY = "entitlements"
 OBJECT_STORAGE_GROUP_KEY = "object_storage"
 OPERATIONS_GROUP_KEY = "operations"
+PAYMENTS_GROUP_KEY = "payments"
 
 
 class GeneralValueSchema(BaseModel):
@@ -64,6 +65,7 @@ class NotificationValueSchema(BaseModel):
     default_from_name: str = Field(default="aiya", max_length=100)
     email_enabled: bool = False
     default_channel: str = Field(default="email", max_length=20)
+    email_provider: Literal["email.smtp", "email.smtp2go"] = "email.smtp"
     smtp_enabled: bool = False
     smtp_host: str = Field(default="", max_length=200)
     smtp_port: int = Field(default=25, ge=1, le=65535)
@@ -104,6 +106,7 @@ class ObjectStorageValueSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     s3_endpoint_url: str = Field(default="", max_length=500)
+    storage_provider: Literal["s3"] = "s3"
     s3_virtual_host_url: str = Field(default="", max_length=500)
     s3_bucket: str = Field(default="aiya-assets", max_length=200)
     s3_avatar_bucket: str = Field(default="aiya-avatars", max_length=200)
@@ -119,6 +122,14 @@ class OperationsValueSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     audit_retention_days: int = Field(default=30, ge=1, le=3650)
+
+
+class PaymentsValueSchema(BaseModel):
+    """Runtime payment provider choice; credentials remain provider-owned."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["dev_fake", "paypal"] | None = None
 
 
 def _option(label: str, value: str | int | float | bool | None) -> SettingOption:
@@ -273,6 +284,18 @@ NOTIFICATION_FIELDS = (
         public=True,
     ),
     SettingFieldSpec(
+        slug="email_provider",
+        title="Email provider",
+        desc="Provider selected for the next email delivery.",
+        type="select",
+        type_sub="string",
+        default="email.smtp",
+        metadata=SettingFieldMetadata(
+            options=(_option("SMTP", "email.smtp"), _option("SMTP2GO", "email.smtp2go")),
+        ),
+        public=False,
+    ),
+    SettingFieldSpec(
         slug="smtp_enabled",
         title="SMTP enabled",
         desc="Use the aiosmtplib SMTP provider when email delivery is enabled.",
@@ -406,6 +429,15 @@ ENTITLEMENTS_FIELDS = (
 
 OBJECT_STORAGE_FIELDS = (
     SettingFieldSpec(
+        slug="storage_provider",
+        title="Storage provider",
+        desc="Provider selected for the next asset operation.",
+        type="select",
+        type_sub="string",
+        default="s3",
+        metadata=SettingFieldMetadata(options=(_option("S3-compatible", "s3"),)),
+    ),
+    SettingFieldSpec(
         slug="s3_endpoint_url",
         title="S3 endpoint URL",
         desc="S3-compatible API endpoint.",
@@ -492,6 +524,20 @@ OPERATIONS_FIELDS = (
     ),
 )
 
+PAYMENTS_FIELDS = (
+    SettingFieldSpec(
+        slug="provider",
+        title="Payment provider",
+        desc="Provider selected for the next payment operation.",
+        type="select",
+        type_sub="string",
+        default=None,
+        metadata=SettingFieldMetadata(
+            options=(_option("Development fake", "dev_fake"), _option("PayPal", "paypal")),
+        ),
+    ),
+)
+
 
 def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
     return (
@@ -541,6 +587,14 @@ def build_site_setting_group_specs() -> tuple[SettingGroupSpec, ...]:
             value_schema=OperationsValueSchema,
             fields=OPERATIONS_FIELDS,
             update_permission="settings.operations.update",
+            cache_policy="event",
+        ),
+        SettingGroupSpec(
+            group_key=PAYMENTS_GROUP_KEY,
+            version="1",
+            value_schema=PaymentsValueSchema,
+            fields=PAYMENTS_FIELDS,
+            update_permission="settings.payments.update",
             cache_policy="event",
         ),
     )

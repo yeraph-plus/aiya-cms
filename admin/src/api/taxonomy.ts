@@ -13,11 +13,23 @@ export async function fetchDimensions(signal?: AbortSignal): Promise<DimensionDT
 }
 
 export async function fetchTerms(dimensionKey: string, signal?: AbortSignal): Promise<TermDTO[]> {
-    return getApi().get(apiPath('/api/v1/admin/taxonomy/dimensions/{dimension_key}/terms', { dimension_key: dimensionKey }), undefined, signal);
+    return getApi().get(
+        apiPath('/api/v1/admin/taxonomy/dimensions/{dimension_key}/terms', {
+            dimension_key: dimensionKey
+        }),
+        undefined,
+        signal
+    );
 }
 
 export async function createTerm(dimensionKey: string, body: CreateTermInput, signal?: AbortSignal): Promise<TermDTO> {
-    return getApi().post(apiPath('/api/v1/admin/taxonomy/dimensions/{dimension_key}/terms', { dimension_key: dimensionKey }), body, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/taxonomy/dimensions/{dimension_key}/terms', {
+            dimension_key: dimensionKey
+        }),
+        body,
+        { signal }
+    );
 }
 
 export async function updateTerm(termId: string, body: UpdateTermInput, signal?: AbortSignal): Promise<TermDTO> {
@@ -25,17 +37,44 @@ export async function updateTerm(termId: string, body: UpdateTermInput, signal?:
 }
 
 export async function archiveTerm(termId: string, signal?: AbortSignal): Promise<TermDTO> {
-    return getApi().post(apiPath('/api/v1/admin/taxonomy/terms/{term_id}/archive', { term_id: termId }), undefined, { signal });
+    return getApi().post(
+        apiPath('/api/v1/admin/taxonomy/terms/{term_id}/archive', {
+            term_id: termId
+        }),
+        undefined,
+        { signal }
+    );
 }
 
 export async function fetchTargetTerms(targetType: string, targetId: string, signal?: AbortSignal): Promise<TargetTermsDTO> {
-    return getApi().get(apiPath('/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms', { target_type: targetType, target_id: targetId }), undefined, signal);
+    return getApi().get(
+        apiPath('/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms', {
+            target_type: targetType,
+            target_id: targetId
+        }),
+        undefined,
+        signal
+    );
 }
 
 export async function assignTerms(targetType: string, targetId: string, body: AssignBody, signal?: AbortSignal): Promise<void> {
-    return getApi().put(apiPath('/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms', { target_type: targetType, target_id: targetId }), body, { signal });
+    return getApi().put(
+        apiPath('/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms', {
+            target_type: targetType,
+            target_id: targetId
+        }),
+        body,
+        { signal }
+    );
 }
 
 export async function removeTargetTerms(targetType: string, targetId: string, signal?: AbortSignal): Promise<void> {
-    return getApi().delete(apiPath('/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms', { target_type: targetType, target_id: targetId }), undefined, signal);
+    return getApi().delete(
+        apiPath('/api/v1/admin/taxonomy/targets/{target_type}/{target_id}/terms', {
+            target_type: targetType,
+            target_id: targetId
+        }),
+        undefined,
+        signal
+    );
 }

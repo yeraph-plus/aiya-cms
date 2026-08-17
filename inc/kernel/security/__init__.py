@@ -9,7 +9,9 @@ primitives and Ports.
 
 from __future__ import annotations
 
+from inc.kernel.security.envelope import SensitiveValueProtector
 from inc.kernel.security.hashing import Argon2PasswordHasher, PasswordHasher
+from inc.kernel.security.network import resolve_client_ip
 from inc.kernel.security.redaction import MASK, is_secret_key, redact
 from inc.kernel.security.signing import HmacSigner, KeyLoader, KeyRef, Signer
 from inc.kernel.security.tokens import constant_time_compare, random_bytes, random_token
@@ -22,9 +24,11 @@ __all__ = [
     "MASK",
     "PasswordHasher",
     "Signer",
+    "SensitiveValueProtector",
     "constant_time_compare",
     "is_secret_key",
     "random_bytes",
     "random_token",
     "redact",
+    "resolve_client_ip",
 ]

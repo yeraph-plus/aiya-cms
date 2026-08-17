@@ -1,0 +1,8 @@
+---
+import CommunityDiscussion from '@/components/astro/CommunityDiscussion.astro';
+
+const { slug } = Astro.params;
+if (!slug) Astro.response.status = 404;
+---
+
+<CommunityDiscussion locale="zh-CN" slug={slug ?? ''} />

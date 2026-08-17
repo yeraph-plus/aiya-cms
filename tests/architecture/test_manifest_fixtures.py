@@ -10,7 +10,7 @@ production manifest with the same shape).
 
 from __future__ import annotations
 
-from inc.api.manifest import cms, identity_provider, kernel_only
+from inc.api.manifest import cms, cms_dev, identity_provider, kernel_only, management_plane
 from inc.kernel.boot import AppManifest
 
 ALL_CAPABILITIES = (
@@ -21,6 +21,7 @@ ALL_CAPABILITIES = (
     "settings",
     "content",
     "comments",
+    "community",
     "notification",
     "taxonomy",
     "assets",
@@ -31,6 +32,7 @@ ALL_CAPABILITIES = (
 )
 
 ALL_FEATURES = (
+    "auth",
     "post",
     "page",
     "site_settings",
@@ -46,6 +48,7 @@ def test_manifest_fixtures_are_immutable_and_named() -> None:
     for manifest, expected in (
         (kernel_only, "kernel_only"),
         (identity_provider, "identity_provider"),
+        (management_plane, "management_plane"),
         (cms, "cms"),
     ):
         assert isinstance(manifest, AppManifest)
@@ -69,3 +72,19 @@ def test_identity_provider_manifest_activates_oidc_ring_only() -> None:
 def test_cms_manifest_activates_full_product() -> None:
     assert set(cms.capabilities) == set(ALL_CAPABILITIES)
     assert set(cms.features) == set(ALL_FEATURES)
+
+
+def test_cms_production_manifest_does_not_bind_test_adapters() -> None:
+    adapters = dict(cms.adapters)
+    assert adapters["oidc.signing_keys"] == "oidc.filesystem_keys"
+    assert adapters["payments.provider"] == "payments.paypal"
+    dev_adapters = dict(cms_dev.adapters)
+    assert dev_adapters["oidc.signing_keys"] == "oidc.in_memory_keys"
+    assert dev_adapters["payments.provider"] == "payments.dev_fake"
+
+
+def test_management_plane_is_the_only_deployable_profile() -> None:
+    assert "notifications_admin" in management_plane.routers
+    assert "payments" not in management_plane.capabilities
+    assert "oidc.in_memory_keys" not in dict(management_plane.adapters).values()
+    assert "payments.dev_fake" not in dict(management_plane.adapters).values()

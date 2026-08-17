@@ -26,7 +26,7 @@ subject 是 identity 等能力的 opaque reference，不建立外键。创建关
 - `CreateRole`、`UpdateRole`、`DeleteRole`。
 - `ReplaceRoleCapabilities`。
 - `AssignRoleToSubject`、`RevokeRoleFromSubject`。
-- `BootstrapAdministrator`：仅 `install` ops 入口可调用。系统内只允许一个超级管理员（`administrator` 角色）：目标 subject 已持有该角色时幂等返回；已有其他 subject 持有该角色时拒绝并返回 `access.administrator_exists`，禁止创建第二个超级管理员。bootstrap 创建 `administrator` 系统角色并绑定全部已注册权限 key。
+- `BootstrapAdministrator`：仅 `install` ops 入口可调用。系统内只允许一个超级管理员（`administrator` 角色）：目标 subject 已持有该角色时幂等返回；已有其他 subject 持有该角色时拒绝并返回 `access.administrator_exists`，禁止创建第二个超级管理员。bootstrap 创建 `administrator` 系统角色并绑定全部已注册权限 key；授权读取时该受保护角色仍视为当前 registry 的实时权限投影，以兼容部署后新增权限而不要求手工重绑管理员。
 
 系统角色允许禁止删除或限制编辑。任何 role/capability 变更必须在一个 access UoW 中保持一致并审计。
 

@@ -16,7 +16,7 @@ const router = createRouter({
 const devAuthBypass = import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH === '1';
 
 function authenticatedHome(): string {
-    for (const name of ['dashboard', 'users', 'content-articles', 'user-permissions', 'user-points', 'user-membership', 'user-payments', 'settings', 'system-audit', 'system-assets', 'system-operations', 'system-oidc']) {
+    for (const name of ['dashboard', 'users', 'content-articles', 'user-permissions', 'user-points', 'user-membership', 'settings', 'system-audit', 'system-assets', 'system-operations', 'system-oidc']) {
         const requiredCapability = router.resolve({ name }).meta.requiredCapability;
         if (typeof requiredCapability !== 'string' || hasCapability(requiredCapability)) return name;
     }
@@ -24,7 +24,14 @@ function authenticatedHome(): string {
 }
 
 router.beforeEach(async (to) => {
-    if (sessionState.status === 'loading' || sessionState.status === 'error') {
+    const isAuthCallback = to.name === 'auth-callback';
+    const hasAuthorizationCode = typeof to.query.code === 'string' && to.query.code.length > 0;
+    const isAuthCompletion = to.name === 'login' || isAuthCallback;
+
+    // The callback component must consume the one-time authorization code
+    // before any cookie-first session probe.  Probing here can issue an
+    // anonymous 401 and race signinRedirectCallback on a fresh page load.
+    if (!(isAuthCallback && hasAuthorizationCode) && (sessionState.status === 'loading' || sessionState.status === 'error')) {
         await initializeSession();
     }
 
@@ -34,7 +41,6 @@ router.beforeEach(async (to) => {
         return { name: 'login', query: { redirect: to.fullPath } };
     }
 
-    const isAuthCompletion = to.name === 'login' || to.name === 'auth-callback';
     if (isAuthCompletion && isAuthenticated.value && !devAuthBypass) {
         return { name: authenticatedHome() };
     }

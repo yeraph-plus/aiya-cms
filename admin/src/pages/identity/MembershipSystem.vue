@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { cancelSubscription, fetchMembershipLevels, fetchSubscriptionRenewals, fetchSubscriptions, terminateSubscription, type LevelDTO, type RenewalPageDTO, type SubscriptionDTO, type SubscriptionPageDTO } from '@/api/membership';
+import { cancelSubscription, fetchMembershipSummary, fetchSubscriptionRenewals, fetchSubscriptions, terminateSubscription, type MembershipSummaryDTO, type RenewalPageDTO, type SubscriptionDTO, type SubscriptionPageDTO } from '@/api/membership';
 import { hasCapability } from '@/auth/session';
 import PagedTable from '@/components/data/PagedTable.vue';
 import ApiErrorMessage from '@/components/feedback/ApiErrorMessage.vue';
 import PageState from '@/components/feedback/PageState.vue';
 import EntityDrawerShell from '@/components/shell/EntityDrawerShell.vue';
-import FormDialogShell from '@/components/shell/FormDialogShell.vue';
 import PageShell from '@/components/shell/PageShell.vue';
 import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t, locale } = useI18n();
-const levels = ref<LevelDTO[]>([]);
 const subscriptions = ref<SubscriptionPageDTO | null>(null);
+const summary = ref<MembershipSummaryDTO | null>(null);
 const loading = ref(false);
 const error = ref<unknown>(null);
 const page = ref(1);
@@ -33,9 +32,9 @@ async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        const [nextLevels, nextSubscriptions] = await Promise.all([fetchMembershipLevels(), fetchSubscriptions({ page: page.value, size: size.value })]);
-        levels.value = nextLevels;
+        const [nextSubscriptions, nextSummary] = await Promise.all([fetchSubscriptions({ page: page.value, size: size.value }), fetchMembershipSummary()]);
         subscriptions.value = nextSubscriptions;
+        summary.value = nextSummary;
     } catch (caught) {
         error.value = caught;
     } finally {
@@ -60,7 +59,10 @@ async function openRenewals(subscription: SubscriptionDTO): Promise<void> {
     renewalsVisible.value = true;
     renewalsLoading.value = true;
     try {
-        renewals.value = await fetchSubscriptionRenewals(subscription.id, { page: 1, size: 50 });
+        renewals.value = await fetchSubscriptionRenewals(subscription.id, {
+            page: 1,
+            size: 50
+        });
     } catch (caught) {
         actionError.value = caught;
     } finally {
@@ -81,9 +83,16 @@ async function submitAction(): Promise<void> {
     actionLoading.value = true;
     actionError.value = null;
     try {
-        const body = { subscription_id: selected.value.id, reason: reason.value.trim() };
+        const body = {
+            subscription_id: selected.value.id,
+            reason: reason.value.trim()
+        };
         const updated = actionType.value === 'cancel' ? await cancelSubscription(selected.value.id, body) : await terminateSubscription(selected.value.id, body);
-        if (subscriptions.value) subscriptions.value = { ...subscriptions.value, items: subscriptions.value.items.map((item) => (item.id === updated.id ? updated : item)) };
+        if (subscriptions.value)
+            subscriptions.value = {
+                ...subscriptions.value,
+                items: subscriptions.value.items.map((item) => (item.id === updated.id ? updated : item))
+            };
         actionVisible.value = false;
     } catch (caught) {
         actionError.value = caught;
@@ -93,7 +102,12 @@ async function submitAction(): Promise<void> {
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 onMounted(() => void load());
@@ -101,15 +115,30 @@ onMounted(() => void load());
 
 <template>
     <PageShell :title="t('routes.users.membership')" :description="t('workbenches.membership.description')" :loading="loading" @refresh="load">
-        <Message severity="info" :closable="false">{{ t('workbenches.membership.levelReserved') }}</Message>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <SurfaceCard v-for="level in levels" :key="level.level_key" :title="level.display_name" :description="level.level_key">
-                <dl class="grid grid-cols-2 gap-2 text-sm">
-                    <dt class="text-muted-color">{{ t('workbenches.membership.tier') }}</dt><dd>{{ level.tier_rank }}</dd>
-                    <dt class="text-muted-color">{{ t('workbenches.membership.cycle') }}</dt><dd>{{ t('workbenches.membership.days', { count: level.cycle_days }) }}</dd>
-                    <dt class="text-muted-color">{{ t('workbenches.membership.points') }}</dt><dd>{{ level.grant_points }}</dd>
-                    <dt class="text-muted-color">{{ t('workbenches.status') }}</dt><dd><Tag :value="level.status" /></dd>
-                </dl>
+            <SurfaceCard :title="t('workbenches.membership.summary')" class="md:col-span-2 xl:col-span-3">
+                <div class="grid grid-cols-2 gap-4 md:grid-cols-5 text-sm">
+                    <div>
+                        <span class="text-muted-color">{{ t('workbenches.membership.levels') }}</span
+                        ><strong class="block text-xl">{{ summary?.level_count ?? '—' }}</strong>
+                    </div>
+                    <div>
+                        <span class="text-muted-color">{{ t('workbenches.membership.subscriptions') }}</span
+                        ><strong class="block text-xl">{{ summary?.subscription_count ?? '—' }}</strong>
+                    </div>
+                    <div>
+                        <span class="text-muted-color">{{ t('workbenches.membership.active') }}</span
+                        ><strong class="block text-xl">{{ summary?.active_subscription_count ?? '—' }}</strong>
+                    </div>
+                    <div>
+                        <span class="text-muted-color">{{ t('workbenches.membership.cancelled') }}</span
+                        ><strong class="block text-xl">{{ summary?.cancelled_subscription_count ?? '—' }}</strong>
+                    </div>
+                    <div>
+                        <span class="text-muted-color">{{ t('workbenches.membership.expired') }}</span
+                        ><strong class="block text-xl">{{ summary?.expired_subscription_count ?? '—' }}</strong>
+                    </div>
+                </div>
             </SurfaceCard>
         </div>
         <PageState v-if="loading && !subscriptions" state="loading" />
@@ -117,10 +146,21 @@ onMounted(() => void load());
         <PageState v-else-if="subscriptions?.total === 0" state="empty" :title="t('workbenches.membership.empty')" />
         <SurfaceCard v-else-if="subscriptions" :title="t('workbenches.membership.subscriptions')">
             <PagedTable :value="subscriptions.items" :total-records="subscriptions.total" :page="subscriptions.page" :size="subscriptions.size" :loading="loading" @update:page="onPage" @update:size="onSize">
-                <Column field="subject_id" :header="t('workbenches.subjectId')" />
+                <Column field="subject_id" :header="t('workbenches.subjectId')">
+                    <template #body="{ data }">
+                        <div>
+                            {{ data.subject?.display_name || data.subject?.username || data.subject_id }}
+                        </div>
+                        <small v-if="data.subject?.display_name || data.subject?.username" class="text-muted-color">{{ data.subject_id }}</small>
+                    </template>
+                </Column>
                 <Column field="level_key" :header="t('workbenches.membership.level')" />
-                <Column field="status" :header="t('workbenches.status')"><template #body="{ data }"><Tag :value="data.status" /></template></Column>
-                <Column field="cycle_end" :header="t('workbenches.membership.cycleEnd')"><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column>
+                <Column field="status" :header="t('workbenches.status')"
+                    ><template #body="{ data }"><StatusTag :value="data.status" /></template
+                ></Column>
+                <Column field="cycle_end" :header="t('workbenches.membership.cycleEnd')"
+                    ><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column
+                >
                 <Column field="renewal_count" :header="t('workbenches.membership.renewals')" />
                 <Column :header="t('common.moreActions')">
                     <template #body="{ data }">
@@ -138,8 +178,12 @@ onMounted(() => void load());
             <PageState v-if="renewalsLoading" state="loading" />
             <ApiErrorMessage v-else-if="actionError" :error="actionError" />
             <DataTable v-else :value="renewals?.items ?? []" size="small">
-                <Column field="cycle_start" :header="t('workbenches.membership.start')"><template #body="{ data }">{{ formatDate(data.cycle_start) }}</template></Column>
-                <Column field="cycle_end" :header="t('workbenches.membership.end')"><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column>
+                <Column field="cycle_start" :header="t('workbenches.membership.start')"
+                    ><template #body="{ data }">{{ formatDate(data.cycle_start) }}</template></Column
+                >
+                <Column field="cycle_end" :header="t('workbenches.membership.end')"
+                    ><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column
+                >
                 <Column field="granted_points" :header="t('workbenches.membership.points')" />
                 <Column field="outcome" :header="t('workbenches.membership.outcome')" />
             </DataTable>

@@ -1,13 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { createUploadIntent, deleteAsset, fetchAssets, fetchConfiguredBuckets, finalizeUpload, registerExternalAsset, updateAssetMetadata, uploadToProvider, type AssetListQuery, type AssetPageDTO, type AssetRefDTO, type CreateUploadIntentResult } from '@/api/assets';
+import {
+    createUploadIntent,
+    deleteAsset,
+    fetchAssets,
+    fetchConfiguredBuckets,
+    finalizeUpload,
+    registerExternalAsset,
+    updateAssetMetadata,
+    uploadToProvider,
+    type AssetListQuery,
+    type AssetPageDTO,
+    type AssetRefDTO,
+    type CreateUploadIntentResult
+} from '@/api/assets';
 import { errorMessage } from '@/api/errors';
 import { hasCapability } from '@/auth/session';
 import ConfirmAction from '@/components/feedback/ConfirmAction.vue';
 import PageState from '@/components/feedback/PageState.vue';
+import FilterBar from '@/components/data/FilterBar.vue';
+import ListPanel from '@/components/data/ListPanel.vue';
 import PageShell from '@/components/shell/PageShell.vue';
 import FormDialogShell from '@/components/shell/FormDialogShell.vue';
+import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t, locale } = useI18n();
 const stateOptions = ['pending', 'ready', 'failed', 'deleted'];
@@ -135,7 +151,9 @@ async function saveMetadata(): Promise<void> {
     saving.value = true;
     formError.value = null;
     try {
-        const updated = await updateAssetMetadata(selectedAsset.value.id, { alt_text: altText.value || null });
+        const updated = await updateAssetMetadata(selectedAsset.value.id, {
+            alt_text: altText.value || null
+        });
         selectedAsset.value = updated;
         assetDialogVisible.value = false;
         await load();
@@ -185,13 +203,6 @@ async function removeAsset(asset: AssetRefDTO): Promise<void> {
     }
 }
 
-function stateSeverity(state: string): 'success' | 'warn' | 'danger' | 'secondary' | 'info' {
-    if (state === 'ready') return 'success';
-    if (state === 'pending') return 'info';
-    if (state === 'failed') return 'danger';
-    return 'secondary';
-}
-
 function formatBytes(value: number): string {
     if (value < 1024) return `${value} B`;
     if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
@@ -199,7 +210,10 @@ function formatBytes(value: number): string {
 }
 
 function formatDate(value: string): string {
-    return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+    return new Intl.DateTimeFormat(locale.value, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    }).format(new Date(value));
 }
 
 onMounted(() => {
@@ -216,11 +230,7 @@ onMounted(() => {
             <Button v-if="canManage" icon="pi pi-external-link" :label="t('workbenches.assets.registerExternal')" severity="secondary" @click="openRegister" />
         </template>
 
-        <div v-if="canUpload" class="card flex flex-col gap-4">
-            <div>
-                <h2 class="text-lg font-semibold">{{ t('workbenches.assets.uploadObject') }}</h2>
-                <p class="text-sm text-muted-color">{{ t('workbenches.assets.uploadHint') }}</p>
-            </div>
+        <SurfaceCard v-if="canUpload" :title="t('workbenches.assets.uploadObject')" :description="t('workbenches.assets.uploadHint')" compact>
             <div class="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_18rem_auto] md:items-end">
                 <div class="flex flex-col gap-2">
                     <label for="asset-file" class="font-medium">{{ t('workbenches.assets.file') }}</label>
@@ -235,10 +245,10 @@ onMounted(() => {
                 <Button :label="uploadStage === 'uploaded' ? t('workbenches.assets.retryFinalize') : t('common.upload')" icon="pi pi-upload" :loading="uploading" :disabled="!selectedFile" @click="upload" />
             </div>
             <Message v-if="uploadError" severity="error" :closable="false">{{ errorMessage(uploadError) }}</Message>
-        </div>
+        </SurfaceCard>
 
-        <div class="card">
-            <form class="flex flex-wrap items-end gap-4" @submit.prevent="applyFilters">
+        <SurfaceCard>
+            <FilterBar :label="t('common.applyFilters')" @submit="applyFilters">
                 <div class="flex min-w-52 flex-col gap-2">
                     <label for="asset-state" class="font-medium">{{ t('workbenches.assets.state') }}</label>
                     <Select id="asset-state" v-model="filters.state" :options="stateOptions" show-clear :placeholder="t('common.all')" fluid />
@@ -247,42 +257,45 @@ onMounted(() => {
                     <label for="asset-search" class="font-medium">{{ t('workbenches.assets.objectKey') }}</label>
                     <InputText id="asset-search" v-model="filters.search" :placeholder="t('workbenches.assets.searchObjectKey')" />
                 </div>
-                <Button type="submit" :label="t('common.applyFilters')" icon="pi pi-search" />
-            </form>
-        </div>
+            </FilterBar>
+        </SurfaceCard>
 
         <PageState v-if="loading && !result" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" />
         <PageState v-else-if="result && result.total === 0" state="empty" :title="t('workbenches.assets.empty')" :description="t('workbenches.assets.emptyDescription')" />
-        <PagedTable v-else-if="result" :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
-            <Column field="object_key" :header="t('workbenches.assets.objectKey')" style="min-width: 20rem" />
-            <Column field="bucket" :header="t('workbenches.assets.bucket')" style="min-width: 12rem">
-                <template #body="{ data }">{{ data.bucket || '-' }}</template>
-            </Column>
-            <Column field="mime_type" :header="t('workbenches.assets.mimeType')" style="min-width: 13rem" />
-            <Column field="byte_size" :header="t('workbenches.assets.size')" style="min-width: 8rem">
-                <template #body="{ data }">{{ formatBytes(data.byte_size) }}</template>
-            </Column>
-            <Column field="state" :header="t('workbenches.assets.state')" style="min-width: 8rem">
-                <template #body="{ data }"><Tag :value="data.state" :severity="stateSeverity(data.state)" /></template>
-            </Column>
-            <Column field="created_at" :header="t('workbenches.assets.created')" style="min-width: 13rem">
-                <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
-            </Column>
-            <Column :header="t('common.actions')" style="width: 12rem">
-                <template #body="{ data }">
-                    <div class="flex flex-wrap gap-1">
-                        <Button v-if="canManage" :label="t('common.edit')" text icon="pi pi-pencil" @click="openAsset(data)" />
-                        <ConfirmAction v-if="canDelete && data.state === 'ready'" :label="t('common.delete')" severity="danger" :message="t('workbenches.assets.deleteConfirm')" @confirmed="removeAsset(data)" />
-                    </div>
-                </template>
-            </Column>
-        </PagedTable>
+        <ListPanel v-else-if="result">
+            <PagedTable :value="result.items" :loading="loading" :total-records="result.total" :page="result.page" :size="result.size" @update:page="onPage" @update:size="onSize">
+                <Column field="object_key" :header="t('workbenches.assets.objectKey')" style="min-width: 20rem" />
+                <Column field="bucket" :header="t('workbenches.assets.bucket')" style="min-width: 12rem">
+                    <template #body="{ data }">{{ data.bucket || '-' }}</template>
+                </Column>
+                <Column field="mime_type" :header="t('workbenches.assets.mimeType')" style="min-width: 13rem" />
+                <Column field="byte_size" :header="t('workbenches.assets.size')" style="min-width: 8rem">
+                    <template #body="{ data }">{{ formatBytes(data.byte_size) }}</template>
+                </Column>
+                <Column field="state" :header="t('workbenches.assets.state')" style="min-width: 8rem">
+                    <template #body="{ data }"><StatusTag :value="data.state" /></template>
+                </Column>
+                <Column field="created_at" :header="t('workbenches.assets.created')" style="min-width: 13rem">
+                    <template #body="{ data }">{{ formatDate(data.created_at) }}</template>
+                </Column>
+                <Column :header="t('common.actions')" style="width: 12rem">
+                    <template #body="{ data }">
+                        <div class="flex flex-wrap gap-1">
+                            <Button v-if="canManage" :label="t('common.edit')" text icon="pi pi-pencil" @click="openAsset(data)" />
+                            <ConfirmAction v-if="canDelete && data.state === 'ready'" :label="t('common.delete')" severity="danger" :message="t('workbenches.assets.deleteConfirm')" @confirmed="removeAsset(data)" />
+                        </div>
+                    </template>
+                </Column>
+            </PagedTable>
+        </ListPanel>
 
         <FormDialogShell v-model="assetDialogVisible" :title="t('workbenches.assets.metadata')">
             <form class="flex flex-col gap-4" @submit.prevent="saveMetadata">
                 <Message v-if="formError" severity="error" :closable="false">{{ errorMessage(formError) }}</Message>
-                <div class="text-sm text-muted-color">{{ selectedAsset?.object_key }}</div>
+                <div class="text-sm text-muted-color">
+                    {{ selectedAsset?.object_key }}
+                </div>
                 <div class="flex flex-col gap-2">
                     <label for="asset-alt-text" class="font-medium">{{ t('workbenches.assets.altText') }}</label>
                     <InputText id="asset-alt-text" v-model="altText" maxlength="500" />

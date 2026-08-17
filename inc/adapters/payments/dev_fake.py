@@ -65,6 +65,10 @@ class DevFakePaymentProvider:
 
     key = "dev_fake"
 
+    @property
+    def webhook_secret(self) -> str:
+        return DEV_FAKE_WEBHOOK_SECRET
+
     def __init__(self) -> None:
         self._statuses: dict[str, str] = {}
         self._refunds: dict[str, str] = {}

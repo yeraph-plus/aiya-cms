@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     environment: Environment = "dev"
     # Connection fields are decomposed (host/user/password/...); docker-compose
     # and 1panel-style panels inject these separately. An explicit
-    # database_url/redis_url override (used by SQLite tests and exotic
-    # deployments) wins over the decomposed fields. pg_host has no default so
-    # that a completely unconfigured boot still fails fast.
+    # database_url/redis_url override wins over the decomposed fields. The
+    # production profile requires those explicit URLs so release deployments
+    # cannot silently fall back to local/default endpoints.
     pg_host: str = ""
     pg_port: int = 5432
     pg_user: str = "aiya"
@@ -73,6 +73,12 @@ class Settings(BaseSettings):
 
         def _secret(v: Any) -> str:
             return v.get_secret_value() if isinstance(v, SecretStr) else str(v or "")
+
+        if str(data.get("environment", "dev")).lower() == "production":
+            if not data.get("database_url"):
+                raise ValueError("production requires AIYA_DATABASE_URL")
+            if not data.get("redis_url"):
+                raise ValueError("production requires AIYA_REDIS_URL")
 
         if not data.get("database_url"):
             pg_host = _secret(data.get("pg_host"))

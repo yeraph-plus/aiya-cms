@@ -10,13 +10,13 @@ and tag is multi-select.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from inc.capabilities.content import DEFAULT_TRANSITIONS, STANDARD_STATES, ContentTypeSpec
 from inc.capabilities.taxonomy import DimensionSpec
 from inc.kernel.boot import FeatureSpec
 
-spec = FeatureSpec(name="post", version="1", requires=("content", "taxonomy"))
+spec = FeatureSpec(name="post", version="1", requires=("assets", "content", "taxonomy"))
 
 
 class PostData(BaseModel):
@@ -27,8 +27,6 @@ class PostData(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-
-    summary: str | None = Field(default=None, max_length=500)
 
 
 content_type_spec = ContentTypeSpec(
@@ -45,8 +43,10 @@ content_type_spec = ContentTypeSpec(
     allows_owner=True,
     allows_references=True,
     title_max_length=200,
-    body_max_length=None,
+    body_max_bytes=524288,
     excerpt_max_length=300,
+    requires_ready_markdown_assets=True,
+    publication_policy_key="assets.ready_markdown.v1",
 )
 
 dimension_specs = (

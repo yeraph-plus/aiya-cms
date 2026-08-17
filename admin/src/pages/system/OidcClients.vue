@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { disableOidcClient, enableOidcClient, fetchOidcClients, registerOidcClient, rotateOidcClientSecret, updateOidcClient, type ClientDTO } from '@/api/oidc-admin';
+import { disableOidcClient, enableOidcClient, fetchOidcClients, isProtectedOidcClient, registerOidcClient, rotateOidcClientSecret, updateOidcClient, type ClientDTO } from '@/api/oidc-admin';
 import { hasCapability } from '@/auth/session';
 import ApiErrorMessage from '@/components/feedback/ApiErrorMessage.vue';
 import PageState from '@/components/feedback/PageState.vue';
@@ -32,7 +32,10 @@ const form = reactive({
 });
 
 function lines(value: string): string[] {
-    return value.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean);
+    return value
+        .split(/\r?\n/u)
+        .map((item) => item.trim())
+        .filter(Boolean);
 }
 
 async function load(): Promise<void> {
@@ -49,7 +52,17 @@ async function load(): Promise<void> {
 
 function openCreate(): void {
     selected.value = null;
-    Object.assign(form, { clientId: '', name: '', clientType: 'public', redirectUris: '', postLogoutUris: '', scopes: 'openid\nprofile\nemail', audiences: '', trusted: false, allowRefresh: true });
+    Object.assign(form, {
+        clientId: '',
+        name: '',
+        clientType: 'public',
+        redirectUris: '',
+        postLogoutUris: '',
+        scopes: 'openid\nprofile\nemail',
+        audiences: '',
+        trusted: false,
+        allowRefresh: true
+    });
     actionError.value = null;
     oneTimeSecret.value = null;
     formVisible.value = true;
@@ -149,12 +162,22 @@ onMounted(() => void load());
         <PageState v-else-if="clients?.length === 0" state="empty" :title="t('workbenches.oidc.empty')" />
         <div v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <SurfaceCard v-for="client in clients" :key="client.client_id" :title="client.name" :description="client.client_id">
-                <template #actions><Tag :value="client.status" :severity="client.status === 'active' ? 'success' : 'secondary'" /></template>
+                <template #actions><StatusTag :value="client.status" /></template>
                 <div class="mb-4 flex flex-wrap gap-2"><Tag :value="client.client_type" /><Tag v-for="scope in client.allowed_scopes" :key="scope" :value="scope" severity="secondary" /></div>
-                <ul class="mb-4 list-disc pl-5 text-sm"><li v-for="uri in client.redirect_uris" :key="uri" class="break-all">{{ uri }}</li></ul>
+                <ul class="mb-4 list-disc pl-5 text-sm">
+                    <li v-for="uri in client.redirect_uris" :key="uri" class="break-all">
+                        {{ uri }}
+                    </li>
+                </ul>
                 <div v-if="canManage" class="flex flex-wrap gap-2">
                     <Button :label="t('common.edit')" severity="secondary" @click="openEdit(client)" />
-                    <Button :label="client.status === 'active' ? t('workbenches.oidc.disable') : t('workbenches.oidc.enable')" :severity="client.status === 'active' ? 'warn' : 'success'" @click="toggleStatus(client)" />
+                    <Button
+                        v-if="!isProtectedOidcClient(client) || client.status !== 'active'"
+                        :label="client.status === 'active' ? t('workbenches.oidc.disable') : t('workbenches.oidc.enable')"
+                        :severity="client.status === 'active' ? 'warn' : 'success'"
+                        @click="toggleStatus(client)"
+                    />
+                    <Tag v-else :value="t('workbenches.oidc.protected')" severity="info" />
                     <Button v-if="client.client_type === 'confidential'" :label="t('workbenches.oidc.rotateSecret')" severity="danger" @click="rotateSecret(client)" />
                 </div>
             </SurfaceCard>
@@ -174,7 +197,10 @@ onMounted(() => void load());
                 <Textarea v-model="form.postLogoutUris" rows="3" :placeholder="t('workbenches.oidc.postLogoutUris')" />
                 <Textarea v-model="form.scopes" rows="3" :placeholder="t('workbenches.oidc.scopes')" />
                 <Textarea v-model="form.audiences" rows="3" :placeholder="t('workbenches.oidc.audiences')" />
-                <div v-if="!selected" class="flex flex-col gap-3"><label><Checkbox v-model="form.trusted" binary /> {{ t('workbenches.oidc.trusted') }}</label><label><Checkbox v-model="form.allowRefresh" binary /> {{ t('workbenches.oidc.allowRefresh') }}</label></div>
+                <div v-if="!selected" class="flex flex-col gap-3">
+                    <label><Checkbox v-model="form.trusted" binary /> {{ t('workbenches.oidc.trusted') }}</label
+                    ><label><Checkbox v-model="form.allowRefresh" binary /> {{ t('workbenches.oidc.allowRefresh') }}</label>
+                </div>
                 <Button type="submit" :label="t('workbenches.save')" :loading="saving" class="md:col-span-2" />
             </form>
         </FormDialogShell>

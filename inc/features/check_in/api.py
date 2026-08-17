@@ -132,7 +132,8 @@ class MeService:
                 avatar_url = (
                     await self._asset_queries.resolve_url(asset_id, permissions=permissions)
                 ).url
-            except KernelError, ValueError:
+            except (KernelError, ValueError) as _exc:
+                del _exc
                 # A deleted, pending or malformed asset is represented as no URL;
                 # the stable opaque ID remains useful for profile management.
                 avatar_url = None

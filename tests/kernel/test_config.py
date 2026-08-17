@@ -8,6 +8,19 @@ from pydantic import SecretStr, ValidationError
 from inc.kernel.config import Settings, load_settings
 
 
+@pytest.fixture(autouse=True)
+def _clear_release_connection_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests deterministic when release URLs are exported globally.
+
+    Real PostgreSQL/Redis acceptance tests opt into the production variable
+    names explicitly; these tests exercise decomposed-field assembly and
+    production validation in isolation.
+    """
+
+    monkeypatch.delenv("AIYA_DATABASE_URL", raising=False)
+    monkeypatch.delenv("AIYA_REDIS_URL", raising=False)
+
+
 def _clear_pg_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulate an unconfigured environment for fail-fast tests.
 
@@ -92,6 +105,33 @@ def test_missing_database_url_fails_even_when_env_unset(monkeypatch: pytest.Monk
     # The empty default must be rejected by the validator even when the env
     # var is absent (validate_default), not silently accepted.
     with pytest.raises(ValidationError, match="database_url is required"):
+        Settings()
+
+
+def test_production_requires_explicit_database_and_redis_urls() -> None:
+    with pytest.raises(ValidationError, match="AIYA_DATABASE_URL"):
+        Settings(environment="production", pg_host="db.internal")
+
+    with pytest.raises(ValidationError, match="AIYA_REDIS_URL"):
+        Settings(
+            environment="production",
+            database_url="postgresql+asyncpg://u:p@db.internal/app",
+            pg_host="db.internal",
+        )
+
+    settings = Settings(
+        environment="production",
+        database_url="postgresql+asyncpg://u:p@db.internal/app",
+        redis_url="redis://cache.internal:6379/0",
+    )
+    assert settings.database_url.get_secret_value().startswith("postgresql+asyncpg://")
+    assert settings.redis_url.get_secret_value() == "redis://cache.internal:6379/0"
+
+
+def test_environment_production_requires_explicit_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AIYA_ENVIRONMENT", "production")
+    monkeypatch.setenv("AIYA_PG_HOST", "db.internal")
+    with pytest.raises(ValidationError, match="AIYA_DATABASE_URL"):
         Settings()
 
 

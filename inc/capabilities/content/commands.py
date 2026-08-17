@@ -13,7 +13,6 @@ idempotent through the workflow business key content_id:schedule_version.
 
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 
 from inc.capabilities.content.dto import to_dto
 from inc.capabilities.content.events import _payload
+from inc.capabilities.content.markdown import generate_slug, validate_markdown
 from inc.capabilities.content.models import (
     PIN_RANK_MAX,
     Content,
@@ -31,6 +31,8 @@ from inc.capabilities.content.models import (
     ContentReference,
     ReferenceMetadata,
 )
+from inc.capabilities.content.ports import ContentPublicationPolicy
+from inc.capabilities.content.publication import validate_publication
 from inc.capabilities.content.schemas import (
     ContentDTO,
     CreateContentInput,
@@ -61,6 +63,7 @@ class CommandContext:
     clock: Clock
     outbox: OutboxWriter
     types: ContentTypeRegistry
+    publication_policies: dict[str, ContentPublicationPolicy] | None = None
     permissions: frozenset[str] = frozenset()
     actor_id: str | None = None
     trace_id: str | None = None
@@ -101,29 +104,21 @@ def _require_permission(ctx: CommandContext, key: str) -> None:
 
 
 def _require_owner(ctx: CommandContext, spec: ContentTypeSpec, row: Content) -> None:
-    if spec.allows_owner and row.owner_id is not None:
-        if ctx.actor_id != str(row.owner_id) and PERMISSION_MANAGE not in ctx.permissions:
-            raise _forbidden("content.forbidden", "not the content owner")
+    if not spec.allows_owner or PERMISSION_MANAGE in ctx.permissions:
+        return
+    if row.owner_id is None or ctx.actor_id != str(row.owner_id):
+        raise _forbidden("content.forbidden", "not the content owner")
 
 
 def _validate_data(spec: ContentTypeSpec, data: dict[str, Any]) -> dict[str, Any]:
     return spec.data_schema.model_validate(data).model_dump(mode="json")
 
 
-def _validate_slug(spec: ContentTypeSpec, slug: str) -> None:
-    if not re.fullmatch(spec.slug_pattern, slug):
-        raise _validation(
-            "content.invalid_slug", f"slug {slug!r} does not match pattern {spec.slug_pattern}"
-        )
-
-
 def _validate_text(
     spec: ContentTypeSpec, title: str, body: str | None, excerpt: str | None
-) -> None:
+) -> str | None:
     if len(title) > spec.title_max_length:
         raise _validation("content.invalid_title", f"title longer than {spec.title_max_length}")
-    if body is not None and spec.body_max_length is not None and len(body) > spec.body_max_length:
-        raise _validation("content.invalid_body", f"body longer than {spec.body_max_length}")
     if (
         excerpt is not None
         and spec.excerpt_max_length is not None
@@ -132,6 +127,18 @@ def _validate_text(
         raise _validation(
             "content.invalid_excerpt", f"excerpt longer than {spec.excerpt_max_length}"
         )
+    return validate_markdown(spec, body).source
+
+
+async def _validate_publication(ctx: CommandContext, row: Content, spec: ContentTypeSpec) -> None:
+    """Validate source facts again before a content becomes externally actionable."""
+
+    await validate_publication(
+        spec=spec,
+        body=row.body,
+        excerpt=row.excerpt,
+        policies=ctx.publication_policies or {},
+    )
 
 
 async def _emit(
@@ -265,12 +272,11 @@ class CreateContent:
     def __init__(self, ctx: CommandContext) -> None:
         self._ctx = ctx
 
-    async def __call__(self, input_: CreateContentInput) -> ContentDTO:  # type: ignore[return]
+    async def __call__(self, input_: CreateContentInput) -> ContentDTO:
         ctx = self._ctx
         _require_permission(ctx, PERMISSION_WRITE)
         spec = _require_type(ctx, input_.type_name)
-        _validate_slug(spec, input_.slug)
-        _validate_text(spec, input_.title, input_.body, input_.excerpt)
+        body = _validate_text(spec, input_.title, input_.body, input_.excerpt)
         payload = _validate_data(spec, input_.data)
         if input_.status is not None and input_.status != spec.default_state:
             raise _validation(
@@ -280,43 +286,60 @@ class CreateContent:
             raise _validation(
                 "content.owner_not_allowed", f"type {spec.type_name} does not support owners"
             )
-        now = ctx.clock.utc_now()
-        async with ctx.uow_factory() as uow:
-            row = Content(
-                type_name=spec.type_name,
-                schema_version=spec.data_schema_version,
-                title=input_.title,
-                slug=input_.slug,
-                body=input_.body,
-                excerpt=input_.excerpt,
-                status=spec.default_state,
-                owner_type="identity" if input_.owner_id is not None else None,
-                owner_id=input_.owner_id,
-                version=1,
-                data=ContentDataEnvelope(schema_version=spec.data_schema_version, payload=payload),
-            )
-            uow.session.add(row)
+        owner_id = input_.owner_id
+        if spec.allows_owner and PERMISSION_MANAGE not in ctx.permissions:
+            if ctx.actor_id is None:
+                raise _forbidden("content.forbidden", "an owner is required")
             try:
-                await uow.session.flush()  # assign id before events reference it
-            except IntegrityError as exc:
-                raise _conflict(
-                    "content.duplicate_slug", f"slug {row.slug!r} already exists for this type"
-                ) from exc
-            await _emit(
-                ctx,
-                uow,
-                key="content.created.v1",
-                content_id=str(row.id),
-                occurred_at=now,
-                type_name=row.type_name,
-                slug=row.slug,
-                status=row.status,
-                version=row.version,
-                title=row.title,
-            )
-            await _append_audit(ctx, uow, action="content.create", content=row, occurred_at=now)
-            await _commit(uow, conflict_code="content.duplicate_slug")
-            return to_dto(row)
+                actor_uuid = uuid.UUID(ctx.actor_id)
+            except (ValueError, AttributeError) as exc:
+                raise _forbidden("content.forbidden", "actor cannot own content") from exc
+            if owner_id is not None and owner_id != actor_uuid:
+                raise _forbidden("content.forbidden", "cannot create content for another owner")
+            owner_id = actor_uuid
+        for _ in range(5):
+            now = ctx.clock.utc_now()
+            try:
+                async with ctx.uow_factory() as uow:
+                    row = Content(
+                        type_name=spec.type_name,
+                        schema_version=spec.data_schema_version,
+                        title=input_.title,
+                        slug=generate_slug(spec, input_.title),
+                        body=body,
+                        excerpt=input_.excerpt,
+                        status=spec.default_state,
+                        owner_type="identity" if owner_id is not None else None,
+                        owner_id=owner_id,
+                        version=1,
+                        data=ContentDataEnvelope(
+                            schema_version=spec.data_schema_version, payload=payload
+                        ),
+                    )
+                    uow.session.add(row)
+                    await uow.session.flush()  # assign id before events reference it
+                    await _emit(
+                        ctx,
+                        uow,
+                        key="content.created.v1",
+                        content_id=str(row.id),
+                        occurred_at=now,
+                        type_name=row.type_name,
+                        slug=row.slug,
+                        status=row.status,
+                        version=row.version,
+                        title=row.title,
+                    )
+                    await _append_audit(
+                        ctx, uow, action="content.create", content=row, occurred_at=now
+                    )
+                    await _commit(uow)
+                    return to_dto(row)
+            except IntegrityError:
+                continue
+        raise _conflict(
+            "content.slug_generation_failed", "could not allocate a unique content slug"
+        )
 
 
 class UpdateContent:
@@ -337,15 +360,8 @@ class UpdateContent:
                         "content.invalid_title", f"title longer than {spec.title_max_length}"
                     )
                 values["title"] = input_.title
-            if input_.slug is not None:
-                _validate_slug(spec, input_.slug)
-                values["slug"] = input_.slug
             if input_.body is not None:
-                if spec.body_max_length is not None and len(input_.body) > spec.body_max_length:
-                    raise _validation(
-                        "content.invalid_body", f"body longer than {spec.body_max_length}"
-                    )
-                values["body"] = input_.body
+                values["body"] = validate_markdown(spec, input_.body).source
             if input_.excerpt is not None:
                 if (
                     spec.excerpt_max_length is not None
@@ -394,7 +410,7 @@ class UpdateContent:
                 occurred_at=now,
                 details={"changed": sorted(values)},
             )
-            await _commit(uow, conflict_code="content.duplicate_slug")
+            await _commit(uow)
             return to_dto(refreshed)
 
 
@@ -409,6 +425,7 @@ class SubmitContent:
         now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_WRITE)
+            await _validate_publication(ctx, row, spec)
             _transition(ctx, row, spec, "pending")
             refreshed = await _transition_row(uow, row, "pending", now=now, set_values={})
             await _emit(
@@ -487,6 +504,7 @@ class ScheduleContent:
                     "content.schedule_not_allowed",
                     f"type {spec.type_name} does not support scheduling",
                 )
+            await _validate_publication(ctx, row, spec)
             _transition(ctx, row, spec, "scheduled")
             refreshed = await _transition_row(
                 uow,
@@ -570,6 +588,7 @@ class PublishContent:
         now = ctx.clock.utc_now()
         async with ctx.uow_factory() as uow:
             row, spec = await _load_and_check(ctx, uow, content_id, permission=PERMISSION_PUBLISH)
+            await _validate_publication(ctx, row, spec)
             _transition(ctx, row, spec, "published")
             refreshed = await _transition_row(
                 uow,

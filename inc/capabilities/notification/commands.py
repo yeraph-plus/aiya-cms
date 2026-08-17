@@ -27,6 +27,7 @@ from inc.capabilities.notification.models import (
 )
 from inc.capabilities.notification.ports import (
     NotificationProvider,
+    ProviderChainResolver,
     RecipientResolver,
     RecipientTarget,
 )
@@ -40,6 +41,7 @@ from inc.capabilities.notification.specs import NotificationSpec, NotificationSp
 from inc.kernel.db import UnitOfWork, UoWFactory
 from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.events import EventEnvelope, OutboxWriter
+from inc.kernel.security import SensitiveValueProtector
 from inc.kernel.time import Clock
 from inc.kernel.workflow import WorkflowRunner
 
@@ -57,11 +59,12 @@ class CommandContext:
     outbox: OutboxWriter
     specs: NotificationSpecRegistry
     resolver: RecipientResolver
-    providers: dict[str, tuple[NotificationProvider, ...]]
+    providers: dict[str, tuple[NotificationProvider, ...] | ProviderChainResolver]
     runner: WorkflowRunner
     permissions: frozenset[str] = frozenset()
     actor_id: str | None = None
     trace_id: str | None = None
+    sensitive_value_protector: SensitiveValueProtector | None = None
 
 
 def _forbidden(code: str, message: str) -> KernelError:
@@ -196,6 +199,16 @@ class RequestNotification:
                 ),
             )
         values = _validate_variables(spec, input_.variables)
+        if spec.sensitivity == "sensitive":
+            if ctx.sensitive_value_protector is None:
+                raise KernelError(
+                    code="notification.sensitive_storage_unconfigured",
+                    category=ErrorCategory.INTERNAL,
+                    message="sensitive notification storage is not configured",
+                )
+            stored_values = ctx.sensitive_value_protector.protect_mapping(values)
+        else:
+            stored_values = values
         requested_at = input_.requested_at or ctx.clock.utc_now()
 
         async with ctx.uow_factory() as uow:
@@ -252,7 +265,7 @@ class RequestNotification:
                 idempotency_key=input_.idempotency_key,
                 recipient_type=input_.recipient_type,
                 recipient_id=input_.recipient_id,
-                variables=IntentVariables(schema_version=spec.version, values=values),
+                variables=IntentVariables(schema_version=spec.version, values=stored_values),
                 requested_at=requested_at,
                 state="pending",
             )
@@ -264,7 +277,7 @@ class RequestNotification:
                     "notification.duplicate_request",
                     "a request with this idempotency key already exists",
                 ) from exc
-            provider = _provider_for(ctx, spec, target.channel)
+            provider = await _provider_for(ctx, spec, target.channel)
             delivery = NotificationDelivery(
                 intent_id=intent.id,
                 channel=target.channel,
@@ -328,10 +341,12 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _provider_for(
+async def _provider_for(
     ctx: CommandContext, spec: NotificationSpec, channel: str
 ) -> NotificationProvider:
     providers = ctx.providers.get(channel, ())
+    if hasattr(providers, "resolve_many"):
+        providers = await providers.resolve_many()  # type: ignore[union-attr]
     if not providers:
         raise _conflict(
             "notification.channel_unbound",

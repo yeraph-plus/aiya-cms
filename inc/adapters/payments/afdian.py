@@ -342,7 +342,8 @@ class AfdianClient:
                 padding.PKCS1v15(),
                 hashes.SHA256(),
             )
-        except InvalidSignature, ValueError:
+        except (InvalidSignature, ValueError) as _exc:
+            del _exc
             return False
         return True
 
@@ -360,7 +361,8 @@ class AfdianClient:
 
         try:
             payload = json.loads(body.decode("utf-8"))
-        except json.JSONDecodeError, UnicodeDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError) as _exc:
+            del _exc
             return "[Afdian API] Webhook invalid body"
         if not isinstance(payload, dict):
             return "[Afdian API] Webhook invalid body"

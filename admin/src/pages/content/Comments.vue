@@ -13,7 +13,12 @@ import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t, locale } = useI18n();
 const statuses = ['pending', 'published', 'rejected', 'deleted'];
-const filters = reactive({ status: null as string | null, targetType: '', targetId: '', authorId: '' });
+const filters = reactive({
+    status: null as string | null,
+    targetType: '',
+    targetId: '',
+    authorId: ''
+});
 const result = ref<CommentPageDTO | null>(null);
 const loading = ref(false);
 const error = ref<unknown>(null);
@@ -66,7 +71,10 @@ async function openComment(comment: CommentDTO): Promise<void> {
 function replaceComment(comment: CommentDTO): void {
     selected.value = comment;
     if (result.value) {
-        result.value = { ...result.value, items: result.value.items.map((item) => (item.id === comment.id ? comment : item)) };
+        result.value = {
+            ...result.value,
+            items: result.value.items.map((item) => (item.id === comment.id ? comment : item))
+        };
     }
 }
 
@@ -114,7 +122,11 @@ async function confirmDelete(): Promise<void> {
     actionLoading.value = true;
     actionError.value = null;
     try {
-        replaceComment(await deleteComment(selected.value.id, { reason: reason.value.trim() || undefined }));
+        replaceComment(
+            await deleteComment(selected.value.id, {
+                reason: reason.value.trim() || undefined
+            })
+        );
         deleteVisible.value = false;
     } catch (caught) {
         actionError.value = caught;
@@ -135,7 +147,12 @@ function onSize(value: number): void {
 }
 
 function formatDate(value: string | null | undefined): string {
-    return value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+    return value
+        ? new Intl.DateTimeFormat(locale.value, {
+              dateStyle: 'medium',
+              timeStyle: 'short'
+          }).format(new Date(value))
+        : '-';
 }
 
 function excerpt(body: string | null): string {
@@ -149,13 +166,12 @@ onMounted(() => void load());
 <template>
     <PageShell :title="t('routes.content.comments')" :description="t('workbenches.comments.description')" :loading="loading" @refresh="load()">
         <SurfaceCard>
-            <form class="flex flex-wrap items-end gap-3" @submit.prevent="load(true)">
+            <FilterBar :label="t('workbenches.search')" @submit="load(true)">
                 <Select v-model="filters.status" :options="statuses" show-clear :placeholder="t('workbenches.status')" class="min-w-44" />
                 <InputText v-model="filters.targetType" :placeholder="t('workbenches.comments.targetType')" />
                 <InputText v-model="filters.targetId" :placeholder="t('workbenches.comments.targetId')" />
                 <InputText v-model="filters.authorId" :placeholder="t('workbenches.comments.authorId')" />
-                <Button type="submit" icon="pi pi-search" :label="t('workbenches.search')" />
-            </form>
+            </FilterBar>
         </SurfaceCard>
 
         <PageState v-if="loading && !result" state="loading" />
@@ -163,12 +179,34 @@ onMounted(() => void load());
         <PageState v-else-if="result?.total === 0" state="empty" :title="t('workbenches.comments.empty')" />
         <SurfaceCard v-else-if="result">
             <PagedTable :value="result.items" :total-records="result.total" :page="result.page" :size="result.size" :loading="loading" @update:page="onPage" @update:size="onSize">
-                <Column field="status" :header="t('workbenches.status')"><template #body="{ data }"><Tag :value="data.status" /></template></Column>
-                <Column :header="t('workbenches.comments.target')"><template #body="{ data }"><code>{{ data.target_type }}:{{ data.target_id }}</code></template></Column>
-                <Column field="author_id" :header="t('workbenches.comments.authorId')" />
-                <Column :header="t('workbenches.comments.body')"><template #body="{ data }">{{ excerpt(data.body) }}</template></Column>
-                <Column field="submitted_at" :header="t('workbenches.comments.submittedAt')"><template #body="{ data }">{{ formatDate(data.submitted_at) }}</template></Column>
-                <Column><template #body="{ data }"><Button :label="t('workbenches.view')" text @click="openComment(data)" /></template></Column>
+                <Column field="status" :header="t('workbenches.status')"
+                    ><template #body="{ data }"><StatusTag :value="data.status" /></template
+                ></Column>
+                <Column :header="t('workbenches.comments.target')">
+                    <template #body="{ data }">
+                        <div>
+                            {{ data.target?.title || data.target?.slug || `${data.target_type}:${data.target_id}` }}
+                        </div>
+                        <small v-if="data.target?.title || data.target?.slug" class="text-muted-color">{{ data.target_id }}</small>
+                    </template>
+                </Column>
+                <Column field="author_id" :header="t('workbenches.comments.authorId')">
+                    <template #body="{ data }">
+                        <div>
+                            {{ data.author?.display_name || data.author?.username || data.author_id }}
+                        </div>
+                        <small v-if="data.author?.display_name || data.author?.username" class="text-muted-color">{{ data.author_id }}</small>
+                    </template>
+                </Column>
+                <Column :header="t('workbenches.comments.body')"
+                    ><template #body="{ data }">{{ excerpt(data.body) }}</template></Column
+                >
+                <Column field="submitted_at" :header="t('workbenches.comments.submittedAt')"
+                    ><template #body="{ data }">{{ formatDate(data.submitted_at) }}</template></Column
+                >
+                <Column
+                    ><template #body="{ data }"><Button :label="t('workbenches.view')" text @click="openComment(data)" /></template
+                ></Column>
             </PagedTable>
         </SurfaceCard>
 
@@ -178,15 +216,43 @@ onMounted(() => void load());
             <div v-if="selected && !detailLoading" class="flex flex-col gap-5">
                 <SurfaceCard>
                     <dl class="grid grid-cols-[9rem_1fr] gap-3 text-sm">
-                        <dt class="text-muted-color">{{ t('workbenches.status') }}</dt><dd><Tag :value="selected.status" /></dd>
-                        <dt class="text-muted-color">{{ t('workbenches.comments.target') }}</dt><dd><code>{{ selected.target_type }}:{{ selected.target_id }}</code></dd>
-                        <dt class="text-muted-color">{{ t('workbenches.comments.authorId') }}</dt><dd>{{ selected.author_type }}:{{ selected.author_id }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.comments.parent') }}</dt><dd>{{ selected.parent_id || '-' }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.comments.submittedAt') }}</dt><dd>{{ formatDate(selected.submitted_at) }}</dd>
-                        <dt class="text-muted-color">{{ t('workbenches.reason') }}</dt><dd>{{ selected.moderation_reason || '-' }}</dd>
+                        <dt class="text-muted-color">{{ t('workbenches.status') }}</dt>
+                        <dd><StatusTag :value="selected.status" /></dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.comments.target') }}
+                        </dt>
+                        <dd>
+                            <div>
+                                {{ selected.target?.title || selected.target?.slug || `${selected.target_type}:${selected.target_id}` }}
+                            </div>
+                            <small v-if="selected.target?.title || selected.target?.slug" class="text-muted-color">{{ selected.target_id }}</small>
+                        </dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.comments.authorId') }}
+                        </dt>
+                        <dd>
+                            <div>
+                                {{ selected.author?.display_name || selected.author?.username || `${selected.author_type}:${selected.author_id}` }}
+                            </div>
+                            <small v-if="selected.author?.display_name || selected.author?.username" class="text-muted-color">{{ selected.author_id }}</small>
+                        </dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.comments.parent') }}
+                        </dt>
+                        <dd>{{ selected.parent_id || '-' }}</dd>
+                        <dt class="text-muted-color">
+                            {{ t('workbenches.comments.submittedAt') }}
+                        </dt>
+                        <dd>{{ formatDate(selected.submitted_at) }}</dd>
+                        <dt class="text-muted-color">{{ t('workbenches.reason') }}</dt>
+                        <dd>{{ selected.moderation_reason || '-' }}</dd>
                     </dl>
                 </SurfaceCard>
-                <SurfaceCard :title="t('workbenches.comments.body')"><p class="whitespace-pre-wrap break-words">{{ selected.body || t('workbenches.comments.deletedBody') }}</p></SurfaceCard>
+                <SurfaceCard :title="t('workbenches.comments.body')"
+                    ><p class="whitespace-pre-wrap break-words">
+                        {{ selected.body || t('workbenches.comments.deletedBody') }}
+                    </p></SurfaceCard
+                >
                 <div class="flex flex-wrap gap-2">
                     <Button v-if="canModerate && selected.status !== 'published' && selected.status !== 'deleted'" :label="t('workbenches.comments.approve')" :loading="actionLoading" @click="approve" />
                     <Button v-if="canModerate && selected.status !== 'rejected' && selected.status !== 'deleted'" :label="t('workbenches.comments.reject')" severity="warn" :disabled="actionLoading" @click="openReject" />
@@ -195,7 +261,15 @@ onMounted(() => void load());
             </div>
         </EntityDrawerShell>
 
-        <SensitiveActionDialog v-model="rejectVisible" :title="t('workbenches.comments.reject')" :message="t('workbenches.comments.rejectMessage')" :confirm-label="t('workbenches.comments.reject')" :loading="actionLoading" :disabled="!reason.trim()" @confirm="confirmReject">
+        <SensitiveActionDialog
+            v-model="rejectVisible"
+            :title="t('workbenches.comments.reject')"
+            :message="t('workbenches.comments.rejectMessage')"
+            :confirm-label="t('workbenches.comments.reject')"
+            :loading="actionLoading"
+            :disabled="!reason.trim()"
+            @confirm="confirmReject"
+        >
             <ApiErrorMessage v-if="actionError" :error="actionError" />
             <Textarea v-model="reason" rows="4" class="mt-4 w-full" :placeholder="t('workbenches.reason')" />
         </SensitiveActionDialog>

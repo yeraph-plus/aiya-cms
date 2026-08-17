@@ -73,7 +73,9 @@ describe('createLoginFormArgs', () => {
     it('posts credentials without navigating and returns the frontend callback URL', async () => {
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true,
-            json: async () => ({ redirect_uri: 'http://127.0.0.1:5173/callback?code=code-1' })
+            json: async () => ({
+                redirect_uri: 'http://127.0.0.1:5173/callback?code=code-1'
+            })
         });
         vi.stubGlobal('fetch', fetchMock);
 
@@ -108,7 +110,10 @@ describe('createLoginFormArgs', () => {
             'fetch',
             vi.fn().mockResolvedValue({
                 ok: false,
-                json: async () => ({ error: 'invalid_request', error_description: 'redirect uri is not registered' })
+                json: async () => ({
+                    error: 'invalid_request',
+                    error_description: 'redirect uri is not registered'
+                })
             })
         );
 

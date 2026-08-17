@@ -9,6 +9,7 @@ cases.
 
 from __future__ import annotations
 
+import base64
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -37,6 +38,8 @@ ISSUER = "http://127.0.0.1:8000"
 REDIRECT_URI = "http://127.0.0.1:3000/cb"
 LOGOUT_REDIRECT = "http://127.0.0.1:3000/logged-out"
 SCOPES = "openid profile email offline_access"
+CONFIDENTIAL_REDIRECT_URI = "http://127.0.0.1:4321/auth/callback"
+CONFIDENTIAL_CLIENT_SECRET = "site-confidential-secret-with-at-least-32-bytes"
 
 
 class FakeAuthenticator:
@@ -99,6 +102,14 @@ async def client(
         allowed_scopes=["openid", "profile", "email", "offline_access"],
         client_id="spa",
     )
+    await RegisterClient(client_ctx)(
+        name="User site BFF",
+        client_type="confidential",
+        redirect_uris=[CONFIDENTIAL_REDIRECT_URI],
+        allowed_scopes=["openid", "profile", "email", "offline_access"],
+        client_id="aiya-site",
+        initial_secret=CONFIDENTIAL_CLIENT_SECRET,
+    )
     services = OidcHttpServices(
         issuer=ISSUER,
         uow_factory=uow_factory,
@@ -132,6 +143,45 @@ def _pkce() -> tuple[str, str]:
         .decode("ascii")
     )
     return verifier, challenge
+
+
+async def test_confidential_client_uses_http_basic_at_protocol_boundary(
+    client: httpx.AsyncClient,
+) -> None:
+    verifier, challenge = _pkce()
+    login = await client.post(
+        "/oidc/login",
+        data={
+            "username": "alice",
+            "password": "pw-alice",
+            "client_id": "aiya-site",
+            "redirect_uri": CONFIDENTIAL_REDIRECT_URI,
+            "response_type": "code",
+            "scope": SCOPES,
+            "state": "site-state",
+            "nonce": "site-nonce",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        },
+    )
+    assert login.status_code == 302
+    authorized = await client.get(login.headers["location"])
+    assert authorized.status_code == 302
+    code = parse_qs(urlsplit(authorized.headers["location"]).query)["code"][0]
+    credentials = base64.b64encode(f"aiya-site:{CONFIDENTIAL_CLIENT_SECRET}".encode()).decode()
+
+    exchanged = await client.post(
+        "/oidc/token",
+        headers={"Authorization": f"Basic {credentials}"},
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": CONFIDENTIAL_REDIRECT_URI,
+            "code_verifier": verifier,
+        },
+    )
+    assert exchanged.status_code == 200, exchanged.text
+    assert exchanged.json()["access_token"]
 
 
 def _authorize_params(
@@ -243,7 +293,6 @@ async def test_full_browser_flow(client: httpx.AsyncClient) -> None:
         },
     )
     assert login.status_code == 401
-
     # Good credentials -> session cookie + redirect to authorize.
     login = await client.post(
         "/oidc/login",
@@ -332,6 +381,42 @@ async def test_full_browser_flow(client: httpx.AsyncClient) -> None:
     )
     assert logout.status_code == 302
     assert logout.headers["location"] == LOGOUT_REDIRECT
+
+
+async def test_login_form_honors_supported_ui_locale(client: httpx.AsyncClient) -> None:
+    params = _authorize_params()
+    params["ui_locales"] = "zh-CN"
+    chinese = await client.get("/oidc/authorize", params=params)
+    assert 'lang="zh-CN"' in chinese.text
+    assert "用户名" in chinese.text
+    assert "登录" in chinese.text
+
+    params["ui_locales"] = "en"
+    english = await client.get("/oidc/authorize", params=params)
+    assert 'lang="en"' in english.text
+    assert "Username" in english.text
+    assert "Sign in" in english.text
+
+
+async def test_login_failure_lockout_returns_429_after_five_attempts(
+    client: httpx.AsyncClient,
+) -> None:
+    params = _authorize_params()
+    for _ in range(5):
+        response = await client.post(
+            "/oidc/login",
+            data={"username": "alice", "password": "wrong", **params},
+            headers={"Accept": "application/json"},
+        )
+        assert response.status_code == 401
+
+    limited = await client.post(
+        "/oidc/login",
+        data={"username": "alice", "password": "wrong", **params},
+        headers={"Accept": "application/json"},
+    )
+    assert limited.status_code == 429
+    assert limited.json()["error"] == "temporarily_unavailable"
 
 
 async def test_http_pkce_downgrade_and_redirect_attacks(

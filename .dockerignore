@@ -18,6 +18,9 @@ admin/dist
 admin/.vite
 admin/test-results
 admin/playwright-report
+site/node_modules
+site/dist
+site/.astro
 .claude
 reports
 .reports
@@ -25,3 +28,7 @@ memo.md
 .env
 .env.*
 !.env.example
+
+# Dockerfile.production receives the already-built SPA from the CI job.
+!admin/dist/
+!admin/dist/**

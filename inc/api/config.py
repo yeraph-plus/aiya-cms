@@ -8,10 +8,11 @@ security, CORS); kernel settings stay technical (database, workers).
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, SecretStr, field_validator, model_validator
 
 DEFAULT_ISSUER = "http://127.0.0.1:8000"
 
@@ -24,7 +25,18 @@ class ApiSettings(BaseModel):
     api_audience: str = "aiya-admin"
     secure_cookies: bool = False
     cors_origins: tuple[str, ...] = ()
+    trusted_proxy_cidrs: tuple[str, ...] = ()
+    oidc_signing_key_dir: str | None = None
     worker_sleep_seconds: float = 1.0
+    admin_session_secret: str = "dev-admin-session-secret-change-me"
+    admin_session_idle_seconds: int = 8 * 3600
+    admin_session_absolute_seconds: int = 14 * 86400
+    paypal_environment: Literal["sandbox", "production"] = "sandbox"
+    paypal_client_id: str | None = None
+    paypal_client_secret: SecretStr | None = None
+    paypal_webhook_id: str | None = None
+    paypal_return_url: str | None = None
+    paypal_cancel_url: str | None = None
 
     @field_validator("issuer")
     @classmethod
@@ -58,6 +70,18 @@ class ApiSettings(BaseModel):
             normalized.append(origin)
         return tuple(dict.fromkeys(normalized))
 
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def _validate_trusted_proxy_cidrs(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for value in values:
+            try:
+                network = ipaddress.ip_network(value.strip(), strict=False)
+            except ValueError as exc:
+                raise ValueError(f"invalid trusted proxy CIDR: {value}") from exc
+            normalized.append(str(network))
+        return tuple(dict.fromkeys(normalized))
+
     @model_validator(mode="after")
     def _enforce_production_gate(self) -> ApiSettings:
         if self.environment != "production":
@@ -69,6 +93,13 @@ class ApiSettings(BaseModel):
             raise ValueError("production requires secure cookies")
         if "*" in self.cors_origins:
             raise ValueError("production CORS origins must be an exact allowlist, not a wildcard")
+        if not self.oidc_signing_key_dir or not self.oidc_signing_key_dir.strip():
+            raise ValueError("production requires AIYA_OIDC_SIGNING_KEY_DIR")
+        if (
+            self.admin_session_secret == "dev-admin-session-secret-change-me"
+            or len(self.admin_session_secret) < 32
+        ):
+            raise ValueError("production requires a strong AIYA_ADMIN_SESSION_SECRET")
         return self
 
 

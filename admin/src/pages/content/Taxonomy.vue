@@ -8,6 +8,7 @@ import ConfirmAction from '@/components/feedback/ConfirmAction.vue';
 import PageState from '@/components/feedback/PageState.vue';
 import PageShell from '@/components/shell/PageShell.vue';
 import FormDialogShell from '@/components/shell/FormDialogShell.vue';
+import SurfaceCard from '@/components/shell/SurfaceCard.vue';
 
 const { t } = useI18n();
 const dimensions = ref<DimensionDTO[]>([]);
@@ -126,23 +127,26 @@ onMounted(() => {
         <PageState v-if="loading" state="loading" />
         <PageState v-else-if="error" state="error" :error="error" :description="t('workbenches.taxonomy.loadFailed')" />
         <template v-else>
-            <div class="card flex flex-wrap items-end gap-4">
+            <SurfaceCard compact>
                 <div class="flex min-w-64 flex-col gap-2">
                     <label for="taxonomy-dimension" class="font-medium">{{ t('workbenches.taxonomy.dimension') }}</label>
                     <Select id="taxonomy-dimension" v-model="selectedDimension" :options="dimensions" option-label="display_name" option-value="dimension_key" @change="selectDimension" />
                 </div>
-                <div v-if="selectedDimension" class="text-sm text-muted-color">{{ t('workbenches.taxonomy.selection') }}: {{ dimensions.find((dimension) => dimension.dimension_key === selectedDimension)?.selection_mode }}</div>
-            </div>
+                <div v-if="selectedDimension" class="text-sm text-muted-color">
+                    {{ t('workbenches.taxonomy.selection') }}:
+                    {{ dimensions.find((dimension) => dimension.dimension_key === selectedDimension)?.selection_mode }}
+                </div>
+            </SurfaceCard>
 
             <Message v-if="termsError" severity="error" :closable="false">{{ errorMessage(termsError) }}</Message>
             <PageState v-else-if="termsLoading" state="loading" />
             <PageState v-else-if="terms.length === 0" state="empty" :title="t('workbenches.taxonomy.empty')" :description="t('workbenches.taxonomy.emptyDescription')" />
-            <div v-else class="card">
+            <SurfaceCard v-else>
                 <DataTable :value="terms" :loading="termsLoading" responsive-layout="scroll">
                     <Column field="name" :header="t('workbenches.taxonomy.name')" style="min-width: 14rem" />
                     <Column field="slug" :header="t('workbenches.taxonomy.slug')" style="min-width: 12rem" />
                     <Column field="status" :header="t('workbenches.status')" style="min-width: 8rem">
-                        <template #body="{ data }"><Tag :value="data.status" :severity="data.status === 'active' ? 'success' : 'secondary'" /></template>
+                        <template #body="{ data }"><StatusTag :value="data.status" /></template>
                     </Column>
                     <Column field="description" :header="t('workbenches.taxonomy.description')" style="min-width: 18rem">
                         <template #body="{ data }">{{ data.description || '-' }}</template>
@@ -156,7 +160,7 @@ onMounted(() => {
                         </template>
                     </Column>
                 </DataTable>
-            </div>
+            </SurfaceCard>
         </template>
 
         <FormDialogShell v-model="dialogVisible" :title="dialogTitle">

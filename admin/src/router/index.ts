@@ -16,7 +16,7 @@ const router = createRouter({
 const devAuthBypass = import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH === '1';
 
 function authenticatedHome(): string {
-    for (const name of ['dashboard', 'users', 'content-articles', 'user-permissions', 'user-points', 'user-membership', 'settings', 'system-audit', 'system-assets', 'system-operations', 'system-oidc']) {
+    for (const name of ['dashboard', 'users', 'content-articles', 'user-permissions', 'user-points', 'user-membership', 'user-gift-cards', 'settings', 'system-audit', 'system-assets', 'system-operations', 'system-oidc']) {
         const requiredCapability = router.resolve({ name }).meta.requiredCapability;
         if (typeof requiredCapability !== 'string' || hasCapability(requiredCapability)) return name;
     }

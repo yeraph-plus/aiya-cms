@@ -20,12 +20,20 @@ feature 注册：
 - 查询组合：同维度 OR，跨维度 AND。
 - 管理权限和公开可见性。
 
-post 初始注册：
+post 注册：
 
-- `category`：single，默认最多 1 项。
-- `tag`：multiple，最大数量由 post feature 明确配置。
+- `post.category`：single，默认最多 1 项。
+- `post.tag`：multiple，最大数量由 post feature 明确配置。
 
-page 不注册任何 dimension。
+page 注册：
+
+- `page.category`：single，默认最多 1 项；不注册 tag。
+
+work 注册 E-Hentai namespace 思路下的本系统维度，但不复制外站投票/权重模型：
+
+- `work.category`：single；
+- `work.source`、`work.creator`、`work.group`、`work.character`、`work.language`、`work.genre`、`work.format`：multiple；
+- 每一维度的数量上限和是否必填由 work FeatureSpec 冻结。
 
 ## 3. 表所有权
 
@@ -76,7 +84,7 @@ assignment 事件包含 target ref、dimension 和 term ID 集合，不复制目
 
 - 重复/未知 dimension 启动失败。
 - single/multiple、min/max 和 target type 规则有正负测试。
-- category/tag 查询符合“同维度 OR、跨维度 AND”。
-- page manifest 无 dimension/assignment。
+- post 与 work 的多维查询符合“同维度 OR、跨维度 AND”。
+- page 只允许 `page.category`，拒绝 tag 和 work namespace assignment。
 - taxonomy 不导入 content，metadata 无 content 外键。
 - orphan diagnostics 只报告不修复。

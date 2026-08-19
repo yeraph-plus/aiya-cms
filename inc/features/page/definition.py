@@ -1,36 +1,36 @@
-"""Page feature: content type declaration only.
-
-Contract source: context/spec/features.md §4.2.
-
-page registers no taxonomy dimension and no parent-child pages; it reuses
-content's draft/publish/schedule/archive/pin capabilities. Frontend owns
-routing and per-page SEO composition.
-"""
+"""Page v2 content product declarations."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from inc.capabilities.content import DEFAULT_TRANSITIONS, STANDARD_STATES, ContentTypeSpec
+from inc.capabilities.taxonomy import DimensionSpec
 from inc.kernel.boot import FeatureSpec
 
-spec = FeatureSpec(name="page", version="1", requires=("assets", "content"))
+spec = FeatureSpec(name="page", version="2", requires=("assets", "content", "taxonomy"))
 
 
-class PageData(BaseModel):
-    """Validated per-type data payload for page content."""
+class SeoDataV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=300)
+
+
+class PageDataV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     section: str | None = Field(default=None, max_length=100)
+    seo: SeoDataV1 | None = None
 
 
 content_type_spec = ContentTypeSpec(
     type_name="page",
-    version="1",
+    version="2",
     display_name="Page",
-    data_schema=PageData,
-    data_schema_version="1",
+    data_schema=PageDataV2,
+    data_schema_version="2",
     allowed_states=STANDARD_STATES,
     default_state="draft",
     transitions=DEFAULT_TRANSITIONS,
@@ -44,4 +44,16 @@ content_type_spec = ContentTypeSpec(
     excerpt_max_length=300,
     requires_ready_markdown_assets=True,
     publication_policy_key="assets.ready_markdown.v1",
+)
+
+dimension_specs = (
+    DimensionSpec(
+        dimension_key="page.category",
+        version="2",
+        display_name="Category",
+        target_types=("page",),
+        selection_mode="single",
+        min_items=1,
+        max_items=1,
+    ),
 )

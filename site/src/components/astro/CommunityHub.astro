@@ -3,6 +3,8 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
 import { createServerApiClient } from '@/lib/api/server/client';
 import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
+import { csrfToken } from '@/lib/auth/server/csrf';
+import CommunityComposer from '@/components/vue/CommunityComposer.vue';
 
 interface Props {
     locale: Locale;
@@ -10,10 +12,17 @@ interface Props {
 
 const { locale } = Astro.props;
 const api = createServerApiClient(Astro.session, Astro.locals.requestId);
+const sortParam = Astro.url.searchParams.get('sort');
+const sort = sortParam === 'newest' || sortParam === 'top' ? sortParam : 'latest';
+const requestedPage = Number(Astro.url.searchParams.get('page') ?? '1');
+const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+const q = Astro.url.searchParams.get('q')?.trim() || undefined;
+const tag = Astro.url.searchParams.get('tag')?.trim() || undefined;
 const response = await api.GET('/api/v1/community/discussions', {
-    params: { query: { page: 1, size: 20, sort: 'latest' } }
+    params: { query: { page, size: 20, sort, ...(q ? { q } : {}), ...(tag ? { tag } : {}) } }
 });
 const discussions = response.data?.items ?? [];
+const csrf = Astro.session ? await csrfToken(Astro.session) : undefined;
 ---
 
 <BaseLayout locale={locale} title={t(locale, 'community.title')} description={t(locale, 'community.description')}>
@@ -27,6 +36,18 @@ const discussions = response.data?.items ?? [];
                     >{t(locale, 'community.tags')}</a
                 >
             </nav>
+            <form class="community-filters" method="get">
+                <input name="q" value={q} placeholder="{locale === 'en' ? 'Search' : '搜索'}" />
+                <input name="tag" value={tag} placeholder="{locale === 'en' ? 'Tag' : '标签'}" />
+                <select name="sort">
+                    <option value="latest" selected={sort === 'latest'}>latest</option>
+                    <option value="newest" selected={sort === 'newest'}>newest</option>
+                    <option value="top" selected={sort === 'top'}>top</option>
+                </select>
+                <input type="number" name="page" min="1" value={page} />
+                <button type="submit">{locale === 'en' ? 'Filter' : '筛选'}</button>
+            </form>
+            {Astro.locals.user && csrf && <CommunityComposer client:load locale={locale} csrf={csrf} />}
         </header>
         {
             response.error ? (
@@ -50,9 +71,7 @@ const discussions = response.data?.items ?? [];
                             <h2>
                                 <a
                                     href={
-                                        locale === 'en'
-                                            ? `/en/community/discussions/${discussion.slug}`
-                                            : `/community/discussions/${discussion.slug}`
+                                        locale === 'en' ? `/en/community/d/${discussion.id}` : `/community/d/${discussion.id}`
                                     }
                                 >
                                     {discussion.title}

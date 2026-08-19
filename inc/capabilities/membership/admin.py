@@ -55,7 +55,7 @@ class MembershipAdminService:
                         tier_rank=row.tier_rank,
                         status=row.status,
                         cycle_days=row.cycle_days,
-                        grant_points=row.grant_points,
+                        cycle_points_amount=row.grant_points,
                         renewal_allowed=row.renewal_allowed,
                         version=row.version,
                     )
@@ -67,9 +67,11 @@ class MembershipAdminService:
                 "status",
                 "cycle_days",
                 "grant_points",
+                "cycle_points_amount",
                 "renewal_allowed",
             ):
-                setattr(spec, name, getattr(row, name))
+                value = row.grant_points if name == "cycle_points_amount" else getattr(row, name)
+                setattr(spec, name, value)
             spec.version = row.version
 
     async def create_level(

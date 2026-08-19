@@ -38,6 +38,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/archive/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Grants */
+        get: operations["list_grants_api_v1_admin_archive_grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/grants/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Grant */
+        get: operations["get_grant_api_v1_admin_archive_grants__grant_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/grants/{grant_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Grant */
+        post: operations["revoke_grant_api_v1_admin_archive_grants__grant_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Items */
+        get: operations["list_items_api_v1_admin_archive_items_get"];
+        put?: never;
+        /** Create Item */
+        post: operations["create_item_api_v1_admin_archive_items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Item */
+        get: operations["get_item_api_v1_admin_archive_items__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Item */
+        patch: operations["update_item_api_v1_admin_archive_items__item_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/archive/items/{item_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate Item */
+        post: operations["activate_item_api_v1_admin_archive_items__item_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/items/{item_id}/migrate-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Migrate Provider */
+        post: operations["migrate_provider_api_v1_admin_archive_items__item_id__migrate_provider_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/items/{item_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire Item */
+        post: operations["retire_item_api_v1_admin_archive_items__item_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/archive/items/{item_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Item */
+        post: operations["verify_item_api_v1_admin_archive_items__item_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/assets": {
         parameters: {
             query?: never;
@@ -964,6 +1119,211 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/gift-cards/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Batches */
+        get: operations["list_batches_api_v1_admin_gift_cards_batches_get"];
+        put?: never;
+        /** Generate Batch */
+        post: operations["generate_batch_api_v1_admin_gift_cards_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Batch */
+        get: operations["get_batch_api_v1_admin_gift_cards_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/batches/{batch_id}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cards */
+        get: operations["list_cards_api_v1_admin_gift_cards_batches__batch_id__cards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/batches/{batch_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Batch */
+        post: operations["close_batch_api_v1_admin_gift_cards_batches__batch_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/provider-facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Provider Fact */
+        post: operations["record_provider_fact_api_v1_admin_gift_cards_provider_facts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/redemptions/reserve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reserve Redemption */
+        post: operations["reserve_redemption_api_v1_admin_gift_cards_redemptions_reserve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/redemptions/{redemption_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Redemption */
+        get: operations["get_redemption_api_v1_admin_gift_cards_redemptions__redemption_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/redemptions/{redemption_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Redemption */
+        post: operations["cancel_redemption_api_v1_admin_gift_cards_redemptions__redemption_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/redemptions/{redemption_id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Commit Redemption */
+        post: operations["commit_redemption_api_v1_admin_gift_cards_redemptions__redemption_id__commit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Card */
+        post: operations["verify_card_api_v1_admin_gift_cards_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/gift-cards/{card_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Card */
+        post: operations["revoke_card_api_v1_admin_gift_cards__card_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/membership/cycles/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Cycle */
+        post: operations["prepare_cycle_api_v1_admin_membership_cycles_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/membership/levels": {
         parameters: {
             query?: never;
@@ -1043,8 +1403,7 @@ export interface paths {
         /** List Subscriptions */
         get: operations["list_subscriptions_api_v1_admin_membership_subscriptions_get"];
         put?: never;
-        /** Subscribe */
-        post: operations["subscribe_api_v1_admin_membership_subscriptions_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1068,32 +1427,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/membership/subscriptions/{subscription_id}/renew": {
+    "/api/v1/admin/membership/subscriptions/{subscription_id}/cycles": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        /** Renew */
-        post: operations["renew_api_v1_admin_membership_subscriptions__subscription_id__renew_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/membership/subscriptions/{subscription_id}/renewals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Renewals */
-        get: operations["list_renewals_api_v1_admin_membership_subscriptions__subscription_id__renewals_get"];
+        /** List Cycles */
+        get: operations["list_cycles_api_v1_admin_membership_subscriptions__subscription_id__cycles_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1863,265 +2205,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/community/discussions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Discussions */
-        get: operations["list_discussions_api_v1_community_discussions_get"];
-        put?: never;
-        /** Create Discussion */
-        post: operations["create_discussion_api_v1_community_discussions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/community/discussions/by-slug/{slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Discussion By Slug */
-        get: operations["get_discussion_by_slug_api_v1_community_discussions_by_slug__slug__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/community/discussions/{discussion_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Discussion */
-        patch: operations["update_discussion_api_v1_community_discussions__discussion_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/community/discussions/{discussion_id}/posts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Posts */
-        get: operations["list_posts_api_v1_community_discussions__discussion_id__posts_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/community/discussions/{discussion_id}/replies": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Reply */
-        post: operations["create_reply_api_v1_community_discussions__discussion_id__replies_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/community/posts/{post_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Post */
-        patch: operations["update_post_api_v1_community_posts__post_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/community/tags": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Tags */
-        get: operations["list_tags_api_v1_community_tags_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/community/tags/by-slug/{slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Tag */
-        get: operations["get_tag_api_v1_community_tags_by_slug__slug__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{target_type}/{target_id}/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Published */
-        get: operations["list_published_api_v1_content__target_type___target_id__comments_get"];
-        put?: never;
-        /** Submit */
-        post: operations["submit_api_v1_content__target_type___target_id__comments_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{type_name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Published Content */
-        get: operations["list_published_content_api_v1_content__type_name__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{type_name}/{content_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Published Content */
-        get: operations["get_published_content_api_v1_content__type_name___content_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{type_name}/{content_id}/engagement": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Engagement */
-        get: operations["get_engagement_api_v1_content__type_name___content_id__engagement_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{type_name}/{content_id}/like": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Like Content */
-        put: operations["like_content_api_v1_content__type_name___content_id__like_put"];
-        post?: never;
-        /** Unlike Content */
-        delete: operations["unlike_content_api_v1_content__type_name___content_id__like_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{type_name}/{content_id}/rating": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Rate Content */
-        put: operations["rate_content_api_v1_content__type_name___content_id__rating_put"];
-        post?: never;
-        /** Withdraw Rating */
-        delete: operations["withdraw_rating_api_v1_content__type_name___content_id__rating_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/content/{type_name}/{content_id}/views": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Record View */
-        post: operations["record_view_api_v1_content__type_name___content_id__views_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -2457,6 +2540,10 @@ export interface components {
              * Format: date-time
              */
             cycle_end: string;
+            /** Cycle Id */
+            cycle_id?: string | null;
+            /** Cycle Points Amount */
+            cycle_points_amount?: number | null;
             /**
              * Cycle Start
              * Format: date-time
@@ -2472,6 +2559,10 @@ export interface components {
             level_key: string;
             /** Renewal Count */
             renewal_count: number;
+            /** Source Ref */
+            source_ref?: string | null;
+            /** Source Type */
+            source_type?: string | null;
             /** Status */
             status: string;
             subject?: components["schemas"]["AdminSubjectRefDTO"] | null;
@@ -2479,6 +2570,135 @@ export interface components {
             subject_id: string;
             /** Subject Type */
             subject_type: string;
+            /** Terminated At */
+            terminated_at?: string | null;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
+        /** ArchiveGrantItemDTO */
+        ArchiveGrantItemDTO: {
+            /** Checksum Algorithm */
+            checksum_algorithm?: string | null;
+            /** Checksum Value */
+            checksum_value?: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Item Id */
+            item_id: string;
+            /** Item Key */
+            item_key: string;
+            /** Part Number */
+            part_number: number;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Version */
+            version: number;
+        };
+        /** ArchiveGrantPageDTO */
+        ArchiveGrantPageDTO: {
+            /** Items */
+            items: components["schemas"]["DownloadGrantAdminDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ArchiveItemAdminDTO
+         * @description Admin DTO with only a digest/kind summary of the protected locator.
+         */
+        ArchiveItemAdminDTO: {
+            /** Checksum Algorithm */
+            checksum_algorithm?: string | null;
+            /** Checksum Value */
+            checksum_value?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Id */
+            id: string;
+            /** Item Key */
+            item_key: string;
+            /** Last Verified At */
+            last_verified_at?: string | null;
+            /** Locator Digest */
+            locator_digest: string;
+            /** Locator Kind */
+            locator_kind: string;
+            /** Part Number */
+            part_number: number;
+            /** Provider Contract Version */
+            provider_contract_version: string;
+            /** Provider Fact Version */
+            provider_fact_version?: string | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "active" | "unavailable" | "retired";
+            /** Unavailable Reason */
+            unavailable_reason?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** ArchiveItemPageDTO */
+        ArchiveItemPageDTO: {
+            /** Items */
+            items: components["schemas"]["ArchiveItemAdminDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ArchiveItemPatchInput
+         * @description Admin-safe mutable item metadata accepted by the named update service.
+         */
+        ArchiveItemPatchInput: {
+            /** Checksum Algorithm */
+            checksum_algorithm?: string | null;
+            /** Checksum Value */
+            checksum_value?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Expected Version */
+            expected_version?: number | null;
+        };
+        /**
+         * ArchiveLocatorInput
+         * @description Trusted registration input for a provider reference.
+         *
+         *     This type is accepted only by named archive Commands. It cannot represent
+         *     URLs, credentials or request headers.
+         */
+        ArchiveLocatorInput: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: string;
+            /** Value */
+            value: string;
         };
         /** AssetPageDTO */
         AssetPageDTO: {
@@ -2618,6 +2838,15 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** CancelGiftCardRedemptionInput */
+        CancelGiftCardRedemptionInput: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Reason */
+            reason: string;
+            /** Redemption Id */
+            redemption_id: string;
+        };
         /** CancelInput */
         CancelInput: {
             /** Reason */
@@ -2680,39 +2909,19 @@ export interface components {
             /** Client Secret */
             client_secret?: string | null;
         };
-        /** CommentDTO */
-        CommentDTO: {
-            /** Author Id */
-            author_id: string;
-            /** Author Type */
-            author_type: string;
-            /** Body */
-            body: string | null;
-            /** Deleted At */
-            deleted_at?: string | null;
-            /** Id */
-            id: string;
-            /** Moderation Reason */
-            moderation_reason?: string | null;
-            /** Parent Id */
-            parent_id?: string | null;
-            /** Published At */
-            published_at?: string | null;
-            /** Rejected At */
-            rejected_at?: string | null;
-            /** Status */
-            status: string;
-            /**
-             * Submitted At
-             * Format: date-time
-             */
-            submitted_at: string;
-            /** Target Id */
-            target_id: string;
-            /** Target Type */
-            target_type: string;
-            /** Version */
-            version: number;
+        /** CloseGiftCardBatchInput */
+        CloseGiftCardBatchInput: {
+            /** Batch Id */
+            batch_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /** CommitGiftCardRedemptionInput */
+        CommitGiftCardRedemptionInput: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Redemption Id */
+            redemption_id: string;
         };
         /** CommunityAuthorDTO */
         CommunityAuthorDTO: {
@@ -2899,28 +3108,6 @@ export interface components {
             /** Mime Type */
             mime_type: string;
         };
-        /** CreateDiscussionBody */
-        CreateDiscussionBody: {
-            /** Body */
-            body: string;
-            /** Data */
-            data?: {
-                [key: string]: unknown;
-            };
-            /** Post Data */
-            post_data?: {
-                [key: string]: unknown;
-            };
-            /** Tag Ids */
-            tag_ids?: string[];
-            /**
-             * Template Key
-             * @default general
-             */
-            template_key: string;
-            /** Title */
-            title: string;
-        };
         /** CreateLevelInput */
         CreateLevelInput: {
             /** Cycle Days */
@@ -2938,15 +3125,6 @@ export interface components {
             renewal_allowed: boolean;
             /** Tier Rank */
             tier_rank: number;
-        };
-        /** CreateReplyBody */
-        CreateReplyBody: {
-            /** Body */
-            body: string;
-            /** Data */
-            data?: {
-                [key: string]: unknown;
-            };
         };
         /** CreateRoleBody */
         CreateRoleBody: {
@@ -3146,38 +3324,62 @@ export interface components {
              */
             version: number;
         };
-        /** EngagementSummaryDTO */
-        EngagementSummaryDTO: {
-            /** Content Id */
-            content_id: string;
-            /** Counted */
-            counted?: boolean | null;
+        /**
+         * DownloadGrantAdminDTO
+         * @description Admin grant view; it still contains no idempotency secret or locator.
+         */
+        DownloadGrantAdminDTO: {
             /**
-             * Like Count
-             * @default 0
+             * Created At
+             * Format: date-time
              */
-            like_count: number;
-            /** Rating Average */
-            rating_average?: string | null;
+            created_at: string;
             /**
-             * Rating Count
-             * @default 0
+             * Expires At
+             * Format: date-time
              */
-            rating_count: number;
+            expires_at: string;
+            /** Id */
+            id: string;
+            /** Idempotency Key Digest */
+            idempotency_key_digest: string;
+            /** Items */
+            items: components["schemas"]["ArchiveGrantItemDTO"][];
+            /** Manifest Digest */
+            manifest_digest: string;
+            /** Manifest Version */
+            manifest_version: string;
+            /** Points Entry Ref */
+            points_entry_ref?: string | null;
+            /** Product Ref */
+            product_ref?: string | null;
+            /** Quote Ref */
+            quote_ref?: string | null;
             /**
-             * Rating Sum
-             * @default 0
+             * Status
+             * @enum {string}
              */
-            rating_sum: number;
+            status: "pending" | "active" | "expired" | "revoked" | "failed";
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
+            /** Target Id */
+            target_id: string;
+            /** Target Type */
+            target_type: string;
             /**
-             * View Count
-             * @default 0
+             * Updated At
+             * Format: date-time
              */
-            view_count: number;
-            /** Viewer Liked */
-            viewer_liked?: boolean | null;
-            /** Viewer Rating */
-            viewer_rating?: number | null;
+            updated_at: string;
+            /**
+             * Valid From
+             * Format: date-time
+             */
+            valid_from: string;
+            /** Version */
+            version: number;
         };
         /**
          * ExecutionEntryDTO
@@ -3225,6 +3427,121 @@ export interface components {
              * @default pending
              */
             state: string;
+        };
+        /** GenerateGiftCardBatchInput */
+        GenerateGiftCardBatchInput: {
+            /** Batch Key */
+            batch_key?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Fulfillment Key */
+            fulfillment_key: string;
+            /** Fulfillment Payload */
+            fulfillment_payload?: {
+                [key: string]: unknown;
+            };
+            /** Fulfillment Schema Version */
+            fulfillment_schema_version: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Platform Key
+             * @default card_platform
+             */
+            platform_key: string;
+            /** Product Key */
+            product_key: string;
+            /** Quantity */
+            quantity: number;
+        };
+        /** GiftCardBatchDTO */
+        GiftCardBatchDTO: {
+            /** Available Count */
+            available_count: number;
+            /** Batch Key */
+            batch_key: string;
+            /** Closed At */
+            closed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Fulfillment Key */
+            fulfillment_key: string;
+            /** Fulfillment Schema Version */
+            fulfillment_schema_version: string;
+            /** Generated Count */
+            generated_count: number;
+            /** Id */
+            id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Platform Key */
+            platform_key: string;
+            /** Product Key */
+            product_key: string;
+            /** Quantity */
+            quantity: number;
+            /** Redeemed Count */
+            redeemed_count: number;
+            /** Revoked Count */
+            revoked_count: number;
+            /** Status */
+            status: string;
+        };
+        /** GiftCardBatchResultDTO */
+        GiftCardBatchResultDTO: {
+            batch: components["schemas"]["GiftCardBatchDTO"];
+            /** Secrets */
+            secrets?: string[] | null;
+        };
+        /** GiftCardDTO */
+        GiftCardDTO: {
+            /** Batch Id */
+            batch_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Platform Key */
+            platform_key: string;
+            /** Redeemed At */
+            redeemed_at: string | null;
+            /** Redemption Id */
+            redemption_id: string | null;
+            /** Reserved Until */
+            reserved_until: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /** GiftCardVerifyDTO */
+        GiftCardVerifyDTO: {
+            /** Expires At */
+            expires_at?: string | null;
+            /** Fulfillment Key */
+            fulfillment_key?: string | null;
+            /** Fulfillment Schema Version */
+            fulfillment_schema_version?: string | null;
+            /** Platform Key */
+            platform_key?: string | null;
+            /** Product Key */
+            product_key?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Valid */
+            valid: boolean;
         };
         /**
          * GrantSummary
@@ -3329,6 +3646,51 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * MembershipCycleDTO
+         * @description Public snapshot of a membership cycle fact.
+         */
+        MembershipCycleDTO: {
+            /**
+             * Cycle End
+             * Format: date-time
+             */
+            cycle_end: string;
+            /** Cycle Id */
+            cycle_id: string;
+            /** Cycle Points Amount */
+            cycle_points_amount: number;
+            /**
+             * Cycle Start
+             * Format: date-time
+             */
+            cycle_start: string;
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Level Key */
+            level_key: string;
+            /** Points Entry Ref */
+            points_entry_ref?: string | null;
+            /** Source Ref */
+            source_ref: string;
+            /** Source Type */
+            source_type: string;
+            /** State */
+            state: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
+            /** Subscription Id */
+            subscription_id: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+        };
         /** MembershipSummaryDTO */
         MembershipSummaryDTO: {
             /** Active Level Count */
@@ -3343,6 +3705,24 @@ export interface components {
             level_count: number;
             /** Subscription Count */
             subscription_count: number;
+        };
+        /** MigrateProviderBody */
+        MigrateProviderBody: {
+            /** Expected Version */
+            expected_version?: number | null;
+            external_locator: components["schemas"]["ArchiveLocatorInput"];
+            /**
+             * Provider Contract Version
+             * @default 1
+             */
+            provider_contract_version: string;
+            /** Provider Key */
+            provider_key: string;
+            /**
+             * Reason
+             * @default provider migration
+             */
+            reason: string;
         };
         /** NotificationDeliveryAttemptDTO */
         NotificationDeliveryAttemptDTO: {
@@ -3515,9 +3895,9 @@ export interface components {
             total: number;
         };
         /** Page */
-        Page_CommentDTO_: {
+        Page_ExecutionEntryDTO_: {
             /** Items */
-            items: components["schemas"]["CommentDTO"][];
+            items: components["schemas"]["ExecutionEntryDTO"][];
             /** Page */
             page: number;
             /** Size */
@@ -3526,9 +3906,20 @@ export interface components {
             total: number;
         };
         /** Page */
-        Page_ExecutionEntryDTO_: {
+        Page_GiftCardBatchDTO_: {
             /** Items */
-            items: components["schemas"]["ExecutionEntryDTO"][];
+            items: components["schemas"]["GiftCardBatchDTO"][];
+            /** Page */
+            page: number;
+            /** Size */
+            size: number;
+            /** Total */
+            total: number;
+        };
+        /** Page */
+        Page_GiftCardDTO_: {
+            /** Items */
+            items: components["schemas"]["GiftCardDTO"][];
             /** Page */
             page: number;
             /** Size */
@@ -3548,9 +3939,9 @@ export interface components {
             total: number;
         };
         /** Page */
-        Page_PointsAccountAdminDTO_: {
+        Page_MembershipCycleDTO_: {
             /** Items */
-            items: components["schemas"]["PointsAccountAdminDTO"][];
+            items: components["schemas"]["MembershipCycleDTO"][];
             /** Page */
             page: number;
             /** Size */
@@ -3559,9 +3950,9 @@ export interface components {
             total: number;
         };
         /** Page */
-        Page_RenewalRecordDTO_: {
+        Page_PointsAccountAdminDTO_: {
             /** Items */
-            items: components["schemas"]["RenewalRecordDTO"][];
+            items: components["schemas"]["PointsAccountAdminDTO"][];
             /** Page */
             page: number;
             /** Size */
@@ -3754,6 +4145,68 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * PrepareSubscriptionCycleInput
+         * @description Input for the membership half of the prepare/attach protocol.
+         */
+        PrepareSubscriptionCycleInput: {
+            /**
+             * Auto Renew
+             * @default false
+             */
+            auto_renew: boolean;
+            /** Expected Version */
+            expected_version?: number | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Level Key */
+            level_key: string;
+            /** Source Ref */
+            source_ref: string;
+            /** Source Type */
+            source_type: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
+        };
+        /** ProviderPurchaseInput */
+        ProviderPurchaseInput: {
+            /** Batch Id */
+            batch_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** External Order Id */
+            external_order_id: string;
+            /** Fulfillment Key */
+            fulfillment_key: string;
+            /** Fulfillment Payload */
+            fulfillment_payload?: {
+                [key: string]: unknown;
+            };
+            /** Fulfillment Schema Version */
+            fulfillment_schema_version: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Paid */
+            paid: boolean;
+            /** Platform Key */
+            platform_key: string;
+            /** Product Key */
+            product_key: string;
+            /** Provider Fact Id */
+            provider_fact_id: string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+        };
         /** PurgeArchivedDiscussionsInput */
         PurgeArchivedDiscussionsInput: {
             /**
@@ -3776,10 +4229,46 @@ export interface components {
             /** Type Name */
             type_name: string;
         };
-        /** RatingBody */
-        RatingBody: {
-            /** Rating */
-            rating: number;
+        /** RedemptionDTO */
+        RedemptionDTO: {
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /** Committed At */
+            committed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Fulfillment Key */
+            fulfillment_key: string;
+            /** Fulfillment Payload */
+            fulfillment_payload: {
+                [key: string]: unknown;
+            };
+            /** Fulfillment Schema Version */
+            fulfillment_schema_version: string;
+            /** Id */
+            id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Platform Key */
+            platform_key: string;
+            /** Reserved Until */
+            reserved_until: string | null;
+            /** Source Id */
+            source_id: string;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: "internal" | "external";
+            /** Status */
+            status: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
         };
         /** ReferenceDTO */
         ReferenceDTO: {
@@ -3795,6 +4284,29 @@ export interface components {
             position: number;
             /** Target Content Id */
             target_content_id: string;
+        };
+        /** RegisterArchiveItemInput */
+        RegisterArchiveItemInput: {
+            /** Checksum Algorithm */
+            checksum_algorithm?: string | null;
+            /** Checksum Value */
+            checksum_value?: string | null;
+            /** Display Name */
+            display_name: string;
+            external_locator: components["schemas"]["ArchiveLocatorInput"];
+            /** Item Key */
+            item_key: string;
+            /** Part Number */
+            part_number: number;
+            /**
+             * Provider Contract Version
+             * @default 1
+             */
+            provider_contract_version: string;
+            /** Provider Key */
+            provider_key: string;
+            /** Size Bytes */
+            size_bytes: number;
         };
         /** RegisterClientBody */
         RegisterClientBody: {
@@ -3854,36 +4366,6 @@ export interface components {
             /** Reason */
             reason: string;
         };
-        /** RenewInput */
-        RenewInput: {
-            /** Idempotency Key */
-            idempotency_key: string;
-            /** Subscription Id */
-            subscription_id: string;
-        };
-        /** RenewalRecordDTO */
-        RenewalRecordDTO: {
-            /**
-             * Cycle End
-             * Format: date-time
-             */
-            cycle_end: string;
-            /**
-             * Cycle Start
-             * Format: date-time
-             */
-            cycle_start: string;
-            /** Granted Points */
-            granted_points: number;
-            /** Id */
-            id: string;
-            /** Outcome */
-            outcome: string;
-            /** Points Source Id */
-            points_source_id: string;
-            /** Subscription Id */
-            subscription_id: string;
-        };
         /** ReorderTagsInput */
         ReorderTagsInput: {
             /** Tag Ids */
@@ -3912,6 +4394,19 @@ export interface components {
             /** Targets */
             targets?: string[];
         };
+        /** ReserveGiftCardRedemptionInput */
+        ReserveGiftCardRedemptionInput: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Platform Key */
+            platform_key?: string | null;
+            /** Secret */
+            secret: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
+        };
         /** ResolvedAssetUrlDTO */
         ResolvedAssetUrlDTO: {
             /** Asset Id */
@@ -3920,6 +4415,18 @@ export interface components {
             expires_in_seconds: number;
             /** Url */
             url: string;
+        };
+        /** RevokeGiftCardInput */
+        RevokeGiftCardInput: {
+            /** Card Id */
+            card_id: string;
+            /**
+             * Expected Version
+             * @default 1
+             */
+            expected_version: number;
+            /** Reason */
+            reason: string;
         };
         /** RoleDTO */
         RoleDTO: {
@@ -4002,6 +4509,13 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** StateChangeBody */
+        StateChangeBody: {
+            /** Expected Version */
+            expected_version?: number | null;
+            /** Reason */
+            reason?: string | null;
+        };
         /**
          * SubjectDTO
          * @description Public-facing subject reference.
@@ -4029,29 +4543,6 @@ export interface components {
             status: string;
             /** Username */
             username: string;
-        };
-        /** SubmitCommentBody */
-        SubmitCommentBody: {
-            /** Body */
-            body: string;
-            /** Parent Id */
-            parent_id?: string | null;
-        };
-        /** SubscribeInput */
-        SubscribeInput: {
-            /**
-             * Auto Renew
-             * @default false
-             */
-            auto_renew: boolean;
-            /** Idempotency Key */
-            idempotency_key: string;
-            /** Level Key */
-            level_key: string;
-            /** Subject Id */
-            subject_id: string;
-            /** Subject Type */
-            subject_type: string;
         };
         /** TagDTO */
         TagDTO: {
@@ -4147,17 +4638,6 @@ export interface components {
             /** Title */
             title?: string | null;
         };
-        /** UpdateDiscussionInput */
-        UpdateDiscussionInput: {
-            /** Data */
-            data?: {
-                [key: string]: unknown;
-            } | null;
-            /** Expected Version */
-            expected_version: number;
-            /** Title */
-            title?: string | null;
-        };
         /** UpdateLevelInput */
         UpdateLevelInput: {
             /** Cycle Days */
@@ -4187,17 +4667,6 @@ export interface components {
             status: string;
             /** Subject */
             subject: string;
-        };
-        /** UpdatePostInput */
-        UpdatePostInput: {
-            /** Body */
-            body?: string | null;
-            /** Data */
-            data?: {
-                [key: string]: unknown;
-            } | null;
-            /** Expected Version */
-            expected_version: number;
         };
         /**
          * UpdateProfileInput
@@ -4270,6 +4739,16 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VerifyGiftCardInput */
+        VerifyGiftCardInput: {
+            /**
+             * Platform Key
+             * @default card_platform
+             */
+            platform_key: string;
+            /** Secret */
+            secret: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -4318,6 +4797,380 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GrantSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_grants_api_v1_admin_archive_grants_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                status?: string | null;
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveGrantPageDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_grant_api_v1_admin_archive_grants__grant_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadGrantAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_grant_api_v1_admin_archive_grants__grant_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StateChangeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadGrantAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_items_api_v1_admin_archive_items_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                state?: string | null;
+                provider_key?: string | null;
+                search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemPageDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_item_api_v1_admin_archive_items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterArchiveItemInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_item_api_v1_admin_archive_items__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_item_api_v1_admin_archive_items__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveItemPatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_item_api_v1_admin_archive_items__item_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StateChangeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    migrate_provider_api_v1_admin_archive_items__item_id__migrate_provider_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrateProviderBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_item_api_v1_admin_archive_items__item_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StateChangeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_item_api_v1_admin_archive_items__item_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StateChangeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveItemAdminDTO"];
                 };
             };
             /** @description Validation Error */
@@ -6311,6 +7164,444 @@ export interface operations {
             };
         };
     };
+    list_batches_api_v1_admin_gift_cards_batches_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                platform_key?: string | null;
+                product_key?: string | null;
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_GiftCardBatchDTO_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_batch_api_v1_admin_gift_cards_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateGiftCardBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GiftCardBatchResultDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_batch_api_v1_admin_gift_cards_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GiftCardBatchDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_cards_api_v1_admin_gift_cards_batches__batch_id__cards_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_GiftCardDTO_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_batch_api_v1_admin_gift_cards_batches__batch_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloseGiftCardBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GiftCardBatchDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_provider_fact_api_v1_admin_gift_cards_provider_facts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderPurchaseInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reserve_redemption_api_v1_admin_gift_cards_redemptions_reserve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReserveGiftCardRedemptionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_redemption_api_v1_admin_gift_cards_redemptions__redemption_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                redemption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_redemption_api_v1_admin_gift_cards_redemptions__redemption_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                redemption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelGiftCardRedemptionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    commit_redemption_api_v1_admin_gift_cards_redemptions__redemption_id__commit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                redemption_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitGiftCardRedemptionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_card_api_v1_admin_gift_cards_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyGiftCardInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GiftCardVerifyDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_card_api_v1_admin_gift_cards__card_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeGiftCardInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GiftCardDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prepare_cycle_api_v1_admin_membership_cycles_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrepareSubscriptionCycleInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipCycleDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_levels_api_v1_admin_membership_levels_get: {
         parameters: {
             query?: never;
@@ -6505,39 +7796,6 @@ export interface operations {
             };
         };
     };
-    subscribe_api_v1_admin_membership_subscriptions_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubscribeInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminSubscriptionDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     cancel_subscription_api_v1_admin_membership_subscriptions__subscription_id__cancel_post: {
         parameters: {
             query?: never;
@@ -6573,42 +7831,7 @@ export interface operations {
             };
         };
     };
-    renew_api_v1_admin_membership_subscriptions__subscription_id__renew_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                subscription_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RenewInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminSubscriptionDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_renewals_api_v1_admin_membership_subscriptions__subscription_id__renewals_get: {
+    list_cycles_api_v1_admin_membership_subscriptions__subscription_id__cycles_get: {
         parameters: {
             query?: {
                 page?: number;
@@ -6628,7 +7851,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_RenewalRecordDTO_"];
+                    "application/json": components["schemas"]["Page_MembershipCycleDTO_"];
                 };
             };
             /** @description Validation Error */
@@ -8397,635 +9620,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubjectDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_discussions_api_v1_community_discussions_get: {
-        parameters: {
-            query?: {
-                q?: string | null;
-                tag?: string | null;
-                sort?: string | null;
-                page?: number;
-                size?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommunityPageDTO_DiscussionDTO_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_discussion_api_v1_community_discussions_post: {
-        parameters: {
-            query?: never;
-            header: {
-                "Idempotency-Key": string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateDiscussionBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscussionDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_discussion_by_slug_api_v1_community_discussions_by_slug__slug__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                slug: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscussionDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_discussion_api_v1_community_discussions__discussion_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                discussion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateDiscussionInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscussionDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_posts_api_v1_community_discussions__discussion_id__posts_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                size?: number;
-            };
-            header?: never;
-            path: {
-                discussion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommunityPageDTO_PostDTO_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_reply_api_v1_community_discussions__discussion_id__replies_post: {
-        parameters: {
-            query?: never;
-            header: {
-                "Idempotency-Key": string;
-            };
-            path: {
-                discussion_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateReplyBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PostDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_post_api_v1_community_posts__post_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                post_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdatePostInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PostDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_tags_api_v1_community_tags_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TagDTO"][];
-                };
-            };
-        };
-    };
-    get_tag_api_v1_community_tags_by_slug__slug__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                slug: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TagDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_published_api_v1_content__target_type___target_id__comments_get: {
-        parameters: {
-            query?: {
-                page?: number;
-                size?: number;
-            };
-            header?: never;
-            path: {
-                target_type: string;
-                target_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Page_CommentDTO_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    submit_api_v1_content__target_type___target_id__comments_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                target_type: string;
-                target_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubmitCommentBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommentDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_published_content_api_v1_content__type_name__get: {
-        parameters: {
-            query?: {
-                page?: number;
-                size?: number;
-                sort?: string | null;
-            };
-            header?: never;
-            path: {
-                type_name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContentPageDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_published_content_api_v1_content__type_name___content_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContentDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_engagement_api_v1_content__type_name___content_id__engagement_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementSummaryDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    like_content_api_v1_content__type_name___content_id__like_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementSummaryDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    unlike_content_api_v1_content__type_name___content_id__like_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementSummaryDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    rate_content_api_v1_content__type_name___content_id__rating_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RatingBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementSummaryDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    withdraw_rating_api_v1_content__type_name___content_id__rating_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementSummaryDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    record_view_api_v1_content__type_name___content_id__views_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "Idempotency-Key"?: string | null;
-            };
-            path: {
-                type_name: string;
-                content_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementSummaryDTO"];
                 };
             };
             /** @description Validation Error */

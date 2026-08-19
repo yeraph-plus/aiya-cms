@@ -1,4 +1,1 @@
-"""Post feature: registers the post content type and taxonomy dimensions.
-
-Contract source: context/spec/features.md §4.1.
-"""
+"""Post v2 content product feature."""

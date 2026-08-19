@@ -21,7 +21,8 @@ def test_release_registers_all_runtime_selectable_provider_families() -> None:
     assert adapters["oidc.signing_keys"] == "oidc.filesystem_keys"
 
 
-def test_release_http_allowlist_has_no_user_center_or_payment_business_routes() -> None:
+def test_release_http_allowlist_uses_consolidated_user_and_business_routes() -> None:
     forbidden = {"me", "check_in", "point_purchase", "membership_purchase", "payments"}
     assert not forbidden & set(release.routers)
+    assert {"auth", "user_center", "business_center", "archive_admin"} <= set(release.routers)
     assert {"content_public", "content_bucket", "oidc"} <= set(release.routers)

@@ -21,6 +21,7 @@ spec = CapabilitySpec(
         "settings.notification.update",
         "settings.entitlements.update",
         "settings.object_storage.update",
+        "settings.payments.update",
         "settings.operations.update",
     ),
 )

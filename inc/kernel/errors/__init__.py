@@ -16,7 +16,9 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
-_ERROR_CODE = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
+# Capability keys may contain underscores (for example ``gift_cards``), while
+# every segment remains lowercase and version-independent.
+_ERROR_CODE = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 
 
 class ErrorCategory(StrEnum):

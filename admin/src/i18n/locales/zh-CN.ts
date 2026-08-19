@@ -45,6 +45,7 @@ export default {
             permissions: '权限管理',
             points: '积分系统',
             membership: '会员系统',
+            giftCards: '礼品卡',
             payments: '支付账单'
         },
         system: {
@@ -53,7 +54,8 @@ export default {
             operations: '自动运维日志',
             assets: '资源',
             notifications: '通知管理',
-            oidc: 'OIDC 管理'
+            oidc: 'OIDC 管理',
+            giftCards: '礼品卡管理'
         },
         settings: '设置',
         settingsGeneral: '通用设置',
@@ -88,6 +90,7 @@ export default {
             permissions: '权限管理',
             points: '积分系统管理',
             membership: '会员系统管理',
+            giftCards: '礼品卡管理',
             payments: '支付账单管理'
         },
         system: {
@@ -498,6 +501,24 @@ export default {
             renewalAllowed: '允许续期',
             activateLevel: '启用',
             archiveLevel: '归档'
+        },
+        giftCards: {
+            description: '发行单 secret 礼品卡并查看卡密生命周期事实；会员和积分兑换由后续 feature 负责。',
+            generate: '生成礼品卡批次',
+            quantity: '数量',
+            product: '产品 key',
+            fulfillmentKey: '权益 key',
+            schemaVersion: '权益版本',
+            batch: '批次',
+            available: '可用',
+            redeemed: '已兑换',
+            created: '创建时间',
+            close: '关闭批次',
+            closeReason: '管理员关闭批次',
+            secretsOnce: '卡密只显示一次',
+            secretsHint: '请立即复制到受控的安全存储；服务器不会再次返回明文。',
+            empty: '暂无礼品卡批次',
+            emptyDescription: '当前筛选条件没有匹配的批次。'
         },
         payments: {
             description: '查询支付账单与尝试记录，并通过语义命令执行取消、对账和退款。',

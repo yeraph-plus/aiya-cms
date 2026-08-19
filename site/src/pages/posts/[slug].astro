@@ -1,0 +1,7 @@
+---
+import PublicContentDetail from '@/components/astro/PublicContentDetail.astro';
+
+const { slug } = Astro.params;
+---
+
+<PublicContentDetail kind="post" locale="zh-CN" slug={slug ?? ''} />

@@ -453,3 +453,51 @@ Primary CTAs and pills meet comfortable touch sizing through 12px-24px padding a
 - Exact proprietary font files are not bundled; use the documented fallbacks when implementing externally.
 - Mobile screenshots were not regenerated in this public update, so mobile behavior is documented from the desktop system and existing responsive patterns.
 - Some live pages lazy-load content blocks late; blank testimonial placeholders are documented as placeholder skeleton surfaces rather than filled testimonial cards.
+
+## User Center & Consumption Components
+
+### `account-summary-card`
+
+显示头像、当前会员、可用积分和最早到期桶。使用普通 surface 与清晰分隔，不采用管理员仪表盘式密集 KPI 网格。
+
+### `points-balance`
+
+主数字使用 heading 层级，币值名与到期说明使用 secondary text。余额变化只在服务端确认后使用短暂语义色，不播放夸张计数动画。
+
+### `expiring-bucket-row`
+
+包含 amount、expires-at 和来源标签。到期临近使用 warning 文本/图标并保留正常对比度，不能只改变背景色。
+
+### `membership-offer-card`
+
+固定展示 level、周期、CNY 价格、周期积分和积分到期说明。当前等级使用边框/标签区分，不通过放大或强制 primary button 诱导重复购买。
+
+### `workflow-status-card`
+
+状态依次使用 pending、success、recoverable-error、manual-review。必须含明确标题、原始后端 message、request ID 与下一动作；spinner 只作为 pending 的辅助元素。
+
+### `gift-card-form`
+
+卡密字段支持显示/隐藏，使用等宽字体但不自动插入 analytics。提交后立即清空本地 input；processing 状态不回显 secret。
+
+### `quote-summary`
+
+用等式结构展示 `100 credit × 文件数 = 总价`、当前余额和授权窗口。确认按钮标签包含总价；quote stale 时冻结按钮并要求刷新报价。
+
+### `download-grant-card`
+
+按作品而非 provider 命名。显示 manifest version、file count、有效期和状态；OpenList/Gofile、raw locator、认证 header 不成为视觉字段。
+
+### `taxonomy-namespace-group`
+
+作品标签按 namespace 分组，每组有可见标题。term chip 在不同 namespace 中可同名，颜色只表达交互状态，不用颜色编码语义空间。
+
+### Semantic States
+
+- `pending`：中性蓝/灰，表示服务端处理中，不代表成功。
+- `success`：绿色，仅在 payment/points/fulfillment 终态确认后使用。
+- `warning`：琥珀色，用于即将到期、余额不足前提示和 quote stale。
+- `error`：红色，用于确定失败；暂时 provider unavailable 应配合可重试文案。
+- `manual-review`：深色中性 surface + 明确支持入口，不与系统错误混淆。
+
+支付、积分扣费和卡密兑换的状态不能只靠颜色；所有状态同时使用图标、标题和文本。动画遵循 reduced-motion，并避免庆祝动画掩盖退款或后续履约仍 pending 的事实。

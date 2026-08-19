@@ -1,10 +1,10 @@
 # Capabilities 规格索引
 
-capability 是拥有业务模型、表、命令、查询、事件、诊断和迁移的边界。它可以被不同 feature 复用，但不会因 import 自动运行。
+capability 是拥有自身业务规则、业务模型/表、语义原子操作（Command、Query、Activity）、事件、诊断和迁移的边界。`content`、`access`、`membership` 等能力在自己的边界内完成规则和事实写入；它可以被不同 feature 复用，但不会因 import 自动运行。
 
 ## 能力目录
 
-以下能力契约均已定义；首个重建闭环的运行时 manifest 只装配已完成的能力。
+以下能力契约均已定义；每个发行 manifest 只装配已完成并通过验证的能力。目标规格先于实现时必须显式标注，不能因出现在索引中就视为已交付。
 
 - [`identity.md`](identity.md)：用户主体、登录标识和凭据生命周期。
 - [`access.md`](access.md)：权限 key、角色、主体授权与审计边界。
@@ -17,10 +17,12 @@ capability 是拥有业务模型、表、命令、查询、事件、诊断和迁
 - [`taxonomy.md`](taxonomy.md)：平面多维标签。
 - [`settings.md`](settings.md)：声明式配置组、Field 定义、逐字段持久化和 SEO 默认值。
 - [`assets.md`](assets.md)：外部对象存储/图床的稳定资源引用。
+- [`archive.md`](archive.md)：大文件分卷、外部托管 locator、下载授权与短时交付（规划，尚未实现）。
 - [`notification.md`](notification.md)：通知意图、模板、渠道和可靠投递；是否进入运行时由 manifest 显式选择，未装配时无副作用。
 - [`points.md`](points.md)：积分计划、账户、不可变账本和行为规格。
 - [`payments.md`](payments.md)：外部支付订单、webhook 和退款事实。
-- [`membership.md`](membership.md)：会员等级、订阅周期、续费到期与授予积分额度。
+- [`membership.md`](membership.md)：会员等级、订阅周期和可由 user_center 激活的周期事实；不直接授予积分。
+- [`gift-cards.md`](gift-cards.md)：单 secret 礼品卡、批量发行、外部平台查单 Port 与一次性兑换事实；user_center 组合会员/积分履约。
 
 ## 统一包合同
 
@@ -51,8 +53,10 @@ inc/capabilities/<name>/
 - capability 只能导入 kernel 和自身，不能导入兄弟 capability。
 - 跨能力关系保存 opaque ID，不建兄弟表外键；有效性通过消费方 Port 校验。
 - Command 只能写自身表和 kernel outbox；Query 无写副作用。
+- capability 的原子 Command 负责权限、幂等、审计/事件、状态转换和乐观并发等自身规则；不得用通用 CRUD 或把跨能力流程塞进 capability。
 - 公开边界使用 Pydantic DTO，不暴露 ORM/Repository/UoW。
 - 外部 SDK 位于 adapter/activity，错误归一化后才进入业务层。
+- 普通 `/api/v1/admin/**` capability CRUD 由 `inc/api` 直接适配公开 Command/Query；注册、密码找回等多步跨能力业务才由 feature 编排。
 - events 是已提交事实；需要立即答复时调用 Command/Port。
 - `diagnostics.py` 只读，修复另设有权限且审计的 Command。
 - 每项注册使用 owner 明确的稳定 key，组合根 validate/freeze 后才启动运行时。

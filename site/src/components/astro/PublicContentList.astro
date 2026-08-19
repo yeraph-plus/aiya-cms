@@ -1,0 +1,139 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import type { Locale } from '@/lib/i18n';
+import { buildCollectionJsonLd, type JsonLd } from '@/lib/seo';
+import {
+    contentCollectionPath,
+    contentCopy,
+    contentDetailPath,
+    fetchPublicContentList,
+    publicContentMetadata,
+    describePublicContent,
+    type ContentKind
+} from '@/lib/seo/content';
+
+interface Props {
+    kind: ContentKind;
+    locale: Locale;
+}
+
+const { kind, locale } = Astro.props;
+const copy = contentCopy(kind, locale);
+const requestedPage = Number.parseInt(Astro.url.searchParams.get('page') ?? '1', 10);
+const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+const rawSort = Astro.url.searchParams.get('sort') ?? undefined;
+const sort = rawSort && /^-?[a-z][a-z\d_]*$/iu.test(rawSort) ? rawSort : undefined;
+const result = await fetchPublicContentList(
+    kind,
+    Astro.locals.requestId,
+    sort ? { page, size: 12, sort } : { page, size: 12 }
+);
+const collectionPath = contentCollectionPath(kind);
+const hasQuery = [...Astro.url.searchParams.keys()].length > 0;
+const description = copy.listDescription;
+const collectionJsonLd: JsonLd = buildCollectionJsonLd({
+    title: copy.listTitle,
+    description,
+    canonical: new URL(collectionPath, Astro.site ?? Astro.url.origin).href
+});
+
+function formatDate(value: string | undefined): string | undefined {
+    if (!value) return undefined;
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(value));
+}
+
+function pageHref(nextPage: number): string {
+    const params = new URLSearchParams(Astro.url.searchParams);
+    params.set('page', String(nextPage));
+    return `${collectionPath}?${params.toString()}`;
+}
+
+const hasPrevious = result.page > 1;
+const hasNext = result.page * result.size < result.total;
+---
+
+<BaseLayout
+    locale={locale}
+    title={copy.listTitle}
+    description={description}
+    canonical={collectionPath}
+    noindex={hasQuery || !result.ok}
+    nofollow={false}
+    jsonLd={collectionJsonLd}
+>
+    <section class="content-index" aria-labelledby="content-list-title">
+        <header class="content-page-header">
+            <p class="eyebrow">{copy.label}</p>
+            <h1 id="content-list-title">{copy.listTitle}</h1>
+            <p class="lede">{description}</p>
+        </header>
+
+        {
+            !result.ok ? (
+                <section class="content-state" role="alert">
+                    <p>{copy.unavailable}</p>
+                </section>
+            ) : result.items.length === 0 ? (
+                <section class="content-state">
+                    <p>{copy.empty}</p>
+                </section>
+            ) : (
+                <div class="content-list" aria-label={copy.listTitle}>
+                    {result.items.map((content) => {
+                        const contentDescription = describePublicContent(content);
+                        const metadata = publicContentMetadata(content, locale);
+                        const date = formatDate(content.publishedAt ?? content.updatedAt ?? content.createdAt);
+                        return (
+                            <article class="content-card">
+                                <div class="content-card-meta">
+                                    <span>{copy.label}</span>
+                                    {date && (
+                                        <time datetime={content.publishedAt ?? content.updatedAt ?? content.createdAt}>
+                                            {date}
+                                        </time>
+                                    )}
+                                </div>
+                                <h2>
+                                    <a href={contentDetailPath(kind, content.slug)}>{content.title}</a>
+                                </h2>
+                                {contentDescription && <p>{contentDescription}</p>}
+                                {metadata.length > 0 && (
+                                    <ul class="content-taxonomy" aria-label={copy.label}>
+                                        {metadata.map((item) => (
+                                            <li>
+                                                <span>{item.label}</span>
+                                                {item.value}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </article>
+                        );
+                    })}
+                </div>
+            )
+        }
+
+        {
+            (hasPrevious || hasNext) && (
+                <nav class="content-pagination" aria-label="Pagination">
+                    {hasPrevious ? (
+                        <a href={pageHref(result.page - 1)} rel="prev">
+                            Previous
+                        </a>
+                    ) : (
+                        <span aria-hidden="true" />
+                    )}
+                    <span>{result.page}</span>
+                    {hasNext ? (
+                        <a href={pageHref(result.page + 1)} rel="next">
+                            Next
+                        </a>
+                    ) : (
+                        <span aria-hidden="true" />
+                    )}
+                </nav>
+            )
+        }
+    </section>
+</BaseLayout>

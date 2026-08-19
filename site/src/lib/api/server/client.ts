@@ -6,13 +6,14 @@ import { assertUserApiPath } from '@/lib/api/paths';
 import { currentAuth, forceRefreshAuth } from '@/lib/auth/server/oidc';
 import { loadServerConfig } from '@/lib/config/server';
 
-type SiteSession = NonNullable<APIContext['session']>;
+export type SiteSession = NonNullable<APIContext['session']>;
 
-export function createServerApiClient(session: SiteSession | undefined, requestId: string) {
+export function createGuardedServerFetch(session: SiteSession | undefined, requestId: string): typeof fetch {
     const { apiOrigin } = loadServerConfig();
-    const guardedFetch: typeof fetch = async (input, init) => {
-        const original = new Request(input, init);
+    return async (input, init) => {
+        const original = new Request(new URL(input instanceof Request ? input.url : String(input), apiOrigin), init);
         const target = new URL(original.url, apiOrigin);
+        if (target.origin !== new URL(apiOrigin).origin) throw new Error('User API request origin is not allowed');
         assertUserApiPath(target.pathname);
 
         const send = async (accessToken?: string) => {
@@ -31,6 +32,11 @@ export function createServerApiClient(session: SiteSession | undefined, requestI
         }
         return response;
     };
+}
+
+export function createServerApiClient(session: SiteSession | undefined, requestId: string) {
+    const { apiOrigin } = loadServerConfig();
+    const guardedFetch = createGuardedServerFetch(session, requestId);
 
     return createClient<paths>({ baseUrl: apiOrigin, fetch: guardedFetch });
 }

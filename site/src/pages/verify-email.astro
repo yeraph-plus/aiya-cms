@@ -1,0 +1,17 @@
+---
+import AuthForm from '@/components/astro/AuthForm.astro';
+import { submitIdentityForm } from '@/lib/user-center';
+const locale = Astro.locals.locale;
+if (Astro.request.method === 'POST') {
+    const form = await Astro.request.formData();
+    try {
+        const state = await submitIdentityForm(Astro, form, '/api/v1/auth/verify-email', { token: String(form.get('token') ?? '') });
+        Astro.response.status = 303;
+        Astro.response.headers.set('Location', `/verify-email?status=${state}`);
+    } catch {
+        Astro.response.status = 403;
+    }
+}
+const fields = [{ name: 'token', label: locale === 'en' ? 'Verification token' : '验证令牌', type: 'password' as const, autocomplete: 'off', maxLength: 512 }];
+---
+<AuthForm locale={locale} title={locale === 'en' ? 'Verify email' : '验证邮箱'} description={locale === 'en' ? 'Enter the one-time token from your verification message.' : '输入验证邮件中的一次性令牌。'} action="/verify-email" fields={fields} status={Astro.response.status === 403 ? 'invalid' : Astro.url.searchParams.get('status')} />

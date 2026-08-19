@@ -26,20 +26,24 @@ engagement 维护 content 的浏览、点赞/收藏和评分事实及聚合快�
 
 ## 4. 投影、排序与统计
 
-`post` feature 消费带 content version 的 post 事实事件，幂等更新 engagement 投影并支持显式重建。互动排序使用 projection，因此允许短暂最终一致；diagnostics 必须报告 lag、乱序和孤儿投影。engagement capability 已启用但 post 未启用时，不自动订阅 content 事件。
+`post` 与 `work` feature 消费带 content version 的对应内容事实事件，幂等更新 engagement 投影并支持显式重建。互动排序使用 projection，因此允许短暂最终一致；diagnostics 必须报告 lag、乱序和孤儿投影。engagement capability 已启用但对应 feature 未启用时，不自动订阅 content 事件。
 
 互动 sort allowlist 为 `view_count`、`like_count`、`rating_sum`、`rating_count`、`rating_average`。未传 sort 时沿用 content 置顶默认序。
 
 ## 5. HTTP 与权限
 
-engagement capability 不导出按任意 `type_name` 放开的用户 router。完整产品由 `post` feature 导出：
+engagement capability 不导出按任意 `type_name` 放开的用户 router。完整产品由 `post` 与 `work` feature 分别导出同构但目标固定的路由：
 
 - `POST /api/v1/posts/{post_id}/views`；
 - `PUT|DELETE /api/v1/posts/{post_id}/like`；
 - `PUT|DELETE /api/v1/posts/{post_id}/rating`；
 - `GET /api/v1/me/favorites/posts`。
+- `POST /api/v1/works/{work_id}/views`；
+- `PUT|DELETE /api/v1/works/{work_id}/like`；
+- `PUT|DELETE /api/v1/works/{work_id}/rating`；
+- `GET /api/v1/me/favorites/works`。
 
-post 列表/详情可以通过公开 Query 组合 engagement 摘要；GET 本身不记录 view。page 不装配 engagement。管理员只读摘要随 admin content 返回；投影重建是独立、审计的运维 Command。
+post/work 列表与详情可以通过公开 Query 组合 engagement 摘要；GET 本身不记录 view。page 不装配 engagement。管理员只读摘要随 admin content 返回；投影重建是独立、审计的运维 Command。
 
 互动写入不要求管理员 capability；管理员读和重建分别使用 `engagement.read`、`engagement.rebuild`。
 

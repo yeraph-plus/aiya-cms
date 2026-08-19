@@ -78,10 +78,12 @@ feature 注册：
 
 行为是代码声明，不把表达式或脚本存入数据库。points 执行通用约束，feature 决定何时调用。
 
-初始行为至少包括：
+目标用户站行为至少包括：
 
-- `daily_check_in.reward`（credit，可配置过期）
-- `purchase.completed.credit`（credit，可配置过期）
+- `user_center.check_in.credit.v1`（credit，可配置过期）
+- `user_center.point_purchase.credit.v1`（credit）
+- `user_center.membership_cycle.credit.v1`（credit，调用显式传入会员周期结束时刻）
+- `business_center.consume.debit.v1`（debit，固定 `credit` program）
 
 `post.published.reward` 只是可选示例，未被 feature/manifest 注册时不生效。
 
@@ -110,7 +112,7 @@ Credit/Debit 必须校验 behavior、subject/source、周期限制、账户状�
 
 Query 不创建账户；不存在账户时可以返回明确 `not_opened` 或逻辑零值 DTO，但不得隐式写库。公开余额和后台账本权限分离。
 
-HTTP 自助面由组合根提供 `GET /api/v1/me/points/ledger`，只允许当前 subject 读取默认 `credit` program 的分页账本；管理员面提供 `GET /api/v1/admin/points/ledger`，要求 `points.read`，可按主体读取默认 `credit` 或指定 program 的余额、桶及分页账本。两个 GET 都不得创建账户或产生其他副作用。
+HTTP 自助面由 user_center 提供 `GET /api/v1/me/points` 与 `GET /api/v1/me/points/ledger`，只允许当前 subject 读取默认 `credit` program；管理员面提供 `GET /api/v1/admin/points/ledger`，要求 `points.read`，可按主体读取默认 `credit` 或指定 program 的余额、桶及分页账本。所有 GET 都不得创建账户或产生其他副作用。
 
 ## 7. 事件
 
@@ -125,8 +127,9 @@ HTTP 自助面由组合根提供 `GET /api/v1/me/points/ledger`，只允许当�
 
 ## 8. Feature 接入边界
 
-- Feature 可用 `subject + program + business_date` 形成幂等键后调用 `CreditPoints`；积分 capability 不拥有用户中心或购买业务流。
-- release 不装配签到、积分购买、会员购买或支付退款 feature，也不订阅 payment 事件自动推断奖励。
+- user_center 用稳定幂等键调用 `CreditPoints` 编排签到、积分商品和会员周期授予；points 不拥有用户中心、商品目录、payment 或 membership 语义。
+- business_center 只通过受信产品报价调用 `DebitPoints`；下载和未来 AI 产品固定使用 `credit`，客户端不得选择其他 program 或 amount。
+- points 不订阅 payment/gift-card/archive 事件自动推断奖励或消费；所有跨能力效果由 feature 明确发起。
 - `ReverseLedgerEntry` 是 capability 的受权原子操作；调用者必须传入自身稳定幂等键。
 
 ## 9. Diagnostics、审计与验收

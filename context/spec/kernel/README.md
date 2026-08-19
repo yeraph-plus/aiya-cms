@@ -1,6 +1,6 @@
 # Kernel 技术内核规格索引
 
-kernel 是冻结方向而非冻结实现：它只提供与具体业务无关的运行机制。任何包含 User、Role、OIDC、Content、Taxonomy、Notification、Points、Payment 等语义的模型或服务都不属于 kernel。
+kernel 是冻结方向而非冻结实现：它只提供与具体业务无关的运行机制。任何包含 User、Role、OIDC、Content、Taxonomy、Notification、Points、Payment 等语义的模型、原子业务操作或多步业务流程都不属于 kernel。业务规则和原子事实操作归 capability；注册、密码找回等跨能力多步流程归 feature。
 
 ## 组件
 
@@ -24,6 +24,8 @@ kernel 可以公开：
 - 结构化错误、日志字段、metrics/diagnostics provider contracts。
 
 kernel 不公开“继承后自动工作”的业务基类。创建对象、注册声明、打开连接和启动 worker 均由组合根完成。
+
+kernel 不提供面向 capability 的通用业务 CRUD，也不替 capability 保存领域状态；它只提供 Repository/UoW、分页、事件、workflow/activity/task、registry、错误、时间、观测和安全等技术原语。`inc/api` 只把这些公开合同接到 HTTP、授权和 manifest/ProviderCatalog 组合上。
 
 ## Kernel 表所有权
 

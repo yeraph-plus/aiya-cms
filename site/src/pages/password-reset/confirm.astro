@@ -1,0 +1,23 @@
+---
+import AuthForm from '@/components/astro/AuthForm.astro';
+import { submitIdentityForm } from '@/lib/user-center';
+const locale = Astro.locals.locale;
+if (Astro.request.method === 'POST') {
+    const form = await Astro.request.formData();
+    try {
+        const state = await submitIdentityForm(Astro, form, '/api/v1/auth/password-reset/confirm', {
+            token: String(form.get('token') ?? ''),
+            new_password: String(form.get('new_password') ?? '')
+        });
+        Astro.response.status = 303;
+        Astro.response.headers.set('Location', `/password-reset/confirm?status=${state}`);
+    } catch {
+        Astro.response.status = 403;
+    }
+}
+const fields = [
+    { name: 'token', label: locale === 'en' ? 'Reset token' : '重置令牌', type: 'password' as const, autocomplete: 'off', maxLength: 512 },
+    { name: 'new_password', label: locale === 'en' ? 'New password' : '新密码', type: 'password' as const, autocomplete: 'new-password', minLength: 8, maxLength: 128 }
+];
+---
+<AuthForm locale={locale} title={locale === 'en' ? 'Choose a new password' : '设置新密码'} description={locale === 'en' ? 'Enter the one-time reset token and a new password.' : '输入一次性重置令牌并设置新密码。'} action="/password-reset/confirm" fields={fields} status={Astro.response.status === 403 ? 'invalid' : Astro.url.searchParams.get('status')} />

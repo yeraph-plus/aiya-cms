@@ -1,10 +1,11 @@
-"""OpenAPI snapshot generation, user projection and drift checks.
+"""OpenAPI snapshot generation, admin/user projections and drift checks.
 
 Contract source: context/spec/http-openapi.md §10.
 
-The root ``openapi.json`` and its client-safe ``openapi.user.json`` projection
-are generated deterministically from the single deployable ``release``
-manifest. ``check`` fails when either snapshot drifts.
+The root ``openapi.json`` is the complete release schema used for system
+validation.  ``openapi.admin.json`` and ``openapi.user.json`` are the two
+client-facing projections generated from that same release manifest.
+``check`` fails when any snapshot drifts.
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ OPENAPI_PATH = REPO_ROOT / "openapi.json"
 SHA256_PATH = REPO_ROOT / "openapi.sha256"
 USER_OPENAPI_PATH = REPO_ROOT / "openapi.user.json"
 USER_SHA256_PATH = REPO_ROOT / "openapi.user.sha256"
+ADMIN_OPENAPI_PATH = REPO_ROOT / "openapi.admin.json"
+ADMIN_SHA256_PATH = REPO_ROOT / "openapi.admin.sha256"
 
 USER_TAGS = frozenset(
     {
@@ -33,10 +36,38 @@ USER_TAGS = frozenset(
         "engagement",
         "discussions",
         "community-tags",
+        "user-center",
+        "business",
     }
+)
+USER_PATHS = frozenset(
+    {
+        "/.well-known/openid-configuration",
+        "/api/v1/me",
+        "/api/v1/membership/levels",
+        "/api/v1/points/products",
+    }
+)
+USER_PATH_PREFIXES = (
+    "/api/v1/auth/",
+    "/api/v1/me/",
+    "/api/v1/posts",
+    "/api/v1/pages",
+    "/api/v1/works",
+    "/api/v1/community/",
+    "/api/v1/content/",
+    "/api/v1/business/",
+    "/oidc/",
 )
 _HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "options", "head"})
 _COMPONENT_REF_PREFIX = "#/components/"
+ADMIN_PATH_PREFIXES = (
+    "/api/v1/admin/",
+    "/healthz",
+    "/api/v1/health",
+    "/oidc/",
+    "/.well-known/",
+)
 
 
 def _generate_manifest_schema(manifest: Any) -> dict[str, Any]:
@@ -111,8 +142,13 @@ def _security_scheme_names(value: Any) -> set[str]:
     return names
 
 
-def project_user_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return a deterministic, reference-closed user API projection."""
+def _project_schema(
+    schema: dict[str, Any],
+    *,
+    operation_selected: Any,
+    title: str,
+) -> dict[str, Any]:
+    """Build a deterministic projection while retaining referenced components."""
 
     projected_paths: dict[str, Any] = {}
     for path, path_item in schema.get("paths", {}).items():
@@ -121,8 +157,7 @@ def project_user_schema(schema: dict[str, Any]) -> dict[str, Any]:
             if key not in _HTTP_METHODS:
                 selected[key] = deepcopy(value)
                 continue
-            tags = set(value.get("tags", ()))
-            if tags and tags <= USER_TAGS:
+            if operation_selected(path, value):
                 selected[key] = deepcopy(value)
         if any(key in _HTTP_METHODS for key in selected):
             projected_paths[path] = selected
@@ -158,22 +193,68 @@ def project_user_schema(schema: dict[str, Any]) -> dict[str, Any]:
         for key, value in schema.items()
         if key not in {"paths", "components", "tags", "security"}
     }
+    projected_info = projected.setdefault("info", {})
+    projected_info["title"] = title
     projected["paths"] = projected_paths
     if projected_components:
         projected["components"] = {
             category: dict(sorted(entries.items()))
             for category, entries in sorted(projected_components.items())
         }
+    projected_tag_names = {
+        tag
+        for methods in projected_paths.values()
+        for operation in methods.values()
+        if isinstance(operation, dict)
+        for tag in operation.get("tags", ())
+    }
     projected["tags"] = [
-        deepcopy(tag) for tag in schema.get("tags", ()) if tag.get("name") in USER_TAGS
+        deepcopy(tag) for tag in schema.get("tags", ()) if tag.get("name") in projected_tag_names
     ]
     return projected
+
+
+def project_admin_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return the administrator client projection.
+
+    The projection contains every mounted ``/api/v1/admin`` endpoint plus the
+    health and OIDC protocol surfaces used by the administrator shell.  User
+    content/authentication routes are intentionally excluded.
+    """
+
+    return _project_schema(
+        schema,
+        operation_selected=lambda path, _operation: (
+            path == "/api/v1/admin" or path.startswith(ADMIN_PATH_PREFIXES)
+        ),
+        title="aiya-cms Admin API",
+    )
+
+
+def project_user_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a deterministic, reference-closed user API projection."""
+
+    return _project_schema(
+        schema,
+        operation_selected=lambda path, _operation: (
+            (path in USER_PATHS or path.startswith(USER_PATH_PREFIXES))
+            and not path.startswith("/api/v1/admin/")
+            and "webhook" not in path
+        ),
+        title="aiya-cms User API",
+    )
 
 
 def generate_user_schema() -> dict[str, Any]:
     """Generate the Astro client projection from the release schema."""
 
     return project_user_schema(generate_full_schema())
+
+
+def generate_admin_schema() -> dict[str, Any]:
+    """Generate the administrator SPA projection from the release schema."""
+
+    return project_admin_schema(generate_full_schema())
 
 
 def _write_snapshot(path: Path, hash_path: Path, schema: dict[str, Any]) -> None:
@@ -196,18 +277,27 @@ def _snapshot_matches(path: Path, hash_path: Path, schema: dict[str, Any]) -> bo
 
 
 def dump() -> Path:
-    """Write full/user schemas and hashes; return the full JSON path."""
+    """Write full/admin/user schemas and hashes; return the full JSON path."""
 
     schema = generate_schema()
     _write_snapshot(OPENAPI_PATH, SHA256_PATH, schema)
-    _write_snapshot(USER_OPENAPI_PATH, USER_SHA256_PATH, generate_user_schema())
+    _write_snapshot(ADMIN_OPENAPI_PATH, ADMIN_SHA256_PATH, project_admin_schema(schema))
+    _write_snapshot(USER_OPENAPI_PATH, USER_SHA256_PATH, project_user_schema(schema))
     return OPENAPI_PATH
 
 
 def check() -> bool:
-    """True when full and user snapshot/hash pairs match current code."""
+    """True when all release and client snapshot/hash pairs match current code."""
 
     schema = generate_schema()
-    return _snapshot_matches(OPENAPI_PATH, SHA256_PATH, schema) and _snapshot_matches(
-        USER_OPENAPI_PATH, USER_SHA256_PATH, generate_user_schema()
+    return all(
+        (
+            _snapshot_matches(OPENAPI_PATH, SHA256_PATH, schema),
+            _snapshot_matches(
+                ADMIN_OPENAPI_PATH,
+                ADMIN_SHA256_PATH,
+                project_admin_schema(schema),
+            ),
+            _snapshot_matches(USER_OPENAPI_PATH, USER_SHA256_PATH, project_user_schema(schema)),
+        )
     )

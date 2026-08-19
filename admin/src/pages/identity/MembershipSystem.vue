@@ -184,8 +184,8 @@ onMounted(() => void load());
                 <Column field="cycle_end" :header="t('workbenches.membership.end')"
                     ><template #body="{ data }">{{ formatDate(data.cycle_end) }}</template></Column
                 >
-                <Column field="granted_points" :header="t('workbenches.membership.points')" />
-                <Column field="outcome" :header="t('workbenches.membership.outcome')" />
+                <Column field="cycle_points_amount" :header="t('workbenches.membership.points')" />
+                <Column field="state" :header="t('workbenches.membership.outcome')" />
             </DataTable>
         </EntityDrawerShell>
 

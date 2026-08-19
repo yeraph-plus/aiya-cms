@@ -68,6 +68,34 @@ export { assignRole, createRole, deleteRole, fetchCapabilities, fetchRoles, fetc
 export type { AssignRoleBody, CapabilityDTO, CreateRoleBody, GrantSummary, ReplaceCapabilitiesBody, RoleDTO } from './access';
 export { cancelSubscription, createMembershipLevel, fetchMembershipLevels, fetchMembershipSummary, fetchSubscriptionRenewals, fetchSubscriptions, setMembershipLevelStatus, terminateSubscription, updateMembershipLevel } from './membership';
 export type { CancelInput, CreateLevelInput, LevelDTO, MembershipSummaryDTO, RenewalPageDTO, RenewalQuery, SubscriptionDTO, SubscriptionPageDTO, SubscriptionQuery, TerminateInput, UpdateLevelInput } from './membership';
+export {
+    cancelGiftCardRedemption,
+    closeGiftCardBatch,
+    commitGiftCardRedemption,
+    fetchGiftCardBatches,
+    fetchGiftCardRedemption,
+    fetchGiftCards,
+    generateGiftCardBatch,
+    recordGiftCardProviderFact,
+    reserveGiftCardRedemption,
+    revokeGiftCard,
+    verifyGiftCard
+} from './gift-cards';
+export type {
+    BatchPageDTO,
+    CancelGiftCardRedemptionInput,
+    CardPageDTO,
+    CommitGiftCardRedemptionInput,
+    GenerateGiftCardBatchInput,
+    GiftCardBatchDTO,
+    GiftCardBatchQuery,
+    GiftCardBatchResultDTO,
+    GiftCardDTO,
+    GiftCardVerifyDTO,
+    ProviderPurchaseInput,
+    ReserveGiftCardRedemptionInput,
+    VerifyGiftCardInput
+} from './gift-cards';
 export { disableOidcClient, enableOidcClient, fetchOidcClient, fetchOidcClients, registerOidcClient, rotateOidcClientSecret, updateOidcClient } from './oidc-admin';
 export type { ClientDTO, ClientRegistrationResult, RegisterClientBody, UpdateClientBody } from './oidc-admin';
 export { approveComment, deleteComment, fetchComment, fetchComments, rejectComment } from './comments';

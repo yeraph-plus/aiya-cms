@@ -198,22 +198,23 @@ export async function endSession(session: SiteSession): Promise<URL | undefined>
     const auth = await session.get('auth');
     const config = loadServerConfig();
     let redirect: URL | undefined;
-    if (auth) {
-        const client = await configuration();
-        if (auth.refreshToken) {
-            try {
+    try {
+        if (auth) {
+            const client = await configuration();
+            if (auth.refreshToken) {
                 await oidc.tokenRevocation(client, auth.refreshToken, { tokenTypeHint: 'refresh_token' });
-            } catch {
-                // Local session destruction is fail-closed even when the provider is unavailable.
+            }
+            if (auth.idToken) {
+                redirect = oidc.buildEndSessionUrl(client, {
+                    id_token_hint: auth.idToken,
+                    post_logout_redirect_uri: config.oidcPostLogoutRedirectUri
+                });
             }
         }
-        if (auth.idToken) {
-            redirect = oidc.buildEndSessionUrl(client, {
-                id_token_hint: auth.idToken,
-                post_logout_redirect_uri: config.oidcPostLogoutRedirectUri
-            });
-        }
+    } catch {
+        // Provider failure must never prevent local session destruction.
+    } finally {
+        session.destroy();
     }
-    session.destroy();
     return redirect;
 }

@@ -1,0 +1,6 @@
+---
+import { safeReturnTo } from '@/lib/routing/routes';
+const returnTo = safeReturnTo(Astro.url.searchParams.get('returnTo'), '/');
+Astro.response.status = 302;
+Astro.response.headers.set('Location', `/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
+---

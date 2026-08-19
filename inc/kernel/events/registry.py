@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.events.envelope import EventEnvelope
 
-_EVENT_KEY = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+\.v\d+$")
+_EVENT_KEY = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+\.v\d+$")
 
 
 def validate_event_key(event_key: str) -> None:

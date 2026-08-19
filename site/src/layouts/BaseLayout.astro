@@ -3,6 +3,7 @@ import AppShell from '@/components/astro/AppShell.astro';
 import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
 import { parseTheme, THEME_COOKIE } from '@/lib/theme';
+import { buildSeoMetadata, serializeJsonLd, type JsonLd } from '@/lib/seo';
 import '@/styles/global.css';
 
 interface Props {
@@ -10,11 +11,26 @@ interface Props {
     title: string;
     description: string;
     noindex?: boolean;
+    nofollow?: boolean | undefined;
+    canonical?: string | URL;
+    ogType?: 'article' | 'website';
+    ogImage?: string | URL;
+    jsonLd?: JsonLd | undefined;
 }
 
-const { locale, title, description, noindex = true } = Astro.props;
-const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url.origin);
+const { locale, title, description, noindex = true, nofollow, canonical, ogType, ogImage, jsonLd } = Astro.props;
 const theme = parseTheme(Astro.cookies.get(THEME_COOKIE)?.value);
+const seo = buildSeoMetadata({
+    title,
+    description,
+    siteName: t(locale, 'site.name'),
+    siteOrigin: Astro.site ?? Astro.url.origin,
+    canonical: canonical ?? Astro.url,
+    noindex,
+    nofollow,
+    ogType,
+    ogImage
+});
 ---
 
 <!doctype html>
@@ -22,12 +38,22 @@ const theme = parseTheme(Astro.cookies.get(THEME_COOKIE)?.value);
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width" />
-        <meta name="description" content={description} />
-        <meta name="robots" content={noindex ? 'noindex, nofollow' : 'index, follow'} />
-        <link rel="canonical" href={canonical.href} />
+        <meta name="description" content={seo.description} />
+        <meta name="robots" content={seo.robots} />
+        <link rel="canonical" href={seo.canonical} />
+        <meta property="og:title" content={seo.openGraph.title} />
+        <meta property="og:description" content={seo.openGraph.description} />
+        <meta property="og:type" content={seo.openGraph.type} />
+        <meta property="og:url" content={seo.openGraph.url} />
+        {seo.openGraph.siteName && <meta property="og:site_name" content={seo.openGraph.siteName} />}
+        {seo.openGraph.image && <meta property="og:image" content={seo.openGraph.image} />}
+        <meta name="twitter:card" content={seo.openGraph.image ? 'summary_large_image' : 'summary'} />
+        <meta name="twitter:title" content={seo.openGraph.title} />
+        <meta name="twitter:description" content={seo.openGraph.description} />
+        {jsonLd && <script is:inline type="application/ld+json" set:html={serializeJsonLd(jsonLd)} />}
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <meta name="generator" content={Astro.generator} />
-        <title>{title} · {t(locale, 'site.name')}</title>
+        <title>{seo.title}</title>
     </head>
     <body>
         <a class="skip-link" href="#main-content">{t(locale, 'nav.skip')}</a>

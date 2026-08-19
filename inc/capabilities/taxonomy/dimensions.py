@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict
 
 from inc.kernel.errors import ErrorCategory, KernelError
 
-_KEY = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
+_KEY = re.compile(r"^[a-z0-9]+(?:[._][a-z0-9]+)*$")
 _TERM_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 SELECTION_MODES = ("single", "multiple")

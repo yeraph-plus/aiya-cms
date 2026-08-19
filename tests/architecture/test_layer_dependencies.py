@@ -133,9 +133,9 @@ def test_adapters_use_only_public_capability_surfaces() -> None:
 
 def test_auth_router_delegates_self_service_orchestration_to_feature() -> None:
     auth_source = (INC_ROOT / "api" / "http" / "routers_auth.py").read_text(encoding="utf-8")
-    me_source = (INC_ROOT / "api" / "http" / "routers_me.py").read_text(encoding="utf-8")
-    assert "services.me" in me_source
-    assert "inc.features.check_in" not in auth_source
+    me_source = (INC_ROOT / "api" / "http" / "routers_user_center.py").read_text(encoding="utf-8")
+    assert "services.user_center" in me_source or 'getattr(services, "user_center"' in me_source
+    assert "inc.features.user_center" not in auth_source
     assert "FinalizeAsset" not in me_source
     assert "_me_dto" not in me_source
     assert "RegisterLocalUser" not in auth_source

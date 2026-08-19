@@ -2,7 +2,7 @@
 
 ## 职责
 
-assets 管理对象存储的稳定引用、私有 upload intent、finalize、删除和图片规范化；不做媒体库 UI、文件夹或在线编辑。业务跨能力只保存 opaque asset ID，不建立外键或持久化 signed URL。
+assets 管理对象存储的稳定引用、私有 upload intent、finalize、删除和图片规范化；不做媒体库 UI、文件夹、在线编辑、大文件分卷、付费下载授权或外部下载目录。后四项属于规划中的 [`archive`](archive.md) capability，不能通过扩展一个万能 ObjectStorageProvider 混入 assets。业务跨能力只保存 opaque asset ID，不建立外键或持久化 signed URL。
 
 ObjectStorageProvider 提供 upload intent、stat/read、写入、删除、短期私有 URL 和稳定公开 URL。provider 从 settings 当前 storage key 解析；调用时缺配置或错误映射为 `assets.provider_unavailable`，不泄露 credentials/SDK 内容。
 

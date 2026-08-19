@@ -17,7 +17,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-_EVENT_KEY = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
+_EVENT_KEY = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 
 
 class EventEnvelope(BaseModel):

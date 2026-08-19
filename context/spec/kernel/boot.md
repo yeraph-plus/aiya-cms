@@ -11,6 +11,7 @@ registry 是 application container 所有的可变构建对象，freeze 后只�
 - event schemas/handlers。
 - workflow/activity/signal/Cron specs。
 - Port bindings。
+- provider-valued Port 的 ProviderCatalog/Resolver；catalog 在启动构建阶段注册全部允许实现，运行时由 settings 解析当前选择。
 - RouterSpec。
 - diagnostics/metrics/readmodel providers。
 - content types、taxonomy dimensions、points behaviors 等由 capability 提供的专用 registry factory。

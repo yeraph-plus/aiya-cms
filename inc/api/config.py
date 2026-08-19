@@ -31,6 +31,7 @@ class ApiSettings(BaseModel):
     admin_session_secret: str = "dev-admin-session-secret-change-me"
     admin_session_idle_seconds: int = 8 * 3600
     admin_session_absolute_seconds: int = 14 * 86400
+    gift_card_secret_pepper: str | None = None
 
     @field_validator("issuer")
     @classmethod

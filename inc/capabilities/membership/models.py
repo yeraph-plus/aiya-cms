@@ -1,11 +1,10 @@
 """Membership persistence models.
 
-Contract source: context/spec/capabilities/membership.md §2/§3.
+Contract source: context/spec/capabilities/membership.md §2/§4.
 
-Levels are code/ops declarations mirrored into the DB (like points
-behaviors); subscriptions hold the current cycle, status and the granted
-points snapshot for display/reconciliation. Subject refs are opaque; the
-granted points live in points buckets, never here.
+Membership owns the subscription and cycle facts only.  The points entry
+reference is an opaque value returned by the user-center workflow; it is not
+a relationship to another capability's tables.
 """
 
 from __future__ import annotations
@@ -15,20 +14,20 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    UniqueConstraint,
-    Uuid,
-)
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from inc.kernel.db import Base, JsonBModel, TableOwnership, TimestampMixin, UUIDPrimaryKeyMixin
 
-SUBSCRIPTION_STATES = ("active", "expired", "cancelled")
+SUBSCRIPTION_STATES = (
+    "pending_activation",
+    "active",
+    "expired",
+    "cancelled",
+    "terminated",
+    "failed",
+)
+CYCLE_STATES = ("prepared", "activated", "failed")
 
 
 class LevelMetadata(BaseModel):
@@ -53,6 +52,12 @@ class MembershipLevel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     data: Mapped[LevelMetadata] = mapped_column(JsonBModel(LevelMetadata, "1"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
+    @property
+    def cycle_points_amount(self) -> int:
+        """Expose the contract name while retaining the existing admin column."""
+
+        return self.grant_points
+
 
 @TableOwnership.owned_by("capability:membership")
 class MembershipSubscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -63,12 +68,19 @@ class MembershipSubscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     level_key: Mapped[str] = mapped_column(String(100), nullable=False)
     cycle_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     cycle_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending_activation")
     auto_renew: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Kept for the existing administrator response shape; this is the current
+    # cycle's immutable amount snapshot, not a ledger or balance.
     granted_points: Mapped[int] = mapped_column(Integer, nullable=False)
     renewal_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cycle_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    source_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("subject_type", "subject_id", name="uq_membership_subscription_subject"),
@@ -76,15 +88,31 @@ class MembershipSubscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 @TableOwnership.owned_by("capability:membership")
-class MembershipRenewalRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "membership_renewal_records"
+class MembershipCycle(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable membership-cycle snapshot and activation fact."""
+
+    __tablename__ = "membership_cycles"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("membership_subscriptions.id"), nullable=False, index=True
     )
+    level_key: Mapped[str] = mapped_column(String(100), nullable=False)
     cycle_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     cycle_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    granted_points: Mapped[int] = mapped_column(Integer, nullable=False)
-    points_source_id: Mapped[str] = mapped_column(String(200), nullable=False)
-    points_entry_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
-    outcome: Mapped[str] = mapped_column(String(16), nullable=False, default="granted")
+    cycle_points_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="prepared", index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(200), nullable=False)
+    points_entry_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    attach_idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "subscription_id",
+            "idempotency_key",
+            name="uq_membership_cycle_subscription_idempotency",
+        ),
+    )

@@ -1,0 +1,9 @@
+---
+import AccountSection from '@/components/astro/AccountSection.astro';
+import type { AccountSection as Section } from '@/lib/routing/routes';
+const allowed = ['points', 'membership', 'purchases', 'gift-card', 'downloads'] as const;
+const value = Astro.params.section;
+if (!value || !allowed.includes(value as (typeof allowed)[number])) Astro.response.status = 404;
+const section = (value && allowed.includes(value as (typeof allowed)[number]) ? value : 'points') as Section;
+---
+<AccountSection locale="en" section={section} />

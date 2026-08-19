@@ -43,6 +43,7 @@ REQUIRED_PERMISSIONS: tuple[str, ...] = (
     "settings.notification.update",
     "settings.entitlements.update",
     "settings.object_storage.update",
+    "settings.payments.update",
     "settings.operations.update",
 )
 

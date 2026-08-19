@@ -62,6 +62,17 @@ export const appRoutes: RouteRecordRaw[] = [
                 }
             },
             {
+                path: 'users/gift-cards',
+                name: 'user-gift-cards',
+                component: () => import('@/pages/identity/GiftCardsSystem.vue'),
+                meta: {
+                    titleKey: 'routes.users.giftCards',
+                    requiresAuth: true,
+                    requiredCapability: 'gift_cards.manage',
+                    shell: 'app'
+                }
+            },
+            {
                 path: 'content/articles',
                 name: 'content-articles',
                 component: () => import('@/pages/content/ContentList.vue'),

@@ -153,6 +153,13 @@ export const productMenu: NavMenuItem[] = [
                 to: '/system/oidc',
                 routeName: 'system-oidc',
                 capability: 'oidc_provider.clients.read'
+            },
+            {
+                labelKey: 'nav.system.giftCards',
+                icon: 'pi pi-fw pi-ticket',
+                to: '/users/gift-cards',
+                routeName: 'user-gift-cards',
+                capability: 'gift_cards.manage'
             }
         ]
     },

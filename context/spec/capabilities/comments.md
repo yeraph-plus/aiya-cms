@@ -45,12 +45,14 @@ Command 只写 comments 自有表与同事务 outbox；Query 不写库、不发�
 
 ## 5. HTTP
 
-comments capability 不导出按任意 `target_type` 放开的用户通用 router。完整产品由 `post` feature 绑定目标策略并导出：
+comments capability 不导出按任意 `target_type` 放开的用户通用 router。完整产品由 `post` 与 `work` feature 分别绑定目标策略并导出：
 
 - `GET /api/v1/posts/{post_id}/comments`；
 - `POST /api/v1/posts/{post_id}/comments`（需要登录和 `Idempotency-Key`）。
+- `GET /api/v1/works/{work_id}/comments`；
+- `POST /api/v1/works/{work_id}/comments`（需要登录和 `Idempotency-Key`）。
 
-这两个 router 只能调用 comments 的公开 Command/Query，并把 target 固定为 `post`；page 不因 comments capability 已启用而自动获得评论。未来其他目标需要评论时，由对应 feature 另行声明目标策略和 RouterSpec。
+这些 router 只能调用 comments 的公开 Command/Query，并把 target 分别固定为 `post` 或 `work`；page 不因 comments capability 已启用而自动获得评论。未来其他目标需要评论时，由对应 feature 另行声明目标策略和 RouterSpec。
 
 管理侧只导出 `/api/v1/admin/**`：
 

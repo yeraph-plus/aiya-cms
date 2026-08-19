@@ -256,6 +256,15 @@ def test_object_storage_group_marks_credentials_sensitive() -> None:
     assert group.update_permission == "settings.object_storage.update"
 
 
+def test_payments_group_permission_is_registered() -> None:
+    from inc.capabilities.settings.definition import spec as settings_spec
+    from inc.features.site_settings.definition import build_site_setting_group_specs
+
+    group = next(spec for spec in build_site_setting_group_specs() if spec.group_key == "payments")
+    assert group.update_permission == "settings.payments.update"
+    assert group.update_permission in settings_spec.access_keys
+
+
 async def test_object_storage_credentials_excluded_from_first_event_and_audit(
     uow_factory: UoWFactory,
     clock: Any,

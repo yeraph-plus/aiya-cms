@@ -87,6 +87,7 @@ def _api_settings_from_env(environ: Mapping[str, str] | None = None) -> ApiSetti
             "admin_session_absolute_seconds": int(
                 values.get("AIYA_ADMIN_SESSION_ABSOLUTE_SECONDS") or 14 * 86400
             ),
+            "gift_card_secret_pepper": values.get("AIYA_GIFT_CARD_SECRET_PEPPER"),
         }
     )
 

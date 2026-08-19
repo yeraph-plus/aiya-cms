@@ -1,6 +1,6 @@
 # 管理员端规格
 
-`admin/` 是 release 的独立 Vue SPA，只通过 admin OpenAPI 的生成类型调用 `/api/v1/admin/**` 和 OIDC/认证公共端点。它不读取 Python、数据库、manifest 内部表或手写 DTO。后端始终是授权边界；前端 capability set 只用于菜单和操作可见性。
+`admin/` 是 release 的独立 Vue SPA，只通过 `openapi.admin.json` 的生成类型调用 `/api/v1/admin/**` 和 OIDC/认证公共端点。完整 `openapi.json` 仅用于系统验证，不参与管理员端类型生成。它不读取 Python、数据库、manifest 内部表或手写 DTO。后端始终是授权边界；前端 capability set 只用于菜单和操作可见性。
 
 管理员使用 first-party public OIDC client 的 Code + PKCE，token 仅在内存，callback 后读取 `/api/v1/admin/session`。注册、邮箱验证、密码重置可调用 auth 公共端点；不得调用 `/api/v1/me`、用户资料、购买、支付、退款或 webhook 路由。
 

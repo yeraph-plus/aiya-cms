@@ -84,7 +84,7 @@ def test_old_migration_revisions_are_gone() -> None:
     assert stale == []
 
 
-def test_rebuild_release_has_one_initial_migration() -> None:
+def test_development_baseline_is_the_only_migration() -> None:
     versions = REPO_ROOT / "alembic" / "versions"
     revisions = sorted(path for path in versions.glob("*.py") if path.name != "__init__.py")
 
@@ -98,18 +98,28 @@ def test_rebuild_release_has_one_initial_migration() -> None:
         "community_posts",
         "community_tags",
         "community_search_documents",
+        "membership_subscriptions",
+        "membership_cycles",
+        "archive_items",
+        "archive_download_grants",
+        "archive_delivery_attempts",
     ):
         assert f'"{table}"' in source
     assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in source
+    assert "membership_renewal_records" not in source
+    assert "op.alter_column" not in source
+    assert "op.add_column" not in source
 
 
-def test_backend_image_contains_both_openapi_snapshot_pairs() -> None:
+def test_backend_image_contains_all_openapi_snapshot_pairs() -> None:
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
     for artifact in (
         "openapi.json",
         "openapi.sha256",
         "openapi.user.json",
         "openapi.user.sha256",
+        "openapi.admin.json",
+        "openapi.admin.sha256",
     ):
         assert artifact in dockerfile
 

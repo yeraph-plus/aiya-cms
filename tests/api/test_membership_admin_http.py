@@ -68,25 +68,28 @@ async def test_membership_admin_summary_levels_and_subscription(
     assert summary.status_code == 200, summary.text
     assert summary.json()["level_count"] >= 1
 
-    subscribed = await client.post(
-        "/api/v1/admin/membership/subscriptions",
+    prepared = await client.post(
+        "/api/v1/admin/membership/cycles/prepare",
         json={
             "subject_type": "identity",
             "subject_id": subject.id,
             "level_key": basic["level_key"],
             "auto_renew": False,
+            "source_type": "admin",
+            "source_ref": "membership-admin-1",
             "idempotency_key": "membership-admin-1",
         },
         headers=headers,
     )
-    assert subscribed.status_code == 200, subscribed.text
-    assert subscribed.json()["subject_id"] == subject.id
-    assert subscribed.json()["subject"]["username"] == "membership-admin-target"
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["subject_id"] == subject.id
+    assert prepared.json()["state"] == "prepared"
 
     listed = await client.get("/api/v1/admin/membership/subscriptions", headers=headers)
     assert listed.status_code == 200, listed.text
     item = next(row for row in listed.json()["items"] if row["subject_id"] == subject.id)
     assert item["subject"]["username"] == "membership-admin-target"
+    assert item["status"] == "pending_activation"
 
 
 async def test_membership_level_patch_rejects_explicit_null(client: Any, admin_token: str) -> None:

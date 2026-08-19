@@ -39,7 +39,7 @@
 | prettier | 3.9.6 | 格式化 |
 
 - `src/assets/` 是 git 子模块（primefaces/sakai-assets），承载布局 SCSS；升级不触及子模块内容。
-- npm scripts：`dev`（vite）、`build`（vue-tsc -b && vite build）、`typecheck`、`preview`（仅开发演示用，生产禁止，见 `admin.md` §8）、`lint`（eslint --fix .）、`test`（vitest run，见 §7）、`generate:api`（openapi-typescript ../openapi.json -o src/api/schema.d.ts）。
+- npm scripts：`dev`（vite）、`build`（vue-tsc -b && vite build）、`typecheck`、`preview`（仅开发演示用，生产禁止，见 `admin.md` §8）、`lint`（eslint --fix .）、`test`（vitest run，见 §7）、`generate:api`（openapi-typescript ../openapi.admin.json -o src/api/schema.d.ts）。
 
 ## 3. 架构与装配机制
 
@@ -127,7 +127,7 @@ demo 画廊页面位于 `src/demo/pages/`（仅开发路由 `/demo/**`，生产�
 
 - 生产路由 meta 合同与阻塞路由不注册（`unit/router-meta.test.ts`）。
 - 菜单 capability/路由注册过滤与空父组隐藏（`unit/menu-visibility.test.ts`）。
-- 生成类型无漂移：`openapi.sha256` 校验与 `schema.d.ts` 重新生成对比（`unit/type-drift.test.ts`）。
+- 生成类型无漂移：`openapi.admin.sha256` 校验与 `schema.d.ts` 重新生成对比（`unit/type-drift.test.ts`）。
 - demo 生产剔除：生产路由/菜单无 demo 引用，demo 只允许被 DEV 守卫的 router 入口导入（`unit/demo-exclusion.test.ts`）。
 - 共享组件与 api 基础单元测试（`components/`、`unit/api-core.test.ts`）。
 - Settings 字段 registry 和 settings/audit 页面路由合同测试（`unit/setting-fields.test.ts`、`unit/router-meta.test.ts`）。

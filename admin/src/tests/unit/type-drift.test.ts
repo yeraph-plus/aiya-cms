@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 const adminRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const repoRoot = resolve(adminRoot, '..');
-const openapiPath = join(repoRoot, 'openapi.json');
+const openapiPath = join(repoRoot, 'openapi.admin.json');
 const schemaPath = join(adminRoot, 'src/api/schema.d.ts');
 
 function sha256(filePath: string): string {
@@ -16,8 +16,8 @@ function sha256(filePath: string): string {
 }
 
 describe('generated type no-drift gate', () => {
-    it('openapi.json matches the committed openapi.sha256', () => {
-        const expected = readFileSync(join(repoRoot, 'openapi.sha256'), 'utf8').split(/\s+/)[0];
+    it('openapi.admin.json matches the committed openapi.admin.sha256', () => {
+        const expected = readFileSync(join(repoRoot, 'openapi.admin.sha256'), 'utf8').split(/\s+/)[0];
         expect(sha256(openapiPath)).toBe(expected);
     });
 

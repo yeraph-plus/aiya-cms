@@ -16,7 +16,7 @@ key rotation 保持唯一 active key 和必要 verify-only 公钥；新 key 先�
 
 ## HTTP 与验收
 
-OIDC 端点使用标准 OAuth/OIDC 响应，不套普通业务 Error DTO。release 的认证 HTTP 只服务公开浏览会话；它不扩大为用户资料、上传、购买或会员 API。
+OIDC 端点使用标准 OAuth/OIDC 响应，不套普通业务 Error DTO。OIDC capability 只负责授权协议、token 与 session 相关事实；用户资料、上传、购买或会员 API 即使在同一 release 中挂载，也分别归 auth/user_center 等 feature，不得塞入 OIDC handler。
 
 - key 缺失/损坏/无 active key 使启动失败；持久卷重启后可验证旧 token。
 - redirect 精确匹配、PKCE、nonce、code replay、refresh rotation/reuse、logout/revocation 有负向测试。

@@ -9,7 +9,7 @@
         "typecheck": "vue-tsc -b",
         "lint": "eslint --fix .",
         "test": "vitest run",
-        "generate:api": "openapi-typescript ../openapi.json -o src/api/schema.d.ts"
+        "generate:api": "openapi-typescript ../openapi.admin.json -o src/api/schema.d.ts"
     },
     "dependencies": {
         "@primeuix/themes": "^3.0.0",

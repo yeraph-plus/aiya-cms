@@ -1,0 +1,10 @@
+---
+import type { Locale } from '@/lib/i18n';
+import type { AccountSection } from '@/lib/routing/routes';
+import AccountShell from './AccountShell.astro';
+
+interface Props { locale: Locale; section: AccountSection; }
+const { locale, section } = Astro.props;
+---
+
+<AccountShell locale={locale} section={section} />

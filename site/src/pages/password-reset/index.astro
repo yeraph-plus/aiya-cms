@@ -1,0 +1,17 @@
+---
+import AuthForm from '@/components/astro/AuthForm.astro';
+import { submitIdentityForm } from '@/lib/user-center';
+const locale = Astro.locals.locale;
+if (Astro.request.method === 'POST') {
+    const form = await Astro.request.formData();
+    try {
+        const state = await submitIdentityForm(Astro, form, '/api/v1/auth/password-reset/request', { identifier: String(form.get('identifier') ?? '') });
+        Astro.response.status = 303;
+        Astro.response.headers.set('Location', `/password-reset?status=${state}`);
+    } catch {
+        Astro.response.status = 403;
+    }
+}
+const fields = [{ name: 'identifier', label: locale === 'en' ? 'Email or username' : '邮箱或用户名', type: 'text' as const, autocomplete: 'username', maxLength: 320 }];
+---
+<AuthForm locale={locale} title={locale === 'en' ? 'Reset password' : '重置密码'} description={locale === 'en' ? 'Request a reset message. The response is identical whether or not the account exists.' : '请求密码重置消息。无论账户是否存在，页面都会给出相同响应。'} action="/password-reset" fields={fields} status={Astro.response.status === 403 ? 'invalid' : Astro.url.searchParams.get('status')} />

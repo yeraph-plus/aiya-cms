@@ -2,9 +2,8 @@
 
 Contract source: context/spec/capabilities/membership.md §2.
 
-MembershipLevelSpec is an immutable code declaration (like points
-behaviors); the DB mirrors it for ops visibility and drift checks. Levels
-are registered by the composition root (or by a feature), never discovered.
+The registry supplies trusted cycle length and cycle amount snapshots.  It
+does not grant or settle any external entitlement.
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ class MembershipLevelSpec:
         "tier_rank",
         "cycle_days",
         "grant_points",
+        "cycle_points_amount",
         "renewal_allowed",
         "status",
         "version",
@@ -37,7 +37,8 @@ class MembershipLevelSpec:
         display_name: str,
         tier_rank: int,
         cycle_days: int,
-        grant_points: int,
+        grant_points: int | None = None,
+        cycle_points_amount: int | None = None,
         renewal_allowed: bool = True,
         status: str = "active",
         version: int = 1,
@@ -50,13 +51,15 @@ class MembershipLevelSpec:
             raise ValueError(f"level {key} tier_rank must be positive")
         if cycle_days <= 0:
             raise ValueError(f"level {key} cycle_days must be positive")
-        if grant_points <= 0:
+        amount = cycle_points_amount if cycle_points_amount is not None else grant_points
+        if amount is None or amount <= 0:
             raise ValueError(f"level {key} grant_points must be positive")
         self.key = key
         self.display_name = display_name
         self.tier_rank = tier_rank
         self.cycle_days = cycle_days
-        self.grant_points = grant_points
+        self.grant_points = amount
+        self.cycle_points_amount = amount
         self.renewal_allowed = renewal_allowed
         self.status = status
         self.version = version
@@ -96,6 +99,10 @@ class MembershipLevelRegistry:
 
     def update_runtime(self, key: str, **values: object) -> MembershipLevelSpec:
         spec = self.require(key)
+        if "cycle_points_amount" in values and "grant_points" not in values:
+            values["grant_points"] = values["cycle_points_amount"]
+        if "grant_points" in values and "cycle_points_amount" not in values:
+            values["cycle_points_amount"] = values["grant_points"]
         for name, value in values.items():
             if name in {"key", "tier_rank", "cycle_days", "grant_points"}:
                 if name == "key":

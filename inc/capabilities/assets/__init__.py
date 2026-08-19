@@ -20,16 +20,28 @@ from inc.capabilities.assets.commands import (
 )
 from inc.capabilities.assets.diagnostics import AssetDiagnostics
 from inc.capabilities.assets.queries import AssetQueries
+from inc.capabilities.assets.schemas import (
+    AssetRefDTO,
+    CreateUploadIntentInput,
+    CreateUploadIntentResult,
+    FinalizeResultDTO,
+    ResolvedAssetUrlDTO,
+)
 
 __all__ = [
     "AssetDiagnostics",
     "AssetQueries",
+    "AssetRefDTO",
     "CommandContext",
     "CreateUploadIntent",
+    "CreateUploadIntentInput",
+    "CreateUploadIntentResult",
     "DeleteAsset",
     "FinalizeAsset",
+    "FinalizeResultDTO",
     "FinalizeContentImage",
     "NormalizeContentImage",
     "NormalizedImageResult",
+    "ResolvedAssetUrlDTO",
     "register_asset_workflows",
 ]

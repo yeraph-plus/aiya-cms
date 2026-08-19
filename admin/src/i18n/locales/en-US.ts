@@ -45,6 +45,7 @@ export default {
             permissions: 'Permissions',
             points: 'Points',
             membership: 'Membership',
+            giftCards: 'Gift cards',
             payments: 'Payments'
         },
         system: {
@@ -53,7 +54,8 @@ export default {
             operations: 'Operations log',
             assets: 'Assets',
             notifications: 'Notifications',
-            oidc: 'OIDC management'
+            oidc: 'OIDC management',
+            giftCards: 'Gift card management'
         },
         settings: 'Settings',
         settingsGeneral: 'General',
@@ -88,6 +90,7 @@ export default {
             permissions: 'Permissions',
             points: 'Points management',
             membership: 'Membership management',
+            giftCards: 'Gift card management',
             payments: 'Payment bills'
         },
         system: {
@@ -498,6 +501,24 @@ export default {
             renewalAllowed: 'Allow renewal',
             activateLevel: 'Activate',
             archiveLevel: 'Archive'
+        },
+        giftCards: {
+            description: 'Issue single-secret gift cards and review lifecycle facts; membership and points fulfilment belong to a future feature.',
+            generate: 'Generate gift-card batch',
+            quantity: 'Quantity',
+            product: 'Product key',
+            fulfillmentKey: 'Fulfilment key',
+            schemaVersion: 'Fulfilment version',
+            batch: 'Batch',
+            available: 'Available',
+            redeemed: 'Redeemed',
+            created: 'Created',
+            close: 'Close batch',
+            closeReason: 'Closed by administrator',
+            secretsOnce: 'Card secrets are shown once',
+            secretsHint: 'Copy them to controlled secret storage now; the server will never return plaintext again.',
+            empty: 'No gift-card batches',
+            emptyDescription: 'No batches match the current filters.'
         },
         payments: {
             description: 'Query payment bills and attempts, then use semantic commands for cancel, reconcile, and refund.',

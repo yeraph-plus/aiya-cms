@@ -33,6 +33,8 @@ INITIAL_CAPABILITIES = (
     "payments",
     "membership",
     "engagement",
+    "gift_cards",
+    "archive",
 )
 
 INITIAL_FEATURES = (
@@ -40,11 +42,12 @@ INITIAL_FEATURES = (
     "post",
     "page",
     "site_settings",
-    "check_in",
-    "membership_grants",
     "site_cleanup",
     "content_engagement",
     "content_bucket",
+    "work",
+    "user_center",
+    "business_center",
 )
 
 

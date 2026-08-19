@@ -3,25 +3,29 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
 import { createServerApiClient } from '@/lib/api/server/client';
 import type { Locale } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
+import { csrfToken } from '@/lib/auth/server/csrf';
+import CommunityComposer from '@/components/vue/CommunityComposer.vue';
 
 interface Props {
     locale: Locale;
-    slug: string;
+    id: string;
 }
 
-const { locale, slug } = Astro.props;
+const { locale, id } = Astro.props;
 const api = createServerApiClient(Astro.session, Astro.locals.requestId);
-const detailResponse = await api.GET('/api/v1/community/discussions/by-slug/{slug}', {
-    params: { path: { slug } }
-});
-if (!detailResponse.data) Astro.response.status = 404;
-const discussion = detailResponse.data;
+const slugLookup = await api.GET('/api/v1/community/discussions/by-slug/{slug}', { params: { path: { slug: id } } });
+const lookup = slugLookup.data
+    ? null
+    : await api.GET('/api/v1/community/discussions', { params: { query: { q: id, page: 1, size: 100, sort: 'latest' } } });
+const discussion = slugLookup.data ?? lookup?.data?.items.find((item) => item.id === id);
+if (!discussion) Astro.response.status = 404;
 const postsResponse = discussion
     ? await api.GET('/api/v1/community/discussions/{discussion_id}/posts', {
           params: { path: { discussion_id: discussion.id }, query: { page: 1, size: 100 } }
       })
     : null;
 const posts = postsResponse?.data?.items ?? [];
+const csrf = Astro.session ? await csrfToken(Astro.session) : undefined;
 ---
 
 <BaseLayout
@@ -39,6 +43,20 @@ const posts = postsResponse?.data?.items ?? [];
                         <p class="lede">
                             {discussion.reply_count} {t(locale, 'community.replies')}
                         </p>
+                        {Astro.locals.user && csrf && (
+                            <CommunityComposer client:load locale={locale} csrf={csrf} discussionId={discussion.id} />
+                        )}
+                        {Astro.locals.user && discussion.author_id === Astro.locals.user.subject && csrf && (
+                            <CommunityComposer
+                                client:load
+                                locale={locale}
+                                csrf={csrf}
+                                discussionId={discussion.id}
+                                discussionEdit
+                                discussionTitle={discussion.title}
+                                discussionVersion={discussion.version}
+                            />
+                        )}
                     </header>
                     <section class="community-posts" aria-label={t(locale, 'community.posts')}>
                         {posts.map((post) => (
@@ -47,7 +65,17 @@ const posts = postsResponse?.data?.items ?? [];
                                     <strong>{post.author?.display_name ?? post.author_id}</strong>
                                     <span>#{post.number}</span>
                                 </header>
-                                <pre>{post.body}</pre>
+                                 <pre>{post.body}</pre>
+                                 {Astro.locals.user && post.author_id === Astro.locals.user.subject && csrf && (
+                                     <CommunityComposer
+                                         client:load
+                                         locale={locale}
+                                         csrf={csrf}
+                                         postId={post.id}
+                                         postBody={post.body ?? undefined}
+                                         postVersion={post.version}
+                                     />
+                                 )}
                             </article>
                         ))}
                     </section>

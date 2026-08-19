@@ -2,11 +2,8 @@
 
 Contract source: context/spec/capabilities/membership.md.
 
-Membership grants points quota through the PointsLedger Port into points'
-expiring buckets (expires_at = subscription end); it never computes
-remaining balances or settlement itself. It imports no sibling capability:
-subjects are opaque references and points are reached only through the
-Ports bound by the composition root.
+Membership owns level, subscription and cycle facts. The user-center feature
+coordinates points grants and returns only an opaque entry reference.
 """
 
 from __future__ import annotations
@@ -21,5 +18,7 @@ spec = CapabilitySpec(
         "membership.read",
         "membership.levels.read",
         "membership.levels.manage",
+        "membership.subscriptions.read",
+        "membership.subscriptions.manage",
     ),
 )

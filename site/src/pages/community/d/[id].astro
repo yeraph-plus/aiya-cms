@@ -1,0 +1,8 @@
+---
+import CommunityDiscussion from '@/components/astro/CommunityDiscussion.astro';
+
+const { id } = Astro.params;
+if (!id) Astro.response.status = 404;
+---
+
+<CommunityDiscussion locale="zh-CN" id={id ?? ''} />

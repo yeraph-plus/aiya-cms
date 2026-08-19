@@ -109,6 +109,8 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "discussions", "description": "Community discussions and published post streams."},
     {"name": "community-tags", "description": "Community tag directory and metadata."},
     {"name": "engagement", "description": "Views, likes, ratings and favorites."},
+    {"name": "user-center", "description": "Authenticated account self-service."},
+    {"name": "business", "description": "Trusted points quotes and fulfillment."},
     {
         "name": "admin",
         "description": (
@@ -131,6 +133,8 @@ _OPENAPI_TAGS: list[dict[str, str]] = [
     {"name": "admin-session", "description": "Administrator identity and active permissions."},
     {"name": "admin-engagement", "description": "Engagement projection administration."},
     {"name": "admin-membership", "description": "Membership subscriptions and renewals."},
+    {"name": "admin-gift-cards", "description": "Gift-card issuance and redemption facts."},
+    {"name": "admin-archive", "description": "Archive item and grant administration."},
     {
         "name": "admin-notifications",
         "description": "Notification delivery recovery and diagnostics.",
@@ -208,7 +212,10 @@ def create_app(
         version="0.1.0",
         docs_url="/docs" if env != "production" else None,
         redoc_url="/redoc" if env != "production" else None,
-        openapi_url="/openapi.json",
+        # The complete schema is a system-validation artifact. Production
+        # clients consume the checked-in admin/user projections instead of a
+        # broad runtime document.
+        openapi_url="/openapi.json" if env != "production" else None,
         openapi_tags=_OPENAPI_TAGS,
         lifespan=lifespan,
     )

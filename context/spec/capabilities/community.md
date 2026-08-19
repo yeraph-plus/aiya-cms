@@ -1,5 +1,7 @@
 # Community Capability 规格
 
+> 状态：目标规格，尚未实施。下一用户站只交付本文定义的最小 Flarum-like profile。
+
 ## 1. 职责与边界
 
 `community` 提供单一站点社区中的讨论（discussion）、帖子（post）、社区标签（tag）、审核状态、锁定、领域内搜索和讨论列表排序。其交互模型借鉴 Flarum 的 discussion stream 与 tags 页面，但不复制 Flarum 的运行时扩展系统、JSON:API 或数据库结构。
@@ -14,6 +16,8 @@
 - notification、points、assets、mentions、spam/report 等后续行为只能由显式 feature 消费 community 的公开事件/Command 组装，community 不自动反向调用兄弟 capability。
 
 首版只支持一个社区实例，不增加 `community_id`、租户或版块空间模型。未来需要多个独立社区时必须先新增明确的 scope、唯一键、授权和迁移合同，不能把 nullable `community_id` 临时塞入现有查询。
+
+下一用户站最小 profile 固定为：标签页与 discussion stream、`latest|newest|top|relevance`、创建讨论、回复、编辑本人内容、锁定、隐藏/恢复和管理员审核。除此之外以第 11 节为准，不因前端需要而临时引入插件式行为。
 
 ## 2. DiscussionTemplateSpec
 

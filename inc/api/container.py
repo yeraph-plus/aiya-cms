@@ -13,8 +13,10 @@ through their package-root public surfaces.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any, cast
 
 from inc.adapters import (
@@ -31,6 +33,7 @@ from inc.adapters.registry import (
     MULTI_PROVIDER_PORTS,
     PORT_CONTRACTS,
 )
+from inc.api.archive_services import ArchiveAdminService, WorkArchiveCostBasis
 from inc.api.config import DEFAULT_ISSUER
 from inc.api.retention import ManagementRetentionActivity
 from inc.capabilities.access import (
@@ -38,6 +41,11 @@ from inc.capabilities.access import (
     AccessQueries,
     AuthorizeService,
     PermissionRegistry,
+)
+from inc.capabilities.archive import (
+    ArchiveCommandContext,
+    ArchiveQueries,
+    ResolveDownloadLinks,
 )
 from inc.capabilities.assets import (
     AssetDiagnostics,
@@ -66,6 +74,16 @@ from inc.capabilities.content import (
 )
 from inc.capabilities.engagement import EngagementCommands, EngagementQueries
 from inc.capabilities.engagement.ports import ContentEngagementTarget
+from inc.capabilities.gift_cards import (
+    CommandContext as GiftCardCommandContext,
+)
+from inc.capabilities.gift_cards import (
+    GiftCardDiagnostics,
+    GiftCardQueries,
+)
+from inc.capabilities.identity import (
+    CommandContext as IdentityCommandContext,
+)
 from inc.capabilities.identity import (
     CredentialAuthenticator,
     IdentityDiagnostics,
@@ -111,6 +129,9 @@ from inc.capabilities.oidc_provider import (
     UserInfoService,
 )
 from inc.capabilities.payments import (
+    CommandContext as PaymentCommandContext,
+)
+from inc.capabilities.payments import (
     PaymentsDiagnostics,
     PaymentsQueries,
 )
@@ -134,10 +155,33 @@ from inc.capabilities.taxonomy import (
     TaxonomyQueries,
 )
 from inc.features.auth.api import AuthService
+from inc.features.business_center import (
+    ARCHIVE_PRICING_POLICY_KEY,
+    BusinessCenterService,
+    BusinessCenterWorkflowContext,
+    BusinessProductRegistry,
+    QuoteBusinessProduct,
+    QuoteTokenCodec,
+    archive_product_spec,
+    build_consume_workflow_spec,
+)
+from inc.features.user_center import (
+    GiftCardFulfillmentRegistry,
+    GiftCardFulfillmentSpec,
+    MembershipOfferRegistry,
+    MembershipOfferSpec,
+    PointBundleRegistry,
+    PointBundleSpec,
+    UserCenterService,
+    UserCenterServiceContext,
+    UserCenterWorkflowContext,
+    build_user_center_workflow_specs,
+)
 from inc.kernel.boot import AppManifest, CapabilitySpec, FeatureSpec
 from inc.kernel.db import UoWFactory
 from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.events import (
+    EventEnvelope,
     EventHandlerRegistry,
     EventSchemaRegistry,
     OutboxDispatcher,
@@ -145,6 +189,7 @@ from inc.kernel.events import (
 )
 from inc.kernel.observability import AdminSummaryRegistry, DiagnosticRegistry, MetricRegistry
 from inc.kernel.security import Argon2PasswordHasher, SensitiveValueProtector
+from inc.kernel.security.signing import HmacSigner
 from inc.kernel.tasks import (
     CronRegistry,
     CronScheduler,
@@ -174,6 +219,8 @@ CAPABILITY_DEFINITIONS: dict[str, tuple[str, str]] = {
     "payments": ("inc.capabilities.payments.definition", "spec"),
     "membership": ("inc.capabilities.membership.definition", "spec"),
     "engagement": ("inc.capabilities.engagement.definition", "spec"),
+    "gift_cards": ("inc.capabilities.gift_cards.definition", "spec"),
+    "archive": ("inc.capabilities.archive.definition", "spec"),
 }
 
 STAT_PROVIDER_MODULES: dict[str, str] = {
@@ -192,18 +239,21 @@ STAT_PROVIDER_MODULES: dict[str, str] = {
     "payments": "inc.capabilities.payments.stat",
     "membership": "inc.capabilities.membership.stat",
     "engagement": "inc.capabilities.engagement.stat",
+    "gift_cards": "inc.capabilities.gift_cards.stat",
+    "archive": "inc.capabilities.archive.stat",
 }
 
 FEATURE_DEFINITIONS: dict[str, tuple[str, str]] = {
     "post": ("inc.features.post.definition", "spec"),
     "page": ("inc.features.page.definition", "spec"),
     "site_settings": ("inc.features.site_settings.definition", "spec"),
-    "check_in": ("inc.features.check_in.definition", "spec"),
     "auth": ("inc.features.auth.definition", "spec"),
-    "membership_grants": ("inc.features.membership_grants.definition", "spec"),
     "site_cleanup": ("inc.features.site_cleanup.definition", "spec"),
     "content_engagement": ("inc.features.content_engagement.definition", "spec"),
     "content_bucket": ("inc.features.content_bucket.definition", "spec"),
+    "work": ("inc.features.work.definition", "spec"),
+    "user_center": ("inc.features.user_center.definition", "spec"),
+    "business_center": ("inc.features.business_center.definition", "spec"),
 }
 
 REQUIRED_PORTS: dict[str, tuple[str, ...]] = {
@@ -244,17 +294,32 @@ class _ContentEngagementReader:
         )
 
 
+@dataclass(slots=True)
+class _UserCenterPaymentHandler:
+    key: str
+    user_center: UserCenterService
+
+    async def handle(self, envelope: EventEnvelope, uow: Any) -> None:
+        del uow
+        payload = envelope.payload
+        order_id = str(payload["order_id"])
+        if envelope.event_key == "payment.refund_completed.v1":
+            refund_ref = str(payload["refund_ref"])
+            await self.user_center.compensate_refund(
+                order_id=order_id,
+                refund_id=refund_ref,
+                subject_id=str(payload["subject_id"]),
+            )
+        else:
+            await self.user_center.fulfill_captured_payment(order_id=order_id)
+
+
 ROUTER_BINDINGS: dict[str, RouterBinding] = {
     "health": RouterBinding(module=None),
     "auth": RouterBinding(
         module="inc.api.http.routers_auth",
         capabilities=("identity", "oidc_provider"),
         features=("auth",),
-    ),
-    "me": RouterBinding(
-        module="inc.api.http.routers_me",
-        capabilities=("identity", "assets", "settings", "points"),
-        features=("check_in",),
     ),
     "admin_session": RouterBinding(
         module="inc.api.http.routers_admin_session", capabilities=("identity", "access")
@@ -297,17 +362,35 @@ ROUTER_BINDINGS: dict[str, RouterBinding] = {
         module=None,
         capabilities=("oidc_provider", "identity", "access", "audit"),
     ),
-    "check_in": RouterBinding(
-        module="inc.api.http.routers_check_in",
-        capabilities=("points",),
-        features=("check_in",),
-    ),
-    "points": RouterBinding(module="inc.api.http.routers_points", capabilities=("points",)),
     "points_admin": RouterBinding(
         module="inc.api.http.routers_points_admin", capabilities=("points",)
     ),
     "membership_admin": RouterBinding(
         module="inc.api.http.routers_membership_admin", capabilities=("membership",)
+    ),
+    "gift_cards_admin": RouterBinding(
+        module="inc.api.http.routers_gift_cards_admin", capabilities=("gift_cards",)
+    ),
+    "archive_admin": RouterBinding(
+        module="inc.api.http.routers_archive_admin", capabilities=("archive",)
+    ),
+    "user_center": RouterBinding(
+        module="inc.api.http.routers_user_center",
+        capabilities=(
+            "identity",
+            "assets",
+            "settings",
+            "points",
+            "membership",
+            "payments",
+            "gift_cards",
+        ),
+        features=("user_center",),
+    ),
+    "business_center": RouterBinding(
+        module="inc.api.http.routers_business_center",
+        capabilities=("archive", "points"),
+        features=("business_center",),
     ),
     "oidc_admin": RouterBinding(
         module="inc.api.http.routers_oidc_admin", capabilities=("oidc_provider",)
@@ -375,7 +458,18 @@ class Services:
     membership_levels: MembershipLevelRegistry | None = None
     membership_admin: MembershipAdminService | None = None
     membership_queries: MembershipQueries | None = None
-    me: Any | None = None
+    gift_card_context: GiftCardCommandContext | None = None
+    gift_card_queries: GiftCardQueries | None = None
+    user_center: UserCenterService | None = None
+    business_center: BusinessCenterService | None = None
+    archive_queries: ArchiveQueries | None = None
+    archive_admin: ArchiveAdminService | None = None
+    archive_link_resolver: ResolveDownloadLinks | None = None
+    business_audience: str | None = None
+    point_bundles: PointBundleRegistry | None = None
+    membership_offers: MembershipOfferRegistry | None = None
+    gift_card_fulfillments: GiftCardFulfillmentRegistry | None = None
+    business_products: BusinessProductRegistry | None = None
     auth: AuthService | None = None
     adapters: dict[str, Any] = field(default_factory=dict)
     settings: Any = None
@@ -454,7 +548,23 @@ class ApplicationContainer:
         self.settings_groups = SettingGroupRegistry()
         self.behaviors = PointBehaviorRegistry()
         self.membership_levels = MembershipLevelRegistry()
-        self.notification_specs = NotificationSpecRegistry()
+        self.notification_specs = NotificationSpecRegistry(
+            allowed_triggers=frozenset(
+                {item.trigger_name for item in AUTH_NOTIFICATION_SPECS}
+                | {"usercenter.fulfillment_completed.v1"}
+            )
+        )
+        self.point_bundles = PointBundleRegistry()
+        self.membership_offers = MembershipOfferRegistry()
+        self.gift_card_fulfillments = GiftCardFulfillmentRegistry(
+            point_bundles=self.point_bundles,
+            membership_offers=self.membership_offers,
+        )
+        self.business_products = BusinessProductRegistry(
+            pricing_policy_keys=frozenset({ARCHIVE_PRICING_POLICY_KEY}),
+            fulfillment_port_keys=frozenset({"archive.issue_download_grant.v1"}),
+            allowed_scopes=frozenset({"business.quote", "business.consume", "archive.download"}),
+        )
         self.diagnostic_registry = DiagnosticRegistry()
         self.admin_summary_registry = AdminSummaryRegistry()
         self.services: Services | None = None
@@ -657,6 +767,16 @@ class ApplicationContainer:
 
             for key, schema in MEMBERSHIP_EVENT_SCHEMAS.items():
                 self.schema_registry.register(key, schema)
+        if "gift_cards" in capabilities:
+            from inc.capabilities.gift_cards.events import GIFT_CARD_EVENT_SCHEMAS
+
+            for key, schema in GIFT_CARD_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
+        if "archive" in capabilities:
+            from inc.capabilities.archive.events import ARCHIVE_EVENT_SCHEMAS
+
+            for key, schema in ARCHIVE_EVENT_SCHEMAS.items():
+                self.schema_registry.register(key, schema)
         if "notification" in capabilities:
             from inc.capabilities.notification.events import NOTIFICATION_EVENT_SCHEMAS
 
@@ -673,6 +793,9 @@ class ApplicationContainer:
             self.permission_registry.register_declared(name, spec.access_keys)
         if "access" in self._manifest.capabilities:
             self.permission_registry.register_alias("admin.dashboard.read", owner="access")
+        if "archive" in self._manifest.capabilities:
+            self.permission_registry.register_alias("business.quote", owner="archive")
+            self.permission_registry.register_alias("business.consume", owner="archive")
 
     def _register_declarations(self) -> None:
         capabilities = set(self._manifest.capabilities)
@@ -693,12 +816,7 @@ class ApplicationContainer:
         if "notification" in capabilities:
             for notification_spec in AUTH_NOTIFICATION_SPECS:
                 self.notification_specs.register(notification_spec)
-        # The release composition owns a small, production-safe membership
-        # catalog even though it deliberately does not enable the payment
-        # purchase feature. Keep the declaration explicit and stable so
-        # subscriptions can be granted by administrators without a purchase
-        # workflow.
-        if "membership" in self._manifest.capabilities and not self.membership_levels.specs():
+        if "membership" in self._manifest.capabilities:
             self.membership_levels.register(
                 MembershipLevelSpec(
                     key="basic",
@@ -709,17 +827,54 @@ class ApplicationContainer:
                     renewal_allowed=True,
                 )
             )
-        # The release composition does not enable a payment-backed membership
-        # purchase workflow, but subscriptions still need the stable grant
-        # behavior consumed by the membership PointsLedger port. Keep this
-        # explicit whether or not the standalone payments capability is
-        # installed: a provider catalog is not a purchase workflow.
-        if "membership" in self._manifest.capabilities:
-            from inc.features.membership_grants.definition import behavior_specs
-
-            for behavior in behavior_specs:
-                if not any(item.key == behavior.key for item in self.behaviors.specs()):
-                    self.behaviors.register(behavior)
+        if "user_center" in self._manifest.features:
+            self.point_bundles.register(
+                PointBundleSpec(
+                    product_key="points.basic",
+                    version="1",
+                    display_name="1000 points",
+                    price_cents=1000,
+                    points_amount=1000,
+                )
+            )
+            self.membership_offers.register(
+                MembershipOfferSpec(
+                    offer_key="membership.basic.monthly",
+                    version="1",
+                    display_name="Basic monthly membership",
+                    level_key="basic",
+                    price_cents=1000,
+                )
+            )
+            self.gift_card_fulfillments.register(
+                GiftCardFulfillmentSpec(
+                    fulfillment_key="gift_card.points.basic",
+                    payload_version="1",
+                    fulfillment_type="points_bundle",
+                    target_key="points.basic",
+                    allowed_platforms=frozenset({"card_platform"}),
+                )
+            )
+            self.gift_card_fulfillments.register(
+                GiftCardFulfillmentSpec(
+                    fulfillment_key="gift_card.membership.basic",
+                    payload_version="1",
+                    fulfillment_type="membership_offer",
+                    target_key="membership.basic.monthly",
+                    allowed_platforms=frozenset({"card_platform"}),
+                )
+            )
+            self.point_bundles.freeze()
+            self.membership_offers.freeze()
+            self.gift_card_fulfillments.freeze()
+        if "business_center" in self._manifest.features:
+            self.business_products.register(
+                archive_product_spec(
+                    client_ids=frozenset({"aiya-site"}),
+                    audience=str(getattr(self._settings, "api_audience", "aiya-admin")),
+                )
+            )
+            self.business_products.freeze()
         if "site_settings" in self._manifest.features:
             from inc.features.site_settings.definition import (
                 build_site_setting_group_specs,
@@ -889,6 +1044,7 @@ class ApplicationContainer:
             str, tuple[NotificationProvider, ...] | ProviderChainResolver
         ] = {}
         notification_auth: AuthChallengeNotifier | None = None
+        notification_command_ctx: NotificationCommandContext | None = None
         if "notification" in capabilities:
             sensitive_value_protector = SensitiveValueProtector.from_secret(
                 getattr(
@@ -910,7 +1066,7 @@ class ApplicationContainer:
                     for provider in adapters["notification.email"]
                 )
             notification_auth = AuthChallengeNotifier(
-                NotificationCommandContext(
+                notification_command_ctx := NotificationCommandContext(
                     uow_factory=self._uow_factory,
                     clock=self._clock,
                     outbox=outbox,
@@ -918,7 +1074,7 @@ class ApplicationContainer:
                     resolver=notification_resolver,
                     providers=notification_providers,
                     runner=runner,
-                    permissions=frozenset(self.permission_registry.keys()),
+                    permissions=frozenset({"notification.request"}),
                     actor_id="system",
                     sensitive_value_protector=sensitive_value_protector,
                 )
@@ -978,6 +1134,7 @@ class ApplicationContainer:
                 outbox=outbox,
                 providers=asset_providers,
                 runner=runner,
+                permissions=frozenset({"assets.read", "assets.upload"}),
             )
             register_asset_workflows(self.workflow_registry, ctx=asset_command_ctx)
             asset_queries = AssetQueries(ctx=asset_command_ctx, clock=self._clock)
@@ -1043,41 +1200,6 @@ class ApplicationContainer:
             )
 
         features = set(self._manifest.features)
-        me_service: Any | None = None
-        if "check_in" in features:
-            from inc.features.check_in.api import MeService
-
-            me_service = MeService(
-                uow_factory=self._uow_factory,
-                clock=self._clock,
-                outbox=outbox,
-                hasher=hasher,
-                runner=runner,
-                identity_queries=identity_queries,
-                points_queries=points_queries,
-                behaviors=self.behaviors,
-                settings_queries=settings_queries,
-                asset_queries=asset_queries,
-                asset_providers=asset_providers,
-            )
-        if "check_in" in features:
-            from inc.features.check_in.workflows import (
-                CheckInContext,
-                build_check_in_workflow_spec,
-            )
-
-            points_ctx = PointsCommandContext(
-                uow_factory=self._uow_factory,
-                clock=self._clock,
-                outbox=outbox,
-                behaviors=self.behaviors,
-                actor_id="feature:check_in",
-            )
-            self.workflow_registry.register(
-                build_check_in_workflow_spec(
-                    ctx=CheckInContext(points_ctx=points_ctx, clock=self._clock)
-                )
-            )
         membership_queries: MembershipQueries | None = None
         membership_ctx: MembershipCommandContext | None = None
         membership_admin: MembershipAdminService | None = None
@@ -1087,9 +1209,7 @@ class ApplicationContainer:
                 clock=self._clock,
                 outbox=outbox,
                 levels=self.membership_levels,
-                subject_exists=adapters["membership.subject_exists"],
-                points_ledger=adapters["membership.points_ledger"],
-                permissions=frozenset(),
+                permissions=frozenset({"membership.subscriptions.manage"}),
                 actor_id="system",
                 trace_id="membership",
             )
@@ -1113,6 +1233,191 @@ class ApplicationContainer:
                 key="membership.subscription.expire.v1",
                 schedule="* * * * *",
                 handler=_task_handler(ExpireSubscription(membership_ctx)),
+            )
+        gift_card_context: GiftCardCommandContext | None = None
+        gift_card_queries: GiftCardQueries | None = None
+        if "gift_cards" in capabilities:
+            configured_pepper = getattr(self._settings, "gift_card_secret_pepper", None)
+            fallback_pepper = getattr(
+                self._settings, "admin_session_secret", "aiya-gift-card-development-pepper"
+            )
+            pepper = (
+                configured_pepper
+                if isinstance(configured_pepper, str) and configured_pepper
+                else fallback_pepper
+            )
+            if not isinstance(pepper, (str, bytes)) or not pepper:
+                pepper = "aiya-gift-card-development-pepper"
+            gift_card_context = GiftCardCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                providers={},
+                secret_pepper=pepper,
+                default_provider="card_platform",
+                provider_settings={},
+                permissions=frozenset({"gift_cards.redeem"}),
+                actor_id="system",
+                trace_id="gift_cards",
+            )
+            gift_card_queries = GiftCardQueries(
+                uow_factory=self._uow_factory,
+                secret_pepper=pepper,
+                clock=self._clock,
+            )
+            self.diagnostic_registry.register(
+                GiftCardDiagnostics(uow_factory=self._uow_factory, clock=self._clock)
+            )
+
+        user_center: UserCenterService | None = None
+        business_center: BusinessCenterService | None = None
+        archive_queries: ArchiveQueries | None = None
+        archive_admin: ArchiveAdminService | None = None
+        archive_link_resolver: ResolveDownloadLinks | None = None
+        archive_ctx: ArchiveCommandContext | None = None
+        if "archive" in capabilities:
+            archive_catalog = provider_catalogs.get("archive.delivery")
+            archive_providers = (
+                {
+                    registration.key: registration.provider
+                    for registration in archive_catalog.registrations()
+                }
+                if archive_catalog is not None
+                else {}
+            )
+            archive_ctx = ArchiveCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                providers=archive_providers,
+                provider_settings={},
+                permissions=frozenset(
+                    {
+                        "archive.grants.issue",
+                        "archive.grants.activate",
+                        "archive.delivery.resolve",
+                    }
+                ),
+                actor_id="feature:business_center",
+                trace_id="business_center",
+            )
+            archive_queries = ArchiveQueries(uow_factory=self._uow_factory)
+            archive_admin = ArchiveAdminService(archive_ctx)
+            archive_link_resolver = ResolveDownloadLinks(archive_ctx)
+
+        if "user_center" in features:
+            if (
+                membership_ctx is None
+                or membership_queries is None
+                or gift_card_context is None
+                or gift_card_queries is None
+                or notification_command_ctx is None
+            ):
+                raise _fail(
+                    "kernel.feature_requires_missing",
+                    "feature 'user_center' requires its declared capability services",
+                )
+            identity_ctx = IdentityCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                hasher=hasher,
+                outbox=outbox,
+                audit_actor_id="feature:user_center",
+                audit_trace_id="user_center",
+            )
+            payments_ctx = PaymentCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                providers=payment_providers,
+                permissions=frozenset({"payments.create"}),
+                actor_id="feature:user_center",
+                trace_id="user_center",
+            )
+            points_ctx = PointsCommandContext(
+                uow_factory=self._uow_factory,
+                clock=self._clock,
+                outbox=outbox,
+                behaviors=self.behaviors,
+                actor_id="feature:user_center",
+                trace_id="user_center",
+            )
+            workflow_ctx = UserCenterWorkflowContext(
+                points_ctx=points_ctx,
+                membership_ctx=membership_ctx,
+                payments=payments_queries,
+                points=points_queries,
+                membership=membership_queries,
+                gift_cards_ctx=gift_card_context,
+                gift_cards=gift_card_queries,
+                point_bundles=self.point_bundles,
+                membership_offers=self.membership_offers,
+                gift_card_fulfillments=self.gift_card_fulfillments,
+                notification_ctx=notification_command_ctx,
+            )
+            for workflow_spec in build_user_center_workflow_specs(ctx=workflow_ctx):
+                self.workflow_registry.register(workflow_spec)
+            user_center = UserCenterService(
+                ctx=UserCenterServiceContext(
+                    clock=self._clock,
+                    runner=runner,
+                    identity_ctx=identity_ctx,
+                    identity=identity_queries,
+                    points=points_queries,
+                    membership_ctx=membership_ctx,
+                    membership=membership_queries,
+                    payments_ctx=payments_ctx,
+                    payments=payments_queries,
+                    gift_cards_ctx=gift_card_context,
+                    assets_ctx=asset_command_ctx,
+                    assets=asset_queries,
+                ),
+                point_bundles=self.point_bundles,
+                membership_offers=self.membership_offers,
+                gift_card_fulfillments=self.gift_card_fulfillments,
+            )
+
+        if "business_center" in features:
+            if archive_ctx is None:
+                raise _fail(
+                    "kernel.feature_requires_missing",
+                    "feature 'business_center' requires archive services",
+                )
+            cost_basis = WorkArchiveCostBasis(content_queries)
+            secret = str(getattr(self._settings, "admin_session_secret", ""))
+            signing_key = hashlib.sha256(
+                b"aiya-cms:business-center:quote-token:v1\0" + secret.encode("utf-8")
+            ).digest()
+            token_codec = QuoteTokenCodec(HmacSigner(signing_key))
+            self.workflow_registry.register(
+                build_consume_workflow_spec(
+                    ctx=BusinessCenterWorkflowContext(
+                        products=self.business_products,
+                        cost_basis=cost_basis,
+                        token_codec=token_codec,
+                        points_ctx=PointsCommandContext(
+                            uow_factory=self._uow_factory,
+                            clock=self._clock,
+                            outbox=outbox,
+                            behaviors=self.behaviors,
+                            actor_id="feature:business_center",
+                            trace_id="business_center",
+                        ),
+                        archive_ctx=archive_ctx,
+                        grant_ttl=timedelta(minutes=30),
+                    )
+                )
+            )
+            business_center = BusinessCenterService(
+                quote_service=QuoteBusinessProduct(
+                    products=self.business_products,
+                    cost_basis=cost_basis,
+                    token_codec=token_codec,
+                    clock=self._clock,
+                ),
+                token_codec=token_codec,
+                runner=runner,
+                uow_factory=self._uow_factory,
             )
         if "site_cleanup" in features:
             from inc.features.site_cleanup import SiteCleanupActivity
@@ -1208,6 +1513,22 @@ class ApplicationContainer:
 
         if "audit" in capabilities:
             self.handler_registry.register(AUDIT_EVENT_KEY, AuditInboxHandler(clock=self._clock))
+
+        if user_center is not None:
+            self.handler_registry.register(
+                "payment.captured.v1",
+                _UserCenterPaymentHandler(
+                    key="user_center.payment_captured.v1",
+                    user_center=user_center,
+                ),
+            )
+            self.handler_registry.register(
+                "payment.refund_completed.v1",
+                _UserCenterPaymentHandler(
+                    key="user_center.payment_refund_completed.v1",
+                    user_center=user_center,
+                ),
+            )
 
         if "engagement" in capabilities and "content_engagement" in self._manifest.features:
             from inc.capabilities.content.events import CONTENT_EVENT_SCHEMAS
@@ -1348,7 +1669,20 @@ class ApplicationContainer:
             membership_levels=self.membership_levels,
             membership_admin=membership_admin,
             membership_queries=membership_queries,
-            me=me_service,
+            gift_card_context=gift_card_context,
+            gift_card_queries=gift_card_queries,
+            user_center=user_center,
+            business_center=business_center,
+            archive_queries=archive_queries,
+            archive_admin=archive_admin,
+            archive_link_resolver=archive_link_resolver,
+            business_audience=str(getattr(self._settings, "api_audience", "aiya-admin")),
+            point_bundles=self.point_bundles if "user_center" in features else None,
+            membership_offers=self.membership_offers if "user_center" in features else None,
+            gift_card_fulfillments=(
+                self.gift_card_fulfillments if "user_center" in features else None
+            ),
+            business_products=self.business_products if "business_center" in features else None,
             auth=auth_service,
             scanner=scanner,
             oidc=oidc,

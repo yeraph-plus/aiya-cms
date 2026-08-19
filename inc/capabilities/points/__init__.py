@@ -21,14 +21,21 @@ from inc.capabilities.points.behaviors import (
 )
 from inc.capabilities.points.commands import (
     CommandContext,
+    CreditPoints,
+    DebitPoints,
     ExpireBuckets,
+    ReverseLedgerEntry,
 )
 from inc.capabilities.points.constants import DEFAULT_PROGRAM_KEY
 from inc.capabilities.points.diagnostics import PointsDiagnostics
 from inc.capabilities.points.queries import PointsQueries
+from inc.capabilities.points.schemas import CreditDebitInput, ReverseInput
 
 __all__ = [
     "CommandContext",
+    "CreditDebitInput",
+    "CreditPoints",
+    "DebitPoints",
     "DEFAULT_PROGRAM_KEY",
     "ExpireBuckets",
     "PointBehaviorRegistry",
@@ -39,4 +46,6 @@ __all__ = [
     "PointsProgramStatusInput",
     "PointsDiagnostics",
     "PointsQueries",
+    "ReverseInput",
+    "ReverseLedgerEntry",
 ]

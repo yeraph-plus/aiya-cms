@@ -13,7 +13,7 @@ docker compose run --rm backend python -m inc.cli install
 
 默认 Compose 同时启动 release backend、正式 Nginx 管理端与 Astro SSR 客户端。管理员入口为 <http://127.0.0.1:8080>，客户端入口为 Compose 配置的 site port，FastAPI 调试端口仅绑定 loopback。OIDC 私钥位于 `oidc-key-data` 持久卷，首次 install 生成 active key；删失或损坏 key material 会使应用启动失败。
 
-release 只包含管理面、公开内容浏览和 OIDC 认证。它不包含用户中心、签到、积分/会员购买、支付路由或支付 webhook。可选外部 provider 在启动时注册但不连接；运行时 settings 选择 SMTP/SMTP2GO、PayPal/Epay、S3。
+release 包含管理面、公开内容浏览、用户注册/认证和 `/api/v1/me` 自助资料面。它不包含积分/会员购买、支付路由或支付 webhook。可选外部 provider 在启动时注册但不连接；运行时 settings 选择 SMTP/SMTP2GO、PayPal/Epay、S3。管理员 SPA 从 `openapi.admin.json` 生成类型，用户站从 `openapi.user.json` 生成类型，完整 `openapi.json` 仅用于系统验证。
 
 ## 操作命令
 

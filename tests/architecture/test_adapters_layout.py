@@ -18,6 +18,7 @@ from pathlib import Path
 ADAPTER_DIRS = (
     ("notification", ("email_smtp", "smtp2go")),
     ("payments", ("paypal", "epay")),
+    ("gift-cards", ("afdian",)),
     ("assets", ("s3",)),
     ("content", ("openlist",)),
 )

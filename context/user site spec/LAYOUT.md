@@ -1570,3 +1570,118 @@ App
 13. **P0/P1 信息在所有断点都必须保持可见。**
 14. **任何页面都应只有一个最主要的视觉与交互焦点。**
 15. **布局规则与视觉规则必须解耦。**
+
+---
+
+# 23. Template F — Account Center
+
+Account Center 服务于当前用户的资料、积分、会员、购买、兑换和下载，不复用管理后台的数据表格工作台。
+
+## 23.1 页面骨架
+
+```text
+AccountShell
+├─ AccountHeader
+│  ├─ AvatarAndIdentity
+│  ├─ MembershipBadge
+│  └─ PointsBalance
+├─ AccountNavigation
+│  ├─ Overview
+│  ├─ Points
+│  ├─ Membership
+│  ├─ Purchases
+│  ├─ GiftCard
+│  └─ Downloads
+└─ AccountMain
+   ├─ StatusNotice
+   ├─ PrimaryTask
+   └─ SupportingHistory
+```
+
+- Wide/Standard：左侧窄导航 + 右侧主内容；Header 横跨内容区。
+- Compact/Mobile：导航变为可横向滚动的 tabs 或当前区段 selector；不能藏进全局汉堡菜单。
+- 余额、当前会员和待处理业务属于 P0/P1；账本和历史属于 P2；解释文字属于 P3。
+- 单页只保留一个主要写动作，例如“签到”“购买会员”或“兑换卡密”，避免多个高风险 CTA 同时竞争。
+
+## 23.2 Points 页面
+
+```text
+BalanceSummary
+├─ AvailableCredit
+├─ ExpiringSoon
+└─ CheckInAction
+
+ExpiringBuckets
+└─ BucketRow × N
+
+LedgerList
+└─ LedgerRow × N
+```
+
+余额数字和最早到期信息必须在首屏。签到结果就地更新，但 ledger 仍以服务端返回为准。移动端 ledger 使用描述列表而非横向滚动表格。
+
+## 23.3 Membership 页面
+
+当前周期卡优先于等级目录：先显示“我现在拥有什么、何时到期、是否续费”，再显示购买选项。等级卡统一展示周期、CNY 价格、周期赠送积分和到期说明；pending fulfillment 使用单独状态卡，不能伪装为 active。
+
+## 23.4 Purchases 与 Gift Card
+
+- Purchases 按时间倒序显示 product、金额/来源、payment 状态和 fulfillment 状态；两类状态不合并为一个含糊 badge。
+- Gift Card 使用单任务窄表单；卡密输入默认可隐藏/显示，不回显完整值。
+- processing 状态提供恢复说明和 request ID，不重复显示提交按钮。
+
+---
+
+# 24. Template G — Work Purchase & Download
+
+作品详情继续使用 Template E；购买与下载是 Detail 内的受控任务区，不把详情页改造成通用商店。
+
+## 24.1 Work 文件与报价区
+
+```text
+DownloadSection
+├─ ManifestSummary
+│  ├─ FileCount
+│  ├─ PartProfile
+│  └─ ManifestVersion
+├─ FileList
+│  └─ PublicFileRow × N
+├─ PriceSummary
+│  ├─ UnitPrice
+│  ├─ Quantity
+│  ├─ TotalCredit
+│  └─ CurrentBalance
+└─ PurchaseState
+   ├─ QuoteAction
+   ├─ ConfirmDebit
+   ├─ Processing
+   ├─ InsufficientBalance
+   └─ ExistingGrant
+```
+
+报价确认使用 modal/drawer，仅呈现服务端 quote；确认按钮同时显示总积分。文件多时默认折叠明细，但 file count、总价、授权窗口和“窗口内刷新不重复扣费”始终可见。
+
+## 24.2 Download Center
+
+已授权下载位于 `/account/downloads`：
+
+- 按作品/manifest 分组，不按 provider 分组；用户不需要知道 OpenList 或 Gofile。
+- 每个 grant 显示有效期、文件数、状态和“生成/刷新链接”动作。
+- 链接产生后以文件行呈现；短时 URL 不写入页面地址栏之外的分享控件，也不提供一键复制整个 provider payload。
+- expired grant 显示重新报价入口，不把刷新失败解释为需要重新扣费。
+
+## 24.3 响应式
+
+- Wide：文件清单与购买摘要可双列，摘要 sticky 但不得遮挡页脚。
+- Compact/Mobile：先显示摘要与总价，再显示文件清单；确认动作固定在内容流中，不使用永久底部遮挡条。
+- 文件名允许两行截断并提供可访问的完整名称；size/checksum/part number 在窄屏降为次级行。
+
+---
+
+# 25. 认证、支付与业务状态页
+
+- Auth 表单使用单列窄容器，不出现站内内容 feed 或干扰导航。
+- provider 跳转前展示订单摘要；回跳页只显示“正在确认”，不得因为 query 参数直接显示成功。
+- `processing` 页面保留 order/workflow ID 的安全短显示、刷新动作和返回账户入口。
+- `failed` 页面按可重试、需重新下单、需人工支持区分 CTA。
+- 所有 account/auth/payment/download 页面默认无 Context Rail，避免把私有任务与推荐内容混排。

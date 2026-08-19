@@ -3,7 +3,7 @@
 Contract source: context/spec/http-openapi.md §2/§5.
 
 This router owns only shared identity lifecycle and grant-consent endpoints.
-Feature-owned ``/api/v1/me`` routes live in ``routers_me``; the administrator
+Feature-owned ``/api/v1/me`` routes live in ``routers_user_center``; the administrator
 bootstrap projection is isolated at ``/api/v1/admin/session``.
 
 The password-reset endpoints are public (no Bearer): the request endpoint

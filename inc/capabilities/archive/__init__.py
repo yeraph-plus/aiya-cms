@@ -1,0 +1,97 @@
+"""Public archive capability surface.
+
+The package intentionally exposes Commands, Queries, Activities and Ports,
+not ORM models or provider-specific settings.
+"""
+
+from __future__ import annotations
+
+from inc.capabilities.archive.activities import ResolveDownloadLinks
+from inc.capabilities.archive.commands import (
+    ActivateArchiveItem,
+    ActivateDownloadGrant,
+    ArchiveCommandContext,
+    CommandContext,
+    ExpireDownloadGrant,
+    IssueDownloadGrant,
+    MarkArchiveItemUnavailable,
+    MigrateArchiveItemProvider,
+    RecordDeliveryAttempt,
+    RegisterArchiveItem,
+    RetireArchiveItem,
+    RevokeDownloadGrant,
+    UpdateArchiveItem,
+    VerifyArchiveItem,
+)
+from inc.capabilities.archive.ports import (
+    ArchiveAvailability,
+    ArchiveDeliveryProvider,
+    ArchiveDeliveryRequest,
+    ArchiveProviderError,
+    ArchiveSettingsSnapshot,
+    FakeArchiveDeliveryProvider,
+    ProviderDelivery,
+    ProviderFileFact,
+)
+from inc.capabilities.archive.queries import ArchiveQueries
+from inc.capabilities.archive.schemas import (
+    ArchiveDeliveryLinkDTO,
+    ArchiveGrantPageDTO,
+    ArchiveItemAdminDTO,
+    ArchiveItemPageDTO,
+    ArchiveItemPatchInput,
+    ArchiveItemStateInput,
+    ArchiveLocatorInput,
+    DownloadGrantAdminDTO,
+    DownloadGrantDTO,
+    DownloadGrantPageDTO,
+    GrantStateInput,
+    IssueDownloadGrantInput,
+    MigrateArchiveItemProviderInput,
+    RegisterArchiveItemInput,
+    ResolveDownloadLinksDTO,
+    VerifyArchiveItemInput,
+)
+
+__all__ = [
+    "ActivateArchiveItem",
+    "ActivateDownloadGrant",
+    "ArchiveAvailability",
+    "ArchiveCommandContext",
+    "ArchiveDeliveryProvider",
+    "ArchiveDeliveryLinkDTO",
+    "ArchiveGrantPageDTO",
+    "ArchiveItemAdminDTO",
+    "ArchiveItemPageDTO",
+    "ArchiveItemPatchInput",
+    "ArchiveLocatorInput",
+    "ArchiveItemStateInput",
+    "ArchiveDeliveryRequest",
+    "ArchiveProviderError",
+    "ArchiveQueries",
+    "ArchiveSettingsSnapshot",
+    "CommandContext",
+    "ExpireDownloadGrant",
+    "FakeArchiveDeliveryProvider",
+    "IssueDownloadGrant",
+    "IssueDownloadGrantInput",
+    "MarkArchiveItemUnavailable",
+    "MigrateArchiveItemProvider",
+    "MigrateArchiveItemProviderInput",
+    "ProviderDelivery",
+    "ProviderFileFact",
+    "RecordDeliveryAttempt",
+    "RegisterArchiveItem",
+    "RegisterArchiveItemInput",
+    "ResolveDownloadLinksDTO",
+    "ResolveDownloadLinks",
+    "RetireArchiveItem",
+    "UpdateArchiveItem",
+    "RevokeDownloadGrant",
+    "VerifyArchiveItem",
+    "VerifyArchiveItemInput",
+    "DownloadGrantAdminDTO",
+    "DownloadGrantDTO",
+    "DownloadGrantPageDTO",
+    "GrantStateInput",
+]

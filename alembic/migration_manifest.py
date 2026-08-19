@@ -33,5 +33,7 @@ MIGRATION_OWNER_MODULES: dict[str, str] = {
     "capability:points": "inc.capabilities.points.models",
     "capability:payments": "inc.capabilities.payments.models",
     "capability:membership": "inc.capabilities.membership.models",
+    "capability:gift_cards": "inc.capabilities.gift_cards.models",
     "capability:engagement": "inc.capabilities.engagement.models",
+    "capability:archive": "inc.capabilities.archive.models",
 }

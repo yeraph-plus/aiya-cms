@@ -1,40 +1,39 @@
-"""Post feature: content type and taxonomy dimension declarations.
-
-Contract source: context/spec/features.md §4.1.
-
-Pure-data declarations: the composition root registers these into the
-content type registry and the taxonomy dimension registry at boot. post
-supports schedule, pin, owner and references; category is single-select
-and tag is multi-select.
-"""
+"""Post v2 content product declarations."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from inc.capabilities.content import DEFAULT_TRANSITIONS, STANDARD_STATES, ContentTypeSpec
 from inc.capabilities.taxonomy import DimensionSpec
 from inc.kernel.boot import FeatureSpec
 
-spec = FeatureSpec(name="post", version="1", requires=("assets", "content", "taxonomy"))
+spec = FeatureSpec(
+    name="post",
+    version="2",
+    requires=("assets", "comments", "content", "engagement", "taxonomy"),
+)
 
 
-class PostData(BaseModel):
-    """Validated per-type data payload for post content.
+class SeoDataV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    Tag relationships belong exclusively to the taxonomy tag dimension;
-    no duplicate tag list is stored here.
-    """
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=300)
 
-    model_config = ConfigDict(extra="forbid")
+
+class PostDataV2(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    seo: SeoDataV1 | None = None
 
 
 content_type_spec = ContentTypeSpec(
     type_name="post",
-    version="1",
+    version="2",
     display_name="Post",
-    data_schema=PostData,
-    data_schema_version="1",
+    data_schema=PostDataV2,
+    data_schema_version="2",
     allowed_states=STANDARD_STATES,
     default_state="draft",
     transitions=DEFAULT_TRANSITIONS,
@@ -51,23 +50,24 @@ content_type_spec = ContentTypeSpec(
 
 dimension_specs = (
     DimensionSpec(
-        dimension_key="category",
-        version="1",
+        dimension_key="post.category",
+        version="2",
         display_name="Category",
         target_types=("post",),
         selection_mode="single",
-        min_items=0,
+        min_items=1,
         max_items=1,
-        manage_permission="taxonomy.manage",
     ),
     DimensionSpec(
-        dimension_key="tag",
-        version="1",
+        dimension_key="post.tag",
+        version="2",
         display_name="Tag",
         target_types=("post",),
         selection_mode="multiple",
         min_items=0,
-        max_items=10,
-        manage_permission="taxonomy.manage",
+        max_items=8,
     ),
 )
+
+comments_target_policy = "post"
+engagement_actions = ("view", "like", "favorite", "rating")

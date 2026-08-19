@@ -12,8 +12,7 @@ from inc.api.http.projections import AdminSubjectRefDTO
 from inc.capabilities.membership.commands import (
     CancelSubscription,
     CommandContext,
-    RenewSubscription,
-    SubscribeLevel,
+    PrepareSubscriptionCycle,
     TerminateSubscription,
 )
 from inc.capabilities.membership.schemas import (
@@ -21,10 +20,9 @@ from inc.capabilities.membership.schemas import (
     CreateLevelInput,
     LevelDTO,
     LevelStatusInput,
+    MembershipCycleDTO,
     MembershipSummaryDTO,
-    RenewalRecordDTO,
-    RenewInput,
-    SubscribeInput,
+    PrepareSubscriptionCycleInput,
     SubscriptionDTO,
     TerminateInput,
     UpdateLevelInput,
@@ -90,8 +88,6 @@ def _ctx(ctx: AppContext, services: Services) -> CommandContext:
         clock=ctx.clock,
         outbox=services.outbox,
         levels=services.membership_levels,  # type: ignore[arg-type]
-        subject_exists=services.adapters["membership.subject_exists"],
-        points_ledger=services.adapters["membership.points_ledger"],
         permissions=frozenset(ctx.principal.capabilities),
         actor_id=ctx.principal.subject_id,
         trace_id=ctx.trace_id,
@@ -189,27 +185,12 @@ def build_router(
             )
         return await services.membership_admin.summary()
 
-    @router.post("/membership/subscriptions", response_model=AdminSubscriptionDTO)
-    async def subscribe(
-        body: SubscribeInput,
+    @router.post("/membership/cycles/prepare", response_model=MembershipCycleDTO)
+    async def prepare_cycle(
+        body: PrepareSubscriptionCycleInput,
         ctx: AppContext = Depends(require_capability("membership.manage")),
-    ) -> AdminSubscriptionDTO:
-        return await _decorate_subscription(
-            services, await SubscribeLevel(_ctx(ctx, services))(body)
-        )
-
-    @router.post(
-        "/membership/subscriptions/{subscription_id}/renew", response_model=AdminSubscriptionDTO
-    )
-    async def renew(
-        body: RenewInput,
-        subscription_id: str = Path(...),
-        ctx: AppContext = Depends(require_capability("membership.manage")),
-    ) -> AdminSubscriptionDTO:
-        body.subscription_id = subscription_id
-        return await _decorate_subscription(
-            services, await RenewSubscription(_ctx(ctx, services))(body)
-        )
+    ) -> MembershipCycleDTO:
+        return await PrepareSubscriptionCycle(_ctx(ctx, services))(body)
 
     @router.get("/membership/subscriptions", response_model=Page[AdminSubscriptionDTO])
     async def list_subscriptions(
@@ -234,18 +215,18 @@ def build_router(
         return await _decorate_subscriptions(services, result)
 
     @router.get(
-        "/membership/subscriptions/{subscription_id}/renewals",
-        response_model=Page[RenewalRecordDTO],
+        "/membership/subscriptions/{subscription_id}/cycles",
+        response_model=Page[MembershipCycleDTO],
     )
-    async def list_renewals(
+    async def list_cycles(
         subscription_id: str = Path(...),
         page: int = Query(default=1, ge=1),
         size: int = Query(default=20, ge=1, le=100),
         ctx: AppContext = Depends(require_capability("membership.read")),
-    ) -> Page[RenewalRecordDTO]:
+    ) -> Page[MembershipCycleDTO]:
         del ctx
         assert services.membership_queries is not None
-        return await services.membership_queries.list_renewal_records(
+        return await services.membership_queries.list_membership_cycles(
             subscription_id=subscription_id, page=page, size=size
         )
 

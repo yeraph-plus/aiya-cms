@@ -2,9 +2,9 @@
 
 ## 1. 职责
 
-content 提供通用内容实体、类型声明、状态转换、发布调度、置顶排序和内容间单向引用。它不知道 post/page 的具体业务含义；实际 content type 由 feature 注册。
+content 提供通用内容实体、类型声明、状态转换、发布调度、置顶排序和内容间单向引用。它不知道 post/page/work 的具体业务含义；实际 content type 由 feature 注册。
 
-不包含 taxonomy、comments、修订、媒体库、父子页面、前端路由、SEO 文档/标签渲染、点赞/浏览统计或隐式插件钩子。post/page feature 可以在各自 Pydantic `data` schema 中声明类型化 SEO 编辑输入，但 content 不解释或渲染这些字段。community discussion/post 明确不注册为 content type；其表、模板、状态机和搜索归 [`community.md`](community.md)。
+不包含 taxonomy、comments、修订、媒体库、父子页面、前端路由、SEO 文档/标签渲染、点赞/浏览统计、下载授权或隐式插件钩子。post/page/work feature 可以在各自 Pydantic `data` schema 中声明类型化输入，但 content 不解释或渲染这些字段。work 的可下载文件列表只保存 archive opaque item 与公开清单快照；provider locator、交付 URL 和授权事实归 archive。community discussion/post 明确不注册为 content type；其表、模板、状态机和搜索归 [`community.md`](community.md)。
 
 ## 2. ContentTypeSpec
 
@@ -23,10 +23,10 @@ ContentTypeSpec 是代码规格，不保存可执行脚本。重复 type、未�
 
 ### 2.1 Slug 公开路由基线
 
-`post` 与 `page` 固定声明 `slug_policy = "generated_title_suffix_v1"`。slug 是创建后不可变的公开定位键，不是 UUID 的可逆编码，也不是授权或保密边界。
+`post`、`page` 与 `work` 固定声明 `slug_policy = "generated_title_suffix_v1"`。slug 是创建后不可变的公开定位键，不是 UUID 的可逆编码，也不是授权或保密边界。
 
 - `CreateContent` 的产品/API 输入不接收 slug；服务端从创建时的 title 自动生成。管理端只在创建成功后显示只读、可复制的 slug；`UpdateContent` 不得修改 slug，标题修改也不重算 slug。
-- 生成器是版本化纯函数：对 title 采用锁定版本的 Unicode 到 ASCII 转写与 slugify 规则，输出小写 `a-z0-9-` stem；连续连字符折叠、首尾连字符移除，stem 截断至 64 个 ASCII 字符。CJK 标题必须有确定的 ASCII 转写 fixture；若结果为空，按类型使用 `post` 或 `page` 作为 stem。
+- 生成器是版本化纯函数：对 title 采用锁定版本的 Unicode 到 ASCII 转写与 slugify 规则，输出小写 `a-z0-9-` stem；连续连字符折叠、首尾连字符移除，stem 截断至 64 个 ASCII 字符。CJK 标题必须有确定的 ASCII 转写 fixture；若结果为空，按类型使用 `post`、`page` 或 `work` 作为 stem。
 - 最终值为 `<stem>-<suffix>`，其中 suffix 是由 CSPRNG 生成的 8 位小写 base32 字符 `[a-z2-7]`。因此公开 URL 保持可读，同时不暴露 UUID 或递增数据库编号；整个 slug 不超过 73 个 ASCII 字符。
 - `(type_name, slug)` 唯一约束仍是并发下唯一事实来源。生成器不得以预查询代替约束；发生冲突时重新生成 suffix 并重试有限次数，耗尽后返回稳定 `content.slug_generation_failed`，不以随机覆盖或修改既有内容处理。
 - 通过 slug 定位内容时只按 `(type_name, slug)` 查询。不得从 suffix 解码 content ID、建立数值主键，或把可逆/混淆编码当作访问控制。发布状态和权限仍由正常公开 Query 决定。
@@ -35,7 +35,7 @@ ContentTypeSpec 是代码规格，不保存可执行脚本。重复 type、未�
 
 ### 2.2 Markdown 正文基线
 
-首个产品 manifest 中的 `post` 与 `page` 固定声明：
+下一用户站 manifest 中的 `post`、`page` 与 `work` 固定声明：
 
 - `body_format = "markdown"`；
 - `body_profile = "gfm-v1"`；
@@ -68,7 +68,7 @@ profile 是持久化合同。未来允许新语法、改变 heading ID、链接�
 
 `CreateContent`/`UpdateContent` 必须执行规范化、byte 上限、Markdown profile、链接 scheme 和 asset reference 形状校验，使 draft 也不能保存不可解析或可执行输入。`SubmitContent`、`ScheduleContent`、`PublishContent` 还必须调用由消费 feature 绑定的 `ContentPublicationPolicy` Port；该 Port 可通过 assets 的公开 Query/`AssetExists` Port 验证正文中的 asset 均存在且为 `ready`，但不得让 content 反向依赖 feature 或 assets。
 
-post/page 进入 pending、scheduled 或 published 前必须具有非空 `body` 和非空基础列 `excerpt`。`excerpt` 是列表摘要和 SEO description fallback 的唯一正文摘要事实；`PostData.summary` 不进入目标 schema，不建立双写或兼容优先级。
+post/page/work 进入 pending、scheduled 或 published 前必须具有非空 `body` 和非空基础列 `excerpt`。`excerpt` 是列表摘要和 SEO description fallback 的唯一正文摘要事实；类型 data 不再复制第二份 summary，不建立双写或兼容优先级。
 
 稳定错误 code 至少包括：
 
@@ -204,9 +204,10 @@ id DESC
 
 ## 10. 初始类型
 
-- post feature 注册 `post`，声明 `generated_title_suffix_v1` slug、`gfm-v1` 正文和 taxonomy 维度，但关联由 feature/taxonomy 管理。
-- page feature 注册 `page`，声明 `generated_title_suffix_v1` slug、`gfm-v1` 正文，不声明 taxonomy，不支持父子关系。
-- 两者都复用 content 表、Command 和查询，不复制 ORM/Service。
+- post feature 注册 `post`：category + tag、comments、engagement counters。
+- page feature 注册 `page`：仅 category，不装配 tag、comments 或 engagement，不支持父子关系。
+- work feature 注册 `work`：多 namespace taxonomy、comments、engagement counters，以及只含 archive opaque ref 的下载文件清单。
+- 三者都复用 content 表、Command 和查询，不复制 ORM/Service；差异由 [`../features/content-types.md`](../features/content-types.md) 的 FeatureSpec、Pydantic data schema 与目标策略声明。
 - content 只保存 Markdown 原文，不保存或返回预渲染 HTML。纯文本、目录、搜索文本和渲染缓存均为可重建投影，不是写入事实源。
 
 ## 11. Diagnostics 与验收

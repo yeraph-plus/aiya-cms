@@ -1,122 +1,168 @@
 # Membership Capability 规格
 
+> 状态：目标边界。跨能力装配由 [`user_center`](../features/user-center.md) 完成；开发阶段 baseline 直接按当前 metadata 重建。
+
 ## 1. 职责
 
-membership 管理会员等级（档位）、订阅周期、续费与到期，并维护会员开通时授予的积分额度。它是一级业务能力，不导入 points、payments、identity 或任何兄弟 capability。
+membership 只管理会员等级、订阅、周期和状态转换。它拥有会员领域的规则与原子操作，不导入 points、payments、gift_cards、identity 或任何兄弟 capability。
 
-- membership **不持有积分余额、不过期累进计算、不结算扣减**：授予额度经 `PointsLedger` Port 进入 points 的 expiring 桶（`expires_at = 订阅结束时刻`），到期后的剩余未消耗额度由 points 过期机制自动扣减，membership 只订阅、查看与续费。
-- membership **不维护权益模型**：等级的价格、积分额度、续费周期由 membership 自身声明；注册奖励、赠送额度、邀请奖励等其他权益数值发生在业务流，由 feature 从 `site_settings` 读取后调用 points，不进入 membership。
-- membership **不直接依赖用户系统**：subject 是 opaque reference，由组合根绑定的消费方 Port 校验存在性。
-- 现金支付与 membership 无关：购买会员的支付流程由下游 `user_center` feature 组装 payments；membership 不导入 payments。
+- 等级定义周期长度、周期赠送积分额度、是否允许续费等会员规则。
+- 订阅保存当前等级、周期边界、状态和购买来源的 opaque ref。
+- membership 不持有积分余额、不创建 points 流水，也不回收或过期积分。
+- membership 不处理现实法币订单、支付 attempt、webhook 或退款。
+- subject 是 opaque reference；存在性与当前操作者权限由调用方和组合根校验。
+
+会员周期赠送积分是“会员周期事实 + points 显式到期 credit”的跨能力业务流，必须由 `user_center` 编排，不能在 membership 内伪装成 Port 调用。
 
 ## 2. 表所有权
 
-- `membership_levels`：level key、显示名、档位序号、状态、订阅周期（自然日）、每周期授予积分额度、续费允许开关、metadata。
-  - 等级是代码/ops 声明（与 points behavior 一致），DB 行与声明对齐；运行期变更走受控 Command。
-- `membership_subscriptions`：subject ref、level key、当前周期开始/结束时刻、状态、是否自动续费、授予积分额度快照、续费次数、取消/到期时间。
-- `membership_renewal_records`（可选）：每次开通/续费的事实行：subscription、cycle start/end、granted points、调用 points 的 entry/source ref、结果状态。
+- `membership_levels`
+  - `key`、显示名、档位顺序、状态；
+  - `cycle_days`；
+  - `cycle_points_amount`；
+  - `renewal_allowed`；
+  - `version`、metadata、审计时间。
+- `membership_subscriptions`
+  - subject ref、level key；
+  - 当前周期 start/end；
+  - `status`、是否自动续费；
+  - 等级与额度快照；
+  - 当前 `cycle_id`、购买/兑换来源 opaque ref；
+  - 版本、取消/到期/终止时间。
+- `membership_cycles`
+  - subscription、cycle start/end、level/额度快照；
+  - `state`；
+  - `source_type`、`source_ref`；
+  - `points_entry_ref`；
+  - 幂等键、失败原因码和审计时间。
 
-subject 是 opaque reference，不建立 identity 外键。授予积分通过 Port 调用 points 公开 Command，不建 points 外键、不读 points 表。
+不建立 identity、payments、gift_cards 或 points 外键。`points_entry_ref` 只保存 points 返回的 opaque UUID 字符串，不作为跨库联表依据。
 
-### 2.1 Level 定义的导出边界
+开发阶段不兼容旧 subscription/renewal 数据：`release_0001` 直接创建上述当前结构，不创建 `membership_renewal_records`，也不包含 `ALTER`、旧状态转换或数据搬迁。
 
-`membership level` 支持管理员受控完整生命周期：key 不可变，创建、编辑、启用、归档都要求 `membership.levels.manage`、版本并发检查和审计；归档阻止新订阅/续费，但不影响存量周期。等级与订阅均保留快照，不做物理删除。
+## 3. 等级生命周期
 
-运行期等级管理由 membership capability 的命名 admin service/Command 提供，HTTP 只做适配；它不把 `membership_levels` 表映射为通用 CRUD。任何新增等级动作都必须明确版本、存量订阅快照、权限、审计和乐观并发语义。
+level key 创建后不可变。创建、编辑、启用、归档均为命名 Command，并要求：
 
-`GET /api/v1/admin/membership/subscriptions` 支持 `subject_type`、`subject_id`、`level_key`、`status` 精确过滤，以便全局会员工作台和单用户 Drawer 复用同一个只读 Query；过滤不得隐式修改或续期订阅。
+- `membership.levels.manage`；
+- 乐观并发版本；
+- 审计；
+- 对存量订阅保留快照。
 
-## 3. 状态机
+归档阻止新开通和续费，不改变已经激活的周期。管理员 HTTP 可以是所属 capability 的普通管理面适配，不需要额外 feature 包装。
 
-订阅状态至少为：
+## 4. 周期状态机
+
+订阅状态：
 
 ```text
-active ──到期──> expired
-   │                │
-   ├──取消──> cancelled（生效至周期结束）
-   └──续费──> active（新周期）
+pending_activation ──周期积分已入账──> active ──到期──> expired
+        │                                │
+        └────────失败/放弃──────────────> failed
+                                         ├─取消自动续费──> cancelled
+                                         └─立即终止──────> terminated
 ```
 
-- `active`：当前周期内，等级权益与授予额度有效。
-- `expired`：周期结束且未续费；剩余未消耗的授予额度已由 points 过期机制扣减。
-- `cancelled`：不再自动续费；当前周期继续有效到结束，结束时不自动进入新周期。
+周期事实状态：
 
-状态转换只由命名 Command 完成，不开放通用 status PATCH。
+```text
+prepared ──AttachPointsGrant──> activated
+    │
+    └─MarkCycleFailed────────> failed
+```
 
-## 4. 授予与到期的积分语义
+- `prepared` 周期不授予会员权益；只表示 membership 已验证等级并保留确定的 start/end/额度快照。
+- `activated` 必须带有效 `points_entry_ref`；membership 才把订阅切换为 `active`。
+- `cancelled` 表示停止自动续费，当前已激活周期仍持续到 end。
+- `terminated` 是显式提前终止；默认不补偿已经发放的积分。若未来需要补偿，仍由 feature 调用 points 的公开 Command。
+- `expired` 只收敛会员状态；points 自己负责到期桶的清零事实。
 
-- 开通/续费时调用 `PointsLedger.grant_points`，credit 进入 points `expiring` 桶：
-  - `expiration_identity = membership.grant`（behavior key，由 feature/组合根注册）。
-  - `expires_at = 当前周期结束时刻`（与订阅 end 一致，精确到秒）。
-  - 幂等键：`membership:grant:<subscription_id>:<cycle_end>`，重放不重复入账。
-- **到期结算不另行实现**：points 过期任务在 `expires_at` 到达后自动清零剩余额度并记录 `expiration` ledger entry；membership 不累计"剩余未消耗"，不在到期时自行 DebitPoints。这保证"到期扣回剩余"与"过期先扣"共用同一机制，不会出现两套计算。
-- 如果 points 侧 `expires_at` 入账失败（如临时错误），订阅开通必须整体失败回滚或通过 workflow 重试；不能出现"会员有效但额度未授予"。
-- membership 只保存授予额度快照（便于展示与对账），不以此快照做扣减；快照与实际余额的差异由 points diagnostics 负责。
+状态不得通过通用 status PATCH 修改。
 
-### 4.1 对 points 的契约依赖
+## 5. 原子 Commands
 
-membership 依赖 `CreditPoints` 支持**显式到期时刻**。points 已提供：`CreditDebitInput.expires_at` 可选字段，提供时优先于 behavior 的 `expiration_days` 计算桶的到期时刻，`expiration_identity` 仍为 behavior key：
+- `PrepareSubscriptionCycle`
+  - 输入 subject、level key、source type/ref、幂等键和期望版本；
+  - 校验 level active、续费规则和周期不重叠；
+  - 创建 `prepared` cycle，并返回 `cycle_id`、start/end、`cycle_points_amount`；
+  - 不调用任何兄弟 capability。
+- `AttachPointsGrant`
+  - 输入 cycle id、points entry opaque ref、幂等键；
+  - 只允许 `prepared -> activated`；
+  - 原子激活周期和订阅；同一 cycle 重放返回原结果，不能换绑另一条 points entry。
+- `MarkCycleFailed`
+  - 将未激活周期标为失败并记录稳定原因码；不得触碰 points。
+- `CancelSubscription`
+  - 关闭自动续费；当前周期继续有效。
+- `TerminateSubscription`
+  - 管理员或系统显式终止当前会员权益；不直接操作积分。
+- `ExpireSubscription`
+  - 持久任务把周期已结束的 active/cancelled 订阅收敛为 expired；不操作积分。
 
-- behavior 声明侧不变（`membership.grant` 为 credit 行为，`expiration_days` 可省略）。
-- 桶的唯一键 `(account, expiration_identity, expires_at)` 不变；显式 `expires_at` 参与同一 `_credit_routing` 逻辑。
-- `RebuildBalance` 的 credit 路由重放继续依赖 entry metadata 中的 `expires_at`（已存在），无需改动。
+所有写操作经 Repository/UoW，产生同事务 outbox，禁止接收 Session 或执行裸 SQL。
 
-该扩展不改变 points 的桶模型、FIFO 扣减或过期任务语义，只放宽 credit 的到期来源。
+## 6. Queries
 
-## 5. Commands
+- `ListLevels`：公开可购买等级目录。
+- `GetSubscription`：subject 的当前订阅、周期与权益状态。
+- `ListSubscriptions`：管理员分页，支持 subject、level、status 精确过滤。
+- `GetMembershipCycle`：供 `user_center` 恢复 workflow，返回周期快照和状态。
+- `ListMembershipCycles`：管理员对账与诊断。
 
-- `SubscribeLevel`：为 subject 开通/变更到指定等级；校验 subject 存在（经 Port）、等级 active、当前订阅状态；创建/更新订阅并调用 grant_points 授予额度；幂等。
-- `RenewSubscription`：续费当前订阅：推进周期 start/end、累加授予快照并再次 grant_points；要求订阅处于 active 且允许续费；幂等（重复续费请求返回原结果）。
-- `CancelSubscription`：取消自动续费；当前周期继续有效。
-- `TerminateSubscription`：管理员/系统显式终止（早退），立即结束周期并标记；不补偿已授予额度（由 points 过期机制按原 expires_at 处理）。
-- 内部/后台 `ExpireSubscription`：cron 驱动的状态收敛（active 且 end <= now 且未续费 → expired）；不触碰 points（额度由 points 过期任务处理）。
+查询不创建、续费或自动激活订阅；没有订阅时返回明确的 `no_subscription`。
 
-## 6. 查询
+## 7. user_center 装配协议
 
-- `ListLevels`：公开等级目录（含周期与授予额度）。
-- `GetSubscription`：subject 当前订阅与周期、授予快照。
-- `ListSubscriptions`：管理员分页。
-- `GetRenewalRecords`：订阅的开通/续费事实。
+购买、礼品卡兑换或后台赠送会员都遵循同一协议：
 
-查询不创建订阅；无订阅返回明确的 `no_subscription` 状态。
+1. `user_center` 调用 `PrepareSubscriptionCycle`，获得不可变的周期结束时间与积分额度。
+2. `user_center` 调用 points `CreditPoints`：
+   - program 固定为 `credit`；
+   - behavior 为 `user_center.membership_cycle.credit.v1`；
+   - `expires_at = membership cycle end`；
+   - 幂等键包含 cycle id。
+3. points 返回 entry opaque ref 后，`user_center` 调用 `AttachPointsGrant`。
+4. 若第 2 步暂时失败，持久 workflow 重试；周期仍是 `prepared`，不提供会员权益。
+5. 若第 2 步成功而第 3 步暂时失败，workflow 以相同幂等键查询/重放 points，再重试 attach；不得再次 credit。
+6. points 到期任务在 `expires_at` 清除剩余 expiring bucket；membership 只在 end 后收敛订阅状态。
 
-## 7. Port 与 adapter
-
-membership 声明消费方 Port，由组合根绑定：
-
-- `SubjectExistsPort`：`(subject_type, subject_id) -> bool`。组合根用 identity/feature 提供的 adapter 实现；未绑定则 Subscribe 类命令启动失败。
-- `PointsLedgerPort`：
-  - `grant_points(subject, amount, expires_at, idempotency_key, source_ref) -> {entry_id}`；`entry_id` 是必填的 points 账本 opaque UUID 字符串，缺失或无效必须让会员事务失败，不能以“已授予”状态落库。
-  - 组合根实现为调用 points 公开 `CreditPoints`（行为 `membership.grant`），只传数值与到期时刻，不读取 points 表；生产 adapter 必须复用 membership 外层 UoW，使订阅、积分流水和 outbox 同事务提交。
-  - 未来若需要"授予额度回收"语义，也经由 Port 暴露的 points 公开 Command（如 `DebitPoints`），membership 不做账本计算。
-
-adapter 属于 `inc/adapters`（`adapters/membership/` 目录），遵循 `adapters.md` 目录合同；capability 不得反向导入 adapter。
+这条业务流由 kernel 持久 workflow 保存恢复点，不要求跨 capability 共用数据库事务，也不允许 membership 通过消费方 Port 偷渡业务编排。
 
 ## 8. 事件
 
-- `membership.subscribed.v1`：subject、level、cycle start/end、granted points、subscription id。
-- `membership.renewed.v1`：subscription、新周期 start/end、granted points。
-- `membership.cancelled.v1`：subscription、当前周期 end（仍有效）。
-- `membership.expired.v1`：subscription、周期 end、剩余额度信息不包含（余额以 points 账本为准）。
+- `membership.cycle_prepared.v1`
+- `membership.activated.v1`
+- `membership.renewed.v1`
+- `membership.cancelled.v1`
+- `membership.terminated.v1`
+- `membership.expired.v1`
+- `membership.cycle_failed.v1`
 
-事件不包含 points 余额、payment 金额或订阅之外的跨能力快照。
+事件只包含 subscription/cycle、subject opaque ref、level 和周期快照；不包含 points 余额、支付金额或卡密明文。
 
 ## 9. 权限与审计
 
-- `membership.manage`：管理员管理等级与终止订阅。
-- 开通/续费/取消/终止全部审计。
-- subject 的隐私字段不进入事件与日志。
+- `membership.levels.manage`：等级生命周期。
+- `membership.subscriptions.read`：管理员查询。
+- `membership.subscriptions.manage`：终止或修复订阅。
+- 自助取消由 `user_center` 校验当前 subject 后调用 capability Command。
+- 等级管理、开通、续费、取消、终止和修复全部审计。
 
-## 10. 集成：购买会员（下游 feature 组装）
+## 10. Diagnostics 与验收
 
-- `user_center` feature 负责：受信价格目录（level key -> 金额/币种）→ payments 订单 → 捕获后调用 `SubscribeLevel` → 授予积分。
-- 支付现金与积分互不参与：payments 只产生支付事实；membership 只在订阅成功事实后授予积分。
-- 到期自动过期依赖 points 过期 Cron 与订阅 end 时刻一致；`ExpireSubscription` 由组合根注册为持久 `TaskInstance` handler，不允许只靠人工调用或内存 timer。
+diagnostics 至少报告：
 
-## 11. Diagnostics 与验收
+- 长时间停留在 `prepared` 的周期；
+- activated cycle 缺失或使用非法 `points_entry_ref`；
+- active subscription 的 end 已过期；
+- 同一 subscription 的周期重叠；
+- DB 等级与代码/ops 声明漂移。
 
-- diagnostics 报告：`active` 但 end 已过期的订阅、有订阅但无授予积分记录（对账）、授予快照与 points 入账不一致、等级漂移（DB 与声明）。
-- 重复订阅/续费请求只产生一次授予。
-- 到期后剩余额度由 points 过期任务扣减，membership 不做第二套计算；测试验证"订阅结束前额度可消费、结束后剩余自动清零"。
-- 订阅失败回滚时不得留下已授予但未开会员的积分。
-- membership 在不导入 points/payments/identity 的情况下通过合同测试（Port 用 fake 实现）。
+验收要求：
+
+- membership 单独装配时不需要 points/payments/identity fake Port，也不导入这些模块。
+- `PrepareSubscriptionCycle` 重放不重复创建周期。
+- 未 attach points entry 前用户不获得会员权益。
+- `AttachPointsGrant` 重放只激活一次，且拒绝改绑 entry。
+- 到期积分由 points 清理，membership 不产生 debit/expiration 流水。
+- `user_center` 集成测试覆盖“points 已入账、attach 暂时失败”的恢复路径。

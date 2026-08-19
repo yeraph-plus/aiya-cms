@@ -65,8 +65,8 @@ identity 管理可登录或可被业务引用的用户主体、登录标识、�
 ## 8. 权限与审计
 
 - 自助资料修改要求当前 subject 匹配。
-- `GET /api/v1/me` 返回 `display_name`、`avatar_asset_id`；管理员按 assets 读取权限解析短期 `avatar_url`，普通 subject 只解析自己头像 bucket 中的 asset。用户摘要中的 `credit` points 余额由组合根按已装配能力加入，读取不触发开户。
-- `PATCH /api/v1/me` 只允许当前 subject 修改 `display_name` 和 `avatar_asset_id`；上传流程由组合根调用 assets 公开 Command 后再调用 identity `UpdateProfile` 写入 opaque ID。
+- identity 的本人 Query 返回 `display_name`、`avatar_asset_id` 等原子资料；`GET /api/v1/me` 由 user_center 聚合头像、会员和可选积分摘要，读取不触发开户。
+- identity 的 `UpdateProfile` 只允许当前 subject 修改受控资料字段；头像 upload/finalize 由 user_center 依次调用 assets 与 identity 的公开 Command，并写入 opaque asset ID。API 组合根只绑定 gateway/router，不执行业务步骤。
 - `identity.users.read`、`identity.users.update`、`identity.users.ban`、`identity.users.unban`、`identity.users.delete` 为管理员能力 key。
 - 密码、邮箱、封禁和删除均产生业务审计事件；敏感字段只记录变化类型，不记录原值。
 

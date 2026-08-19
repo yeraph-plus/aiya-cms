@@ -4,12 +4,12 @@ import { apiPath, getApi } from './index';
 export type LevelDTO = components['schemas']['LevelDTO'];
 export type SubscriptionDTO = components['schemas']['AdminSubscriptionDTO'];
 export type SubscriptionPageDTO = components['schemas']['Page_AdminSubscriptionDTO_'];
-export type RenewalRecordDTO = components['schemas']['RenewalRecordDTO'];
-export type RenewalPageDTO = components['schemas']['Page_RenewalRecordDTO_'];
+export type MembershipCycleDTO = components['schemas']['MembershipCycleDTO'];
+export type RenewalPageDTO = components['schemas']['Page_MembershipCycleDTO_'];
 export type CancelInput = components['schemas']['CancelInput'];
 export type TerminateInput = components['schemas']['TerminateInput'];
 export type SubscriptionQuery = NonNullable<paths['/api/v1/admin/membership/subscriptions']['get']['parameters']['query']>;
-export type RenewalQuery = NonNullable<paths['/api/v1/admin/membership/subscriptions/{subscription_id}/renewals']['get']['parameters']['query']>;
+export type RenewalQuery = NonNullable<paths['/api/v1/admin/membership/subscriptions/{subscription_id}/cycles']['get']['parameters']['query']>;
 export type CreateLevelInput = components['schemas']['CreateLevelInput'];
 export type UpdateLevelInput = components['schemas']['UpdateLevelInput'];
 
@@ -69,7 +69,7 @@ export async function fetchSubscriptions(query?: SubscriptionQuery, signal?: Abo
 }
 
 export async function fetchSubscriptionRenewals(subscriptionId: string, query?: RenewalQuery, signal?: AbortSignal): Promise<RenewalPageDTO> {
-    return getApi().get(apiPath('/api/v1/admin/membership/subscriptions/{subscription_id}/renewals', { subscription_id: subscriptionId }), query, signal);
+    return getApi().get(apiPath('/api/v1/admin/membership/subscriptions/{subscription_id}/cycles', { subscription_id: subscriptionId }), query, signal);
 }
 
 export async function cancelSubscription(subscriptionId: string, body: CancelInput, signal?: AbortSignal): Promise<SubscriptionDTO> {

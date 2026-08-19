@@ -54,7 +54,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
             secure: context.url.protocol === 'https:'
         });
     }
-    if (context.url.pathname.startsWith('/auth/') || context.locals.user)
+    if (context.url.pathname.startsWith('/auth/') || policy === 'anonymous-only' || context.locals.user)
         response.headers.set('Cache-Control', 'private, no-store');
     return securityHeaders(response, requestId);
 });

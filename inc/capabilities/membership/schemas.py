@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 
 class LevelDTO(BaseModel):
@@ -95,35 +95,45 @@ class SubscriptionDTO(BaseModel):
     renewal_count: int
     cancelled_at: datetime | None = None
     expired_at: datetime | None = None
+    cycle_id: str | None = None
+    cycle_points_amount: int | None = None
+    source_type: str | None = None
+    source_ref: str | None = None
+    terminated_at: datetime | None = None
+    version: int = 1
 
 
-class RenewalRecordDTO(BaseModel):
+class MembershipCycleDTO(BaseModel):
+    """Public snapshot of a membership cycle fact."""
+
     model_config = ConfigDict(extra="forbid")
 
-    id: str
+    cycle_id: str
     subscription_id: str
-    cycle_start: datetime
-    cycle_end: datetime
-    granted_points: int
-    points_source_id: str
-    outcome: str
-
-
-class SubscribeInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     subject_type: str
     subject_id: str
-    level_key: str = Field(min_length=1, max_length=100)
-    auto_renew: bool = False
-    idempotency_key: str = Field(min_length=1, max_length=200)
+    level_key: str
+    cycle_start: datetime
+    cycle_end: datetime
+    cycle_points_amount: int
+    state: str
+    source_type: str
+    source_ref: str
+    points_entry_ref: str | None = None
+    idempotency_key: str
+    failure_code: str | None = None
+    version: int = 1
+
+    @property
+    def id(self) -> str:
+        """Keep the common resource accessor available without changing the contract."""
+
+        return self.cycle_id
 
 
-class RenewInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    subscription_id: str
-    idempotency_key: str = Field(min_length=1, max_length=200)
+# ``fact`` is the domain term used by workflows; both names describe the
+# same immutable public snapshot.
+MembershipCycleFactDTO = MembershipCycleDTO
 
 
 class CancelInput(BaseModel):
@@ -138,3 +148,42 @@ class TerminateInput(BaseModel):
 
     subscription_id: str
     reason: str = Field(min_length=1, max_length=500)
+
+
+class PrepareSubscriptionCycleInput(BaseModel):
+    """Input for the membership half of the prepare/attach protocol."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_type: str = Field(min_length=1, max_length=32)
+    subject_id: str = Field(min_length=1, max_length=200)
+    level_key: str = Field(min_length=1, max_length=100)
+    source_type: str = Field(min_length=1, max_length=64)
+    source_ref: str = Field(min_length=1, max_length=200)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    expected_version: int | None = Field(default=None, ge=1)
+    auto_renew: bool = False
+
+
+class AttachPointsGrantInput(BaseModel):
+    """Opaque points entry returned by the user-center workflow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cycle_id: str = Field(min_length=1)
+    points_entry_ref: str = Field(min_length=1, max_length=200)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class MarkCycleFailedInput(BaseModel):
+    """Permanent failure fact for a cycle that was not activated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cycle_id: str = Field(min_length=1)
+    failure_code: str = Field(
+        min_length=1,
+        max_length=200,
+        validation_alias=AliasChoices("failure_code", "reason_code"),
+    )
+    idempotency_key: str = Field(min_length=1, max_length=200)

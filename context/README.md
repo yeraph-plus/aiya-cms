@@ -2,7 +2,7 @@
 
 `context/` 是当前唯一权威规格集合。后端规格位于 `context/spec/`，用户站规格与设计位于 `context/user site spec/`，管理员端规格位于 `context/admin dash spec (SPA)/`。代码、测试、迁移、OpenAPI、两端前端和 Compose 与规格不一致时，先更新对应 owner 的规格，再写失败测试，最后修改实现。
 
-本地 Demo 重构施工计划已完成并从工作树移除；历史由 Git 保留。目录分离只用于明确后端、用户站和管理员端的文档所有权，不形成第二套长期事实源，也不维护独立阶段计划。
+本地 Demo 的旧重构施工计划已从工作树移除；历史由 Git 保留。目录分离只用于明确后端、用户站和管理员端的文档所有权，不形成第二套长期事实源。用户站 `IMPLEMENTATION.md` 是本次目标规格的稳定迁移顺序与验收合同，不记录进度、排期或负责人。
 
 ## 阅读顺序
 
@@ -17,9 +17,10 @@
 9. [`user site spec/user-site.md`](<user site spec/user-site.md>)：Astro SSR、Markdown 安全渲染、SEO/head、BFF 会话、feature 消费与用户侧端点。
 10. [`user site spec/LAYOUT.md`](<user site spec/LAYOUT.md>)：用户站页面结构、信息优先级和响应式布局。
 11. [`user site spec/DESIGN.md`](<user site spec/DESIGN.md>)：用户站视觉语言、Design Tokens 和组件元素。
-12. [`admin dash spec (SPA)/admin.md`](<admin dash spec (SPA)/admin.md>)：管理员端认证、契约和部署。
-13. [`admin dash spec (SPA)/admin-uikit.md`](<admin dash spec (SPA)/admin-uikit.md>)：管理员 UI kit（Sakai Vue）组件与页面清单。
-14. [`spec/quality-release.md`](spec/quality-release.md)：跨后端、用户站与管理员端的测试矩阵、迁移和发布门。
+12. [`user site spec/IMPLEMENTATION.md`](<user site spec/IMPLEMENTATION.md>)：现有实现迁移到目标用户站的删除清单、依赖顺序、测试矩阵和完成定义。
+13. [`admin dash spec (SPA)/admin.md`](<admin dash spec (SPA)/admin.md>)：管理员端认证、契约和部署。
+14. [`admin dash spec (SPA)/admin-uikit.md`](<admin dash spec (SPA)/admin-uikit.md>)：管理员 UI kit（Sakai Vue）组件与页面清单。
+15. [`spec/quality-release.md`](spec/quality-release.md)：跨后端、用户站与管理员端的测试矩阵、迁移和发布门。
 
 ## 文档规则
 
@@ -40,6 +41,7 @@ context/
     composition.md
     adapters.md
     features.md
+    features/
     http-openapi.md
     quality-release.md
     kernel/
@@ -49,6 +51,7 @@ context/
     user-site.md
     LAYOUT.md
     DESIGN.md
+    IMPLEMENTATION.md
   admin dash spec (SPA)/        # Vue 管理员端规格
     admin.md
     admin-uikit.md

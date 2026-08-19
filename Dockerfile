@@ -27,8 +27,12 @@ COPY --from=build /opt/venv /opt/venv
 COPY --chown=aiya:aiya inc ./inc
 COPY --chown=aiya:aiya tests ./tests
 COPY --chown=aiya:aiya alembic ./alembic
+COPY --chown=aiya:aiya deploy ./deploy
+COPY --chown=aiya:aiya .github/workflows/production-image.yml ./.github/workflows/production-image.yml
 COPY --chown=aiya:aiya alembic.ini pyproject.toml README.md \
-    openapi.json openapi.sha256 openapi.user.json openapi.user.sha256 ./
+    Dockerfile Dockerfile.production .dockerignore compose.production.yaml \
+    openapi.json openapi.sha256 openapi.admin.json openapi.admin.sha256 \
+    openapi.user.json openapi.user.sha256 ./
 RUN chown -R aiya:aiya /app
 USER aiya
 EXPOSE 8000

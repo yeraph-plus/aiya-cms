@@ -47,8 +47,8 @@ PORT_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "notification.email": ("notification", ("settings",)),
     "notification.recipient": ("notification", ("identity",)),
     "membership.subject_exists": ("membership", ("identity",)),
-    "membership.points_ledger": ("membership", ("points",)),
     "community.author": ("community", ("identity",)),
+    "archive.delivery": ("archive", ()),
 }
 
 ADAPTER_REQUIREMENTS: dict[str, tuple[str, ...]] = {
@@ -66,8 +66,9 @@ ADAPTER_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "email.smtp2go": ("settings",),
     "identity.notification_recipient": ("identity",),
     "membership.subject_exists": ("identity",),
-    "membership.points_ledger": ("points",),
     "identity.community_author": ("identity",),
+    "archive.openlist": (),
+    "archive.gofile": (),
 }
 
 KNOWN_ADAPTERS = frozenset(ADAPTER_REQUIREMENTS)
@@ -82,6 +83,7 @@ PROVIDER_ADAPTERS: dict[str, tuple[str, ...]] = {
     "notification.email": ("email.smtp", "email.smtp2go"),
     "payments.provider": ("payments.paypal", "payments.epay"),
     "assets.object_storage": ("assets.s3",),
+    "archive.delivery": ("archive.openlist", "archive.gofile"),
 }
 
 
@@ -272,6 +274,8 @@ def _scope_capabilities(scopes: set[str]) -> set[str] | None:
             continue
         if scope in ("profile", "email"):
             out.add("identity.users.read")
+        elif scope in {"business.quote", "business.consume", "archive.download"}:
+            out.add(scope)
         else:
             return None
     return out
@@ -483,15 +487,14 @@ def resolve_adapters(
             from inc.adapters.membership import IdentitySubjectExists
 
             resolved[port] = IdentitySubjectExists(queries=identity_queries)
-        elif adapter == "membership.points_ledger":
-            from inc.adapters.membership import PointsGrantLedger
+        elif adapter == "archive.openlist":
+            from inc.adapters.archive.openlist import OpenListArchiveProvider
 
-            resolved[port] = PointsGrantLedger(
-                uow_factory=container._uow_factory,
-                clock=container._clock,
-                outbox=container._outbox,
-                behaviors=container.behaviors,
-            )
+            resolved[port] = OpenListArchiveProvider(settings_queries=settings_queries)
+        elif adapter == "archive.gofile":
+            from inc.adapters.archive.gofile import GofileArchiveProvider
+
+            resolved[port] = GofileArchiveProvider(settings_queries=settings_queries)
         elif adapter == "identity.community_author":
             resolved[port] = IdentityCommunityAuthor(queries=identity_queries)
         else:

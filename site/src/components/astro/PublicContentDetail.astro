@@ -1,0 +1,97 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import type { Locale } from '@/lib/i18n';
+import { renderMarkdown } from '@/lib/markdown';
+import { buildContentJsonLd, type JsonLd } from '@/lib/seo';
+import {
+    contentCopy,
+    contentDetailPath,
+    describePublicContent,
+    fetchPublicContentBySlug,
+    publicContentMetadata,
+    type ContentKind
+} from '@/lib/seo/content';
+
+interface Props {
+    kind: ContentKind;
+    locale: Locale;
+    slug: string;
+}
+
+const { kind, locale, slug } = Astro.props;
+const copy = contentCopy(kind, locale);
+const lookup = await fetchPublicContentBySlug(kind, slug, Astro.locals.requestId);
+const content = lookup.content;
+
+if (!slug || (lookup.ok && !content)) Astro.response.status = 404;
+else if (!lookup.ok) Astro.response.status = 503;
+
+const title = content?.title ?? copy.label;
+const description = content ? describePublicContent(content) : lookup.ok ? copy.notFound : copy.unavailable;
+const canonicalPath = contentDetailPath(kind, content?.slug ?? slug);
+const jsonLd: JsonLd | undefined = content
+    ? buildContentJsonLd({
+          kind,
+          title: content.title,
+          description,
+          canonical: new URL(canonicalPath, Astro.site ?? Astro.url.origin).href,
+          ...(content.publishedAt ? { publishedAt: content.publishedAt } : {}),
+          ...(content.updatedAt ? { modifiedAt: content.updatedAt } : {})
+      })
+    : undefined;
+const metadata = content ? publicContentMetadata(content, locale) : [];
+const contentDate = content?.publishedAt ?? content?.updatedAt ?? content?.createdAt;
+const contentDateLabel = contentDate
+    ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(contentDate))
+    : undefined;
+const bodyHtml = content?.body ? renderMarkdown(content.body) : '';
+---
+
+<BaseLayout
+    locale={locale}
+    title={title}
+    description={description}
+    canonical={canonicalPath}
+    noindex={!content || !content.indexable}
+    nofollow={!content || !content.indexable}
+    ogType={kind === 'page' ? 'website' : 'article'}
+    jsonLd={jsonLd}
+>
+    {
+        content ? (
+            <article class="content-detail">
+                <header class="content-detail-header">
+                    <p class="eyebrow">{copy.label}</p>
+                    <h1>{content.title}</h1>
+                    <div class="content-meta">
+                        {contentDateLabel && <time datetime={contentDate}>{contentDateLabel}</time>}
+                        <span>{content.bodyFormat}</span>
+                    </div>
+                    {description && <p class="lede">{description}</p>}
+                    {metadata.length > 0 && (
+                        <ul class="content-taxonomy" aria-label={copy.label}>
+                            {metadata.map((item) => (
+                                <li>
+                                    <span>{item.label}</span>
+                                    {item.value}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </header>
+                <div class="content-detail-body">
+                    {bodyHtml ? (
+                        <div class="markdown-body" set:html={bodyHtml} />
+                    ) : (
+                        <p class="content-state">{description || copy.listDescription}</p>
+                    )}
+                </div>
+            </article>
+        ) : (
+            <section class="content-detail content-state" role="alert">
+                <p class="eyebrow">{copy.label}</p>
+                <h1>{lookup.ok ? copy.notFound : copy.unavailable}</h1>
+            </section>
+        )
+    }
+</BaseLayout>

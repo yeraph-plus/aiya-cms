@@ -13,7 +13,7 @@ import re
 from inc.kernel.errors import ErrorCategory, KernelError
 from inc.kernel.workflow.spec import WorkflowSpec
 
-_KEY = re.compile(r"^[a-z0-9]+(\.[a-z0-9]+)+$")
+_KEY = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 
 
 def validate_workflow_key(key: str) -> None:

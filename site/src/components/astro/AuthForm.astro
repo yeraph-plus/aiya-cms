@@ -1,0 +1,47 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+import { csrfToken } from '@/lib/auth/server/csrf';
+
+interface Field {
+    autocomplete: string;
+    label: string;
+    maxLength?: number;
+    minLength?: number;
+    name: string;
+    type: 'email' | 'password' | 'text';
+}
+interface Props { locale: Locale; title: string; description: string; action: string; fields: Field[]; status?: string | null; }
+const { locale, title, description, action, fields, status } = Astro.props;
+const csrf = Astro.session ? await csrfToken(Astro.session) : undefined;
+const notice = status === 'success' ? t(locale, 'auth.success') : status === 'invalid' ? t(locale, 'auth.invalid') : status === 'unavailable' ? t(locale, 'auth.unavailable') : undefined;
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+---
+<BaseLayout locale={locale} title={title} description={description} nofollow>
+    <section class="detail-page auth-page">
+        <p class="eyebrow">{t(locale, 'auth.identity')}</p>
+        <h1>{title}</h1>
+        <p class="lede">{description}</p>
+        {notice && <p class="auth-notice" role="status">{notice}</p>}
+        <form method="post" action={action} class="auth-form">
+            <input type="hidden" name="csrf" value={csrf} />
+            {fields.map((field) => (
+                <div class="auth-field">
+                    <label for={field.name}>{field.label}</label>
+                    <input id={field.name} name={field.name} type={field.type} autocomplete={field.autocomplete} minlength={field.minLength} maxlength={field.maxLength} required />
+                </div>
+            ))}
+            <button type="submit">{t(locale, 'auth.submit')}</button>
+        </form>
+    </section>
+</BaseLayout>
+
+<style>
+    .auth-page { max-width: 48rem; }
+    .auth-notice { margin: 1.5rem 0 0; border-left: 4px solid var(--coral); background: var(--surface); padding: 1rem; }
+    .auth-form { display: grid; gap: 1rem; max-width: 32rem; margin-top: 2rem; }
+    .auth-field { display: grid; gap: .45rem; }
+    .auth-field input { min-height: 2.75rem; border: 1px solid var(--hairline); background: var(--surface-raised); color: var(--ink); padding: .55rem .7rem; font: inherit; }
+    .auth-form button { width: fit-content; min-height: 2.75rem; border: 1px solid var(--ink); background: var(--ink); color: var(--canvas); padding: .65rem 1rem; font: inherit; cursor: pointer; }
+</style>

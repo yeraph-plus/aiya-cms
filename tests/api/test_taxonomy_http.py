@@ -50,10 +50,10 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
     dims = await client.get("/api/v1/admin/taxonomy/dimensions", headers=headers)
     assert dims.status_code == 200, dims.text
     keys = {item["dimension_key"] for item in dims.json()}
-    assert {"category", "tag"} <= keys
+    assert {"post.category", "post.tag", "page.category", "work.creator"} <= keys
 
     term = await client.post(
-        "/api/v1/admin/taxonomy/dimensions/tag/terms",
+        "/api/v1/admin/taxonomy/dimensions/post.tag/terms",
         json={"name": "Python", "slug": "python"},
         headers=headers,
     )
@@ -77,7 +77,7 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
     assert renamed.status_code == 200
     assert renamed.json()["name"] == "Python 3"
 
-    terms = await client.get("/api/v1/admin/taxonomy/dimensions/tag/terms", headers=headers)
+    terms = await client.get("/api/v1/admin/taxonomy/dimensions/post.tag/terms", headers=headers)
     assert terms.status_code == 200
     assert term_id in {item["id"] for item in terms.json()}
 
@@ -85,7 +85,7 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
     post_id = await _create_post(client, headers, "tagged-post")
     assigned = await client.put(
         f"/api/v1/admin/taxonomy/targets/post/{post_id}/terms",
-        json={"dimension_key": "tag", "term_ids": [term_id]},
+        json={"dimension_key": "post.tag", "term_ids": [term_id]},
         headers=headers,
     )
     assert assigned.status_code == 204, assigned.text
@@ -94,36 +94,36 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
         f"/api/v1/admin/taxonomy/targets/post/{post_id}/terms", headers=headers
     )
     assert fetched.status_code == 200, fetched.text
-    assert [item["id"] for item in fetched.json()["tag"]] == [term_id]
+    assert [item["id"] for item in fetched.json()["post.tag"]] == [term_id]
 
     services = client.app.state.services
     current = await services.taxonomy_queries.get_target_terms("post", uuid.UUID(post_id))
-    assert term_id in {item.id for item in current.get("tag", [])}
+    assert term_id in {item.id for item in current.get("post.tag", [])}
 
     # replace semantics: empty list clears the dimension's assignments
     cleared = await client.put(
         f"/api/v1/admin/taxonomy/targets/post/{post_id}/terms",
-        json={"dimension_key": "tag", "term_ids": []},
+        json={"dimension_key": "post.tag", "term_ids": []},
         headers=headers,
     )
     assert cleared.status_code == 204
     current = await services.taxonomy_queries.get_target_terms("post", uuid.UUID(post_id))
-    assert current.get("tag", []) == []
+    assert current.get("post.tag", []) == []
 
     # single-select category rejects two terms
     cat1 = await client.post(
-        "/api/v1/admin/taxonomy/dimensions/category/terms",
+        "/api/v1/admin/taxonomy/dimensions/post.category/terms",
         json={"name": "News", "slug": "news"},
         headers=headers,
     )
     cat2 = await client.post(
-        "/api/v1/admin/taxonomy/dimensions/category/terms",
+        "/api/v1/admin/taxonomy/dimensions/post.category/terms",
         json={"name": "Tech", "slug": "tech"},
         headers=headers,
     )
     too_many = await client.put(
         f"/api/v1/admin/taxonomy/targets/post/{post_id}/terms",
-        json={"dimension_key": "category", "term_ids": [cat1.json()["id"], cat2.json()["id"]]},
+        json={"dimension_key": "post.category", "term_ids": [cat1.json()["id"], cat2.json()["id"]]},
         headers=headers,
     )
     assert too_many.status_code == 422
@@ -132,7 +132,7 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
     # missing target is a stable validation error
     missing = await client.put(
         f"/api/v1/admin/taxonomy/targets/post/{uuid.uuid4()}/terms",
-        json={"dimension_key": "tag", "term_ids": [term_id]},
+        json={"dimension_key": "post.tag", "term_ids": [term_id]},
         headers=headers,
     )
     assert missing.status_code == 422
@@ -144,7 +144,7 @@ async def test_dimensions_terms_and_assignment_flow(client: Any, admin_token: st
     assert archived.json()["status"] == "archived"
     inactive = await client.put(
         f"/api/v1/admin/taxonomy/targets/post/{post_id}/terms",
-        json={"dimension_key": "tag", "term_ids": [term_id]},
+        json={"dimension_key": "post.tag", "term_ids": [term_id]},
         headers=headers,
     )
     assert inactive.status_code == 422

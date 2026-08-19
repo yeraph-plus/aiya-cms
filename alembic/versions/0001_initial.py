@@ -41,6 +41,125 @@ def upgrade() -> None:
         sa.UniqueConstraint("slug"),
     )
     op.create_table(
+        "archive_items",
+        sa.Column("item_key", sa.String(length=200), nullable=False),
+        sa.Column("provider_key", sa.String(length=64), nullable=False),
+        sa.Column("provider_contract_version", sa.String(length=32), nullable=False),
+        sa.Column("external_locator", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("display_name", sa.String(length=500), nullable=False),
+        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
+        sa.Column("checksum_algorithm", sa.String(length=32), nullable=True),
+        sa.Column("checksum_value", sa.String(length=256), nullable=True),
+        sa.Column("part_number", sa.Integer(), nullable=False),
+        sa.Column("state", sa.String(length=16), nullable=False),
+        sa.Column("provider_fact_version", sa.String(length=64), nullable=True),
+        sa.Column("last_verified_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("unavailable_reason", sa.String(length=64), nullable=True),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("size_bytes > 0", name="ck_archive_items_size_positive"),
+        sa.CheckConstraint("size_bytes <= 4294967296", name="ck_archive_items_size_at_most_4g"),
+        sa.CheckConstraint("part_number > 0", name="ck_archive_items_part_positive"),
+        sa.CheckConstraint(
+            "state IN ('pending', 'active', 'unavailable', 'retired')",
+            name="ck_archive_items_state",
+        ),
+        sa.CheckConstraint("version >= 1", name="ck_archive_items_version"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("item_key"),
+    )
+    op.create_index(op.f("ix_archive_items_provider_key"), "archive_items", ["provider_key"])
+    op.create_index(op.f("ix_archive_items_state"), "archive_items", ["state"])
+    op.create_index("ix_archive_items_part_state", "archive_items", ["part_number", "state"])
+    op.create_table(
+        "archive_download_grants",
+        sa.Column("subject_type", sa.String(length=64), nullable=False),
+        sa.Column("subject_id", sa.String(length=200), nullable=False),
+        sa.Column("product_ref", sa.String(length=200), nullable=True),
+        sa.Column("quote_ref", sa.String(length=200), nullable=True),
+        sa.Column("points_entry_ref", sa.String(length=200), nullable=True),
+        sa.Column("target_type", sa.String(length=64), nullable=False),
+        sa.Column("target_id", sa.String(length=200), nullable=False),
+        sa.Column("manifest_version", sa.String(length=64), nullable=False),
+        sa.Column("manifest_digest", sa.String(length=128), nullable=False),
+        sa.Column("item_snapshot", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("valid_from", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("idempotency_key_digest", sa.String(length=128), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "status IN ('pending', 'active', 'expired', 'revoked', 'failed')",
+            name="ck_archive_grants_state",
+        ),
+        sa.CheckConstraint("version >= 1", name="ck_archive_grants_version"),
+        sa.CheckConstraint("expires_at > valid_from", name="ck_archive_grants_window"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("idempotency_key_digest"),
+    )
+    op.create_index(
+        op.f("ix_archive_download_grants_subject_type"),
+        "archive_download_grants",
+        ["subject_type"],
+    )
+    op.create_index(
+        op.f("ix_archive_download_grants_subject_id"),
+        "archive_download_grants",
+        ["subject_id"],
+    )
+    op.create_index(
+        op.f("ix_archive_download_grants_status"), "archive_download_grants", ["status"]
+    )
+    op.create_index(
+        "ix_archive_grants_subject_status",
+        "archive_download_grants",
+        ["subject_type", "subject_id", "status"],
+    )
+    op.create_table(
+        "archive_delivery_attempts",
+        sa.Column("grant_id", sa.Uuid(), nullable=False),
+        sa.Column("item_id", sa.Uuid(), nullable=False),
+        sa.Column("provider_key", sa.String(length=64), nullable=False),
+        sa.Column("attempt_number", sa.Integer(), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
+        sa.Column("reason_code", sa.String(length=64), nullable=True),
+        sa.Column("provider_delivery_ref", sa.String(length=500), nullable=True),
+        sa.Column("link_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("attempt_number > 0", name="ck_archive_attempt_number_positive"),
+        sa.CheckConstraint(
+            "status IN ('pending', 'delivered', 'proxy_required', 'failed', "
+            "'expired', 'revoked', 'unknown')",
+            name="ck_archive_attempt_state",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_archive_delivery_attempts_grant_id"),
+        "archive_delivery_attempts",
+        ["grant_id"],
+    )
+    op.create_index(
+        op.f("ix_archive_delivery_attempts_item_id"),
+        "archive_delivery_attempts",
+        ["item_id"],
+    )
+    op.create_index(
+        "uq_archive_attempt_number",
+        "archive_delivery_attempts",
+        ["grant_id", "item_id", "attempt_number"],
+        unique=True,
+    )
+    op.create_table(
         "assets_objects",
         sa.Column("provider_key", sa.String(length=64), nullable=False),
         sa.Column("bucket", sa.String(length=200), nullable=True),
@@ -582,12 +701,17 @@ def upgrade() -> None:
         sa.Column("level_key", sa.String(length=100), nullable=False),
         sa.Column("cycle_start", sa.DateTime(timezone=True), nullable=False),
         sa.Column("cycle_end", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
         sa.Column("auto_renew", sa.Boolean(), nullable=False),
         sa.Column("granted_points", sa.Integer(), nullable=False),
         sa.Column("renewal_count", sa.Integer(), nullable=False),
+        sa.Column("cycle_id", sa.Uuid(), nullable=True),
+        sa.Column("source_type", sa.String(length=64), nullable=True),
+        sa.Column("source_ref", sa.String(length=200), nullable=True),
+        sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expired_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("terminated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -595,6 +719,12 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "subject_type", "subject_id", name="uq_membership_subscription_subject"
         ),
+    )
+    op.create_index(
+        op.f("ix_membership_subscriptions_cycle_id"),
+        "membership_subscriptions",
+        ["cycle_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_membership_subscriptions_subject_id"),
@@ -1192,14 +1322,20 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
-        "membership_renewal_records",
+        "membership_cycles",
         sa.Column("subscription_id", sa.Uuid(), nullable=False),
+        sa.Column("level_key", sa.String(length=100), nullable=False),
         sa.Column("cycle_start", sa.DateTime(timezone=True), nullable=False),
         sa.Column("cycle_end", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("granted_points", sa.Integer(), nullable=False),
-        sa.Column("points_source_id", sa.String(length=200), nullable=False),
-        sa.Column("points_entry_id", sa.Uuid(), nullable=True),
-        sa.Column("outcome", sa.String(length=16), nullable=False),
+        sa.Column("cycle_points_amount", sa.Integer(), nullable=False),
+        sa.Column("state", sa.String(length=16), nullable=False),
+        sa.Column("source_type", sa.String(length=64), nullable=False),
+        sa.Column("source_ref", sa.String(length=200), nullable=False),
+        sa.Column("points_entry_ref", sa.String(length=200), nullable=True),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
+        sa.Column("attach_idempotency_key", sa.String(length=200), nullable=True),
+        sa.Column("failure_code", sa.String(length=200), nullable=True),
+        sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -1208,12 +1344,20 @@ def upgrade() -> None:
             ["membership_subscriptions.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "subscription_id",
+            "idempotency_key",
+            name="uq_membership_cycle_subscription_idempotency",
+        ),
     )
     op.create_index(
-        op.f("ix_membership_renewal_records_subscription_id"),
-        "membership_renewal_records",
+        op.f("ix_membership_cycles_subscription_id"),
+        "membership_cycles",
         ["subscription_id"],
         unique=False,
+    )
+    op.create_index(
+        op.f("ix_membership_cycles_state"), "membership_cycles", ["state"], unique=False
     )
     op.create_table(
         "notification_deliveries",
@@ -1628,11 +1772,170 @@ def upgrade() -> None:
         ["entry_id"],
         unique=False,
     )
+    op.create_table(
+        "gift_card_batches",
+        sa.Column("batch_key", sa.String(length=100), nullable=False),
+        sa.Column("platform_key", sa.String(length=64), nullable=False),
+        sa.Column("product_key", sa.String(length=100), nullable=False),
+        sa.Column("fulfillment_schema_version", sa.String(length=32), nullable=False),
+        sa.Column("fulfillment_key", sa.String(length=200), nullable=False),
+        sa.Column("fulfillment_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("quantity", sa.Integer(), nullable=False),
+        sa.Column("generated_count", sa.Integer(), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
+        sa.Column("created_by", sa.String(length=200), nullable=True),
+        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("quantity > 0", name="ck_gift_card_batches_quantity_positive"),
+        sa.CheckConstraint(
+            "generated_count >= 0", name="ck_gift_card_batches_generated_nonnegative"
+        ),
+        sa.CheckConstraint(
+            "status IN ('active', 'closed', 'revoked')",
+            name="ck_gift_card_batches_status",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("batch_key"),
+        sa.UniqueConstraint("idempotency_key"),
+    )
+    op.create_table(
+        "gift_cards",
+        sa.Column("batch_id", sa.Uuid(), nullable=False),
+        sa.Column("platform_key", sa.String(length=64), nullable=False),
+        sa.Column("secret_digest", sa.String(length=128), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("redemption_id", sa.Uuid(), nullable=True),
+        sa.Column("reserved_until", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("redeemed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "status IN ('issued', 'reserved', 'redeemed', 'revoked', 'expired')",
+            name="ck_gift_cards_status",
+        ),
+        sa.CheckConstraint("version >= 1", name="ck_gift_cards_version"),
+        sa.ForeignKeyConstraint(["batch_id"], ["gift_card_batches.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("secret_digest"),
+    )
+    op.create_index(op.f("ix_gift_cards_batch_id"), "gift_cards", ["batch_id"], unique=False)
+    op.create_index(
+        op.f("ix_gift_cards_redemption_id"),
+        "gift_cards",
+        ["redemption_id"],
+        unique=False,
+    )
+    op.create_index(op.f("ix_gift_cards_status"), "gift_cards", ["status"], unique=False)
+    op.create_table(
+        "gift_card_external_claims",
+        sa.Column("platform_key", sa.String(length=64), nullable=False),
+        sa.Column("external_order_digest", sa.String(length=128), nullable=False),
+        sa.Column("product_key", sa.String(length=100), nullable=False),
+        sa.Column("fulfillment_schema_version", sa.String(length=32), nullable=False),
+        sa.Column("fulfillment_key", sa.String(length=200), nullable=False),
+        sa.Column("fulfillment_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("provider_fact_digest", sa.String(length=128), nullable=False),
+        sa.Column("provider_status", sa.String(length=32), nullable=False),
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("redemption_id", sa.Uuid(), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "platform_key", "external_order_digest", name="uq_gift_card_external_order"
+        ),
+    )
+    op.create_index(
+        op.f("ix_gift_card_external_claims_redemption_id"),
+        "gift_card_external_claims",
+        ["redemption_id"],
+        unique=False,
+    )
+    op.create_table(
+        "gift_card_redemptions",
+        sa.Column("source_kind", sa.String(length=16), nullable=False),
+        sa.Column("source_id", sa.String(length=200), nullable=False),
+        sa.Column("platform_key", sa.String(length=64), nullable=False),
+        sa.Column("subject_type", sa.String(length=64), nullable=False),
+        sa.Column("subject_id", sa.String(length=200), nullable=False),
+        sa.Column("fulfillment_schema_version", sa.String(length=32), nullable=False),
+        sa.Column("fulfillment_key", sa.String(length=200), nullable=False),
+        sa.Column("fulfillment_payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
+        sa.Column("reserved_until", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("committed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "source_kind IN ('internal', 'external')",
+            name="ck_gift_card_redemption_source",
+        ),
+        sa.CheckConstraint(
+            "status IN ('reserved', 'committed', 'cancelled', 'expired')",
+            name="ck_gift_card_redemption_status",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "platform_key", "idempotency_key", name="uq_gift_card_redemption_idempotency"
+        ),
+    )
+    op.create_index(
+        "uq_gift_card_redemption_active_source",
+        "gift_card_redemptions",
+        ["source_kind", "source_id"],
+        unique=True,
+        postgresql_where=sa.text("status IN ('reserved', 'committed')"),
+        sqlite_where=sa.text("status IN ('reserved', 'committed')"),
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index("uq_archive_attempt_number", table_name="archive_delivery_attempts")
+    op.drop_index(
+        op.f("ix_archive_delivery_attempts_item_id"), table_name="archive_delivery_attempts"
+    )
+    op.drop_index(
+        op.f("ix_archive_delivery_attempts_grant_id"), table_name="archive_delivery_attempts"
+    )
+    op.drop_table("archive_delivery_attempts")
+    op.drop_index("ix_archive_grants_subject_status", table_name="archive_download_grants")
+    op.drop_index(op.f("ix_archive_download_grants_status"), table_name="archive_download_grants")
+    op.drop_index(
+        op.f("ix_archive_download_grants_subject_id"), table_name="archive_download_grants"
+    )
+    op.drop_index(
+        op.f("ix_archive_download_grants_subject_type"), table_name="archive_download_grants"
+    )
+    op.drop_table("archive_download_grants")
+    op.drop_index("ix_archive_items_part_state", table_name="archive_items")
+    op.drop_index(op.f("ix_archive_items_state"), table_name="archive_items")
+    op.drop_index(op.f("ix_archive_items_provider_key"), table_name="archive_items")
+    op.drop_table("archive_items")
+    op.drop_index("uq_gift_card_redemption_active_source", table_name="gift_card_redemptions")
+    op.drop_table("gift_card_redemptions")
+    op.drop_index(
+        op.f("ix_gift_card_external_claims_redemption_id"), table_name="gift_card_external_claims"
+    )
+    op.drop_table("gift_card_external_claims")
+    op.drop_index(op.f("ix_gift_cards_status"), table_name="gift_cards")
+    op.drop_index(op.f("ix_gift_cards_redemption_id"), table_name="gift_cards")
+    op.drop_index(op.f("ix_gift_cards_batch_id"), table_name="gift_cards")
+    op.drop_table("gift_cards")
+    op.drop_table("gift_card_batches")
     op.drop_index(
         op.f("ix_points_debit_allocations_entry_id"), table_name="points_debit_allocations"
     )
@@ -1708,11 +2011,9 @@ def downgrade() -> None:
     )
     op.drop_index("ix_notification_deliveries_due", table_name="notification_deliveries")
     op.drop_table("notification_deliveries")
-    op.drop_index(
-        op.f("ix_membership_renewal_records_subscription_id"),
-        table_name="membership_renewal_records",
-    )
-    op.drop_table("membership_renewal_records")
+    op.drop_index(op.f("ix_membership_cycles_state"), table_name="membership_cycles")
+    op.drop_index(op.f("ix_membership_cycles_subscription_id"), table_name="membership_cycles")
+    op.drop_table("membership_cycles")
     op.drop_index(
         op.f("ix_kernel_workflow_step_attempts_workflow_id"),
         table_name="kernel_workflow_step_attempts",
@@ -1789,6 +2090,9 @@ def downgrade() -> None:
     op.drop_table("notification_intents")
     op.drop_index(
         op.f("ix_membership_subscriptions_subject_id"), table_name="membership_subscriptions"
+    )
+    op.drop_index(
+        op.f("ix_membership_subscriptions_cycle_id"), table_name="membership_subscriptions"
     )
     op.drop_table("membership_subscriptions")
     op.drop_table("membership_levels")

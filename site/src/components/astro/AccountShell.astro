@@ -1,0 +1,135 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import AccountInteractions from '@/components/vue/AccountInteractions.vue';
+import { csrfToken } from '@/lib/auth/server/csrf';
+import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
+import { localizedAccountRoute, type AccountSection } from '@/lib/routing/routes';
+import { asRecord, asRecordArray, fetchAccountSection, fetchCurrentUser, type UserMeState } from '@/lib/user-center';
+
+interface Props { locale: Locale; section?: AccountSection | undefined; }
+const { locale, section } = Astro.props;
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+const me = await fetchCurrentUser(Astro);
+const sectionState = section ? await fetchAccountSection(Astro, section) : null;
+const csrf = Astro.session && section ? await csrfToken(Astro.session) : '';
+const labels: Record<AccountSection, string> = {
+    points: t(locale, 'account.points'),
+    membership: t(locale, 'account.membership'),
+    purchases: t(locale, 'account.purchases'),
+    'gift-card': t(locale, 'account.giftCard'),
+    downloads: t(locale, 'account.downloads')
+};
+const sections = Object.keys(labels) as AccountSection[];
+const displayName = me.kind === 'ready'
+    ? me.data.display_name ?? me.data.username ?? Astro.locals.user?.displayName ?? Astro.locals.user?.email ?? '-'
+    : t(locale, 'account.title');
+const stateKeys: Record<Exclude<UserMeState['kind'], 'ready'>, { title: Parameters<typeof t>[1]; description: Parameters<typeof t>[1] }> = {
+    unauthenticated: { title: 'account.state.unauthenticated', description: 'account.state.unauthenticatedDescription' },
+    forbidden: { title: 'account.state.forbidden', description: 'account.state.forbiddenDescription' },
+    unavailable: { title: 'account.state.unavailable', description: 'account.state.unavailableDescription' },
+    invalid: { title: 'account.state.invalid', description: 'account.state.invalidDescription' }
+};
+const records = (value: unknown) => asRecordArray(value);
+const value = (record: Record<string, unknown>, ...keys: string[]) => {
+    for (const key of keys) if (record[key] !== undefined && record[key] !== null) return String(record[key]);
+    return '-';
+};
+const points = sectionState?.data.points ?? null;
+const buckets = records(points?.buckets);
+const ledger = records(sectionState?.data.ledger);
+const levels = sectionState?.data.membershipLevels ?? [];
+const membership = asRecord(sectionState?.data.membership);
+const purchases = records(sectionState?.data.purchases);
+const downloads = sectionState?.data.downloads?.items ?? [];
+const interactions = section === 'points' ? sectionState?.data.pointProducts ?? []
+    : section === 'membership' ? levels
+    : section === 'purchases' ? purchases
+    : section === 'downloads' ? downloads as unknown as Record<string, unknown>[]
+    : [];
+---
+
+<BaseLayout locale={locale} title={section ? labels[section] : t(locale, 'account.title')} description={t(locale, 'account.description')} nofollow>
+    <section class="account-page">
+        <header class="account-header">
+            <p class="eyebrow">{t(locale, 'account.signedInAs')}</p>
+            <h1>{displayName}</h1>
+            <p class="lede">{t(locale, 'account.description')}</p>
+        </header>
+        <nav class="account-nav" aria-label={t(locale, 'account.navigation')}>
+            <a href={locale === 'en' ? '/en/account' : '/account'} aria-current={!section ? 'page' : undefined}>{t(locale, 'account.overview')}</a>
+            {sections.map((item) => <a href={localizedAccountRoute(item, locale)} aria-current={section === item ? 'page' : undefined}>{labels[item]}</a>)}
+        </nav>
+        {me.kind === 'ready' ? (
+            <div class="account-surface">
+                {!section && (
+                    <>
+                        <h2>{t(locale, 'account.profile')}</h2>
+                        <dl class="account-facts">
+                            <div><dt>{t(locale, 'account.username')}</dt><dd>{me.data.username ?? t(locale, 'account.notProvided')}</dd></div>
+                            <div><dt>{t(locale, 'account.status')}</dt><dd>{me.data.status}</dd></div>
+                            <div><dt>{t(locale, 'account.points')}</dt><dd>{me.data.points ? me.data.points.balance : t(locale, 'account.notAvailable')}</dd></div>
+                        </dl>
+                    </>
+                )}
+                {section && sectionState?.kind !== 'ready' && (
+                    <div class="section-state" role="status">
+                        <h2>{t(locale, stateKeys[sectionState?.kind ?? 'invalid'].title)}</h2>
+                        <p>{t(locale, stateKeys[sectionState?.kind ?? 'invalid'].description)}</p>
+                    </div>
+                )}
+                {section === 'points' && sectionState?.kind === 'ready' && points && (
+                    <>
+                        <h2>{labels.points}</h2>
+                        <dl class="account-facts">
+                            <div><dt>{t(locale, 'account.availablePoints')}</dt><dd>{value(points, 'balance')}</dd></div>
+                            <div><dt>{t(locale, 'account.pointsAccount')}</dt><dd>{points.opened === false ? t(locale, 'account.notOpened') : t(locale, 'account.opened')}</dd></div>
+                        </dl>
+                        <h3>{locale === 'en' ? 'Point buckets' : '积分桶'}</h3>
+                        {buckets.length ? <div class="account-list">{buckets.map((bucket) => <article><strong>{value(bucket, 'amount')} credit</strong><span>{value(bucket, 'bucket_type')}</span><span>{bucket.expires_at ? `${locale === 'en' ? 'Expires' : '到期'} ${value(bucket, 'expires_at')}` : (locale === 'en' ? 'Permanent' : '永久')}</span></article>)}</div> : <p>{locale === 'en' ? 'No point buckets.' : '暂无积分桶。'}</p>}
+                        <h3>{locale === 'en' ? 'Ledger' : '积分账本'}</h3>
+                        {ledger.length ? <div class="account-list">{ledger.map((entry) => <article><strong>{value(entry, 'amount')} credit</strong><span>{value(entry, 'entry_type', 'behavior_key')}</span><time datetime={value(entry, 'created_at')}>{value(entry, 'created_at')}</time></article>)}</div> : <p>{locale === 'en' ? 'No ledger entries.' : '暂无账本记录。'}</p>}
+                        <AccountInteractions client:load locale={locale} section="points" csrf={csrf} items={interactions} />
+                    </>
+                )}
+                {section === 'membership' && sectionState?.kind === 'ready' && (
+                    <>
+                        <h2>{labels.membership}</h2>
+                        {membership ? <dl class="account-facts"><div><dt>{locale === 'en' ? 'Current level' : '当前等级'}</dt><dd>{value(membership, 'level_key')}</dd></div><div><dt>{locale === 'en' ? 'Status' : '状态'}</dt><dd>{value(membership, 'status')}</dd></div><div><dt>{locale === 'en' ? 'Cycle end' : '周期结束'}</dt><dd>{value(membership, 'cycle_end')}</dd></div><div><dt>{locale === 'en' ? 'Auto renewal' : '自动续费'}</dt><dd>{membership.auto_renew ? (locale === 'en' ? 'Enabled' : '已开启') : (locale === 'en' ? 'Disabled' : '未开启')}</dd></div></dl> : <p>{locale === 'en' ? 'No active membership.' : '当前没有有效会员。'}</p>}
+                        <h3>{locale === 'en' ? 'Levels and server offers' : '等级与服务端报价'}</h3>
+                        {levels.length ? <div class="account-list">{levels.map((level) => <article><strong>{value(level, 'display_name', 'level_key')}</strong><span>{value(level, 'cycle_days')} {locale === 'en' ? 'days' : '天'} · {value(level, 'grant_points', 'cycle_points_amount')} credit</span>{level.price_cents !== undefined && <span>CNY {Number(level.price_cents) / 100}</span>}</article>)}</div> : <p>{locale === 'en' ? 'No membership levels are available.' : '暂无可用会员等级。'}</p>}
+                        <AccountInteractions client:load locale={locale} section="membership" csrf={csrf} items={interactions} />
+                    </>
+                )}
+                {section === 'purchases' && sectionState?.kind === 'ready' && <><h2>{labels.purchases}</h2>{purchases.length ? <div class="account-list">{purchases.map((purchase) => <article><strong>{value(purchase, 'description', 'offer_key', 'id')}</strong><span>{value(purchase, 'state', 'status')}</span><span>CNY {Number(purchase.amount ?? 0) / 100}</span></article>)}</div> : <p>{locale === 'en' ? 'No purchases.' : '暂无购买记录。'}</p>}<p class="account-note">{locale === 'en' ? 'A browser return is not payment confirmation. This page trusts only the latest server state.' : '浏览器回跳不是支付成功凭据，本页只信任服务端最新状态。'}</p><AccountInteractions client:load locale={locale} section="purchases" csrf={csrf} items={interactions} /></>}
+                {section === 'gift-card' && sectionState?.kind === 'ready' && <><h2>{labels['gift-card']}</h2><p>{locale === 'en' ? 'The secret is sent only in the POST body and is cleared immediately after submission.' : '卡密仅通过 POST 请求体发送，并在提交后立即清空。'}</p><AccountInteractions client:load locale={locale} section="gift-card" csrf={csrf} /></>}
+                {section === 'downloads' && sectionState?.kind === 'ready' && <><h2>{labels.downloads}</h2>{downloads.length ? <div class="account-list">{downloads.map((grant) => <article><strong>{grant.target_id}</strong><span>{grant.status} · manifest {grant.manifest_version}</span><span>{grant.items.length} {locale === 'en' ? 'files' : '个文件'} · {locale === 'en' ? 'expires' : '到期'} {grant.expires_at}</span></article>)}</div> : <p>{locale === 'en' ? 'No authorized downloads.' : '暂无授权下载。'}</p>}<AccountInteractions client:load locale={locale} section="downloads" csrf={csrf} items={interactions} /></>}
+            </div>
+        ) : (
+            <div class={`account-surface account-state-${me.kind}`} role="status">
+                <h2>{t(locale, stateKeys[me.kind].title)}</h2>
+                <p>{t(locale, stateKeys[me.kind].description)}</p>
+            </div>
+        )}
+    </section>
+</BaseLayout>
+
+<style>
+    .account-page { max-width: 920px; margin: 0 auto; padding: clamp(2rem, 6vw, 5rem) clamp(1rem, 4vw, 3rem); }
+    .account-header { border-bottom: 1px solid var(--hairline); padding-bottom: 2rem; }
+    .account-nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: 1rem 0; border-bottom: 1px solid var(--hairline); }
+    .account-nav a { color: var(--muted); padding: .5rem 0; }
+    .account-nav a[aria-current="page"] { color: var(--ink); font-weight: 700; }
+    .account-surface { margin-top: 1.5rem; border: 1px solid var(--hairline); background: var(--surface-raised); padding: 1.5rem; }
+    .account-state-unavailable, .account-state-forbidden { border-left: 4px solid #b7791f; }
+    .account-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1px; margin: 1.25rem 0 0; background: var(--hairline); }
+    .account-facts div { min-width: 0; background: var(--surface-raised); padding: 1rem; }
+    .account-facts dt { color: var(--muted); font-size: .82rem; }
+    .account-facts dd { overflow-wrap: anywhere; margin: .35rem 0 0; font-size: 1.15rem; font-weight: 700; }
+    .account-surface h3 { margin-top: 2rem; }
+    .account-list { display: grid; gap: 0; border-top: 1px solid var(--hairline); }
+    .account-list article { display: grid; grid-template-columns: minmax(10rem, 1.5fr) minmax(8rem, 1fr) minmax(8rem, 1fr); gap: .75rem; border-bottom: 1px solid var(--hairline); padding: 1rem 0; }
+    .account-list span, .account-list time, .account-note { color: var(--muted); }
+    .section-state { border-left: 4px solid #b7791f; padding-left: 1rem; }
+    @media (max-width: 640px) { .account-list article { grid-template-columns: 1fr; gap: .3rem; } }
+</style>

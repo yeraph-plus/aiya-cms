@@ -16,13 +16,18 @@ from inc.capabilities.notification.auth import (
     AuthChallengeNotifier,
     ensure_auth_templates,
 )
-from inc.capabilities.notification.commands import CommandContext, UpdateNotificationTemplate
+from inc.capabilities.notification.commands import (
+    CommandContext,
+    RequestNotification,
+    UpdateNotificationTemplate,
+)
 from inc.capabilities.notification.diagnostics import NotificationDiagnostics
 from inc.capabilities.notification.queries import NotificationQueries
 from inc.capabilities.notification.retention import (
     NotificationRetentionActivity,
     cleanup_notifications_in_uow,
 )
+from inc.capabilities.notification.schemas import RequestNotificationInput
 from inc.capabilities.notification.specs import (
     NOTIFICATION_DELIVERY_MAX_ATTEMPTS,
     DeliveryPolicy,
@@ -45,6 +50,8 @@ __all__ = [
     "NotificationRetentionActivity",
     "NotificationSpec",
     "NotificationSpecRegistry",
+    "RequestNotification",
+    "RequestNotificationInput",
     "build_deliver_workflow_spec",
     "cleanup_notifications_in_uow",
     "ensure_auth_templates",

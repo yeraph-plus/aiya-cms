@@ -75,16 +75,6 @@ def run_migrations_offline() -> None:
 
 
 _RELEASE_BASELINE_REVISION = "release_0001"
-_BUSINESS_TABLE_PREFIXES = (
-    "access_",
-    "assets_",
-    "content_",
-    "identity_",
-    "notification_",
-    "oidc_",
-    "payment_",
-    "settings_",
-)
 
 
 def _reject_legacy_database(connection: Connection) -> None:
@@ -106,10 +96,17 @@ def _reject_legacy_database(connection: Connection) -> None:
                 "release migration baseline refuses existing Alembic revision(s): "
                 f"{sorted(revisions)}; deploy to a new empty database"
             )
-    existing = sorted(table for table in tables if table.startswith(_BUSINESS_TABLE_PREFIXES))
+    # The release baseline is intentionally installable only into an empty
+    # database.  Checking a prefix allow-list is unsafe here: older/business
+    # tables such as ``audit_entries`` or ``kernel_outbox`` do not share a
+    # capability prefix and would otherwise be silently reinterpreted.  Any
+    # table besides Alembic's own version table therefore proves that this is
+    # not a fresh database (the exact release revision was handled above for
+    # idempotent installs).
+    existing = sorted(table for table in tables if table != "alembic_version")
     if existing:
         raise RuntimeError(
-            "release migration baseline refuses existing application tables: "
+            "release migration baseline refuses existing database tables: "
             f"{existing}; deploy to a new empty database"
         )
 

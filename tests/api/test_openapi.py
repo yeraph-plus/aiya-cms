@@ -17,6 +17,32 @@ def test_schema_generation_is_deterministic() -> None:
     assert first == second
 
 
+def test_production_does_not_expose_complete_runtime_openapi(
+    uow_factory: Any, clock: Any, tmp_path: Any
+) -> None:
+    from inc.api.app import create_app
+    from inc.api.config import ApiSettings
+    from inc.api.manifest import release
+
+    app = create_app(
+        manifest=release,
+        uow_factory=uow_factory,
+        clock=clock,
+        settings=ApiSettings(
+            environment="production",
+            issuer="https://testserver.example",
+            secure_cookies=True,
+            admin_session_secret="test-production-session-secret-0123456789",
+            oidc_signing_key_dir=str(tmp_path / "keys"),
+        ),
+        redis_url="redis://127.0.0.1:6379/0",
+        start_workers=False,
+    )
+    assert "/openapi.json" not in {
+        path for route in app.routes if (path := getattr(route, "path", None)) is not None
+    }
+
+
 def test_management_schema_contains_only_releasable_contract() -> None:
     from inc.api.openapi import generate_schema
 
@@ -35,11 +61,17 @@ def test_management_schema_contains_only_releasable_contract() -> None:
         "/oidc/authorize",
         "/oidc/login",
         "/.well-known/openid-configuration",
+        "/api/v1/auth/register",
+        "/api/v1/auth/verify-email",
+        "/api/v1/auth/password-reset/request",
+        "/api/v1/auth/password-reset/confirm",
+        "/api/v1/me",
+        "/api/v1/me/purchases",
+        "/api/v1/business/quotes",
+        "/api/v1/business/consumptions",
+        "/api/v1/admin/archive/items",
     ):
         assert expected in paths, expected
-    assert "/api/v1/me" not in paths
-    assert "/api/v1/me/points/ledger" not in paths
-    assert not any(path.startswith("/api/v1/auth/") for path in paths)
     assert "/api/v1/admin/notifications/deliveries" in paths
     assert "HTTPBearer" in schema.get("components", {}).get("securitySchemes", {})
 
@@ -70,6 +102,8 @@ def test_dump_and_check_roundtrip(tmp_path: Any, monkeypatch: Any) -> None:
     monkeypatch.setattr(openapi_module, "SHA256_PATH", tmp_path / "openapi.sha256")
     monkeypatch.setattr(openapi_module, "USER_OPENAPI_PATH", tmp_path / "openapi.user.json")
     monkeypatch.setattr(openapi_module, "USER_SHA256_PATH", tmp_path / "openapi.user.sha256")
+    monkeypatch.setattr(openapi_module, "ADMIN_OPENAPI_PATH", tmp_path / "openapi.admin.json")
+    monkeypatch.setattr(openapi_module, "ADMIN_SHA256_PATH", tmp_path / "openapi.admin.sha256")
     openapi_module.dump()
     assert openapi_module.check() is True
     # drift detection
@@ -85,6 +119,11 @@ def test_user_schema_is_a_closed_allowlisted_projection() -> None:
 
     schema = generate_user_schema()
     assert schema["paths"], "the current auth surface must produce a non-empty user schema"
+    assert "/api/v1/auth/register" in schema["paths"]
+    assert "/api/v1/auth/verify-email" in schema["paths"]
+    assert "/api/v1/auth/password-reset/request" in schema["paths"]
+    assert "/api/v1/auth/password-reset/confirm" in schema["paths"]
+    assert "/api/v1/me" in schema["paths"]
     for path, methods in schema["paths"].items():
         assert not path.startswith("/api/v1/admin"), path
         assert not path.startswith("/api/v1/webhooks"), path
@@ -107,3 +146,29 @@ def test_user_schema_is_a_closed_allowlisted_projection() -> None:
                 )
             else:
                 assert f"#/components/{category}/{name}" in serialized
+
+
+def test_admin_schema_contains_all_admin_routes_and_excludes_user_routes() -> None:
+    from inc.api.openapi import generate_admin_schema, generate_schema
+
+    schema = generate_admin_schema()
+    paths = schema["paths"]
+    full_admin_paths = {
+        path
+        for path in generate_schema()["paths"]
+        if path == "/api/v1/admin" or path.startswith("/api/v1/admin/")
+    }
+    assert full_admin_paths <= set(paths)
+    assert "/api/v1/admin/session" in paths
+    assert "/api/v1/admin/gift-cards/batches" in paths
+    assert "/api/v1/admin/archive/items" in paths
+    assert "/api/v1/me" not in paths
+    assert "/api/v1/auth/register" not in paths
+    assert "/api/v1/content/{type_name}" not in paths
+    assert "/oidc/token" in paths
+    assert "/.well-known/openid-configuration" in paths
+    assert all(
+        path.startswith("/api/v1/admin")
+        or path.startswith(("/healthz", "/api/v1/health", "/oidc/", "/.well-known/"))
+        for path in paths
+    )
